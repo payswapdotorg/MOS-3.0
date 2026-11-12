@@ -41,6 +41,8 @@ The repo supersedes this handoff if it is later changed through an approved ACR.
 
 ## 2. Source-takeover gate — do this first
 
+Follow docs/handoff/UPSTREAM-IMPORT-PLAYBOOK.md for the exact history-preserving Git merge, conflict handling, import PR template and acceptance checks. Do not improvise a source-tree copy or rewrite main.
+
 Bootstrap commit currently on MOS-3.0 main: e3c0fa0e2f477988441d283428b259c6409180f6. It contains canonical architecture, but does not yet contain the ZCode application source tree.
 
 Pinned upstream observed at bootstrap:

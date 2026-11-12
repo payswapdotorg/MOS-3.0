@@ -25,7 +25,7 @@
 | MOS repository bootstrap | scaffolded | Initial commit e3c0fa0e2f477988441d283428b259c6409180f6 |
 | ZCode upstream pin | verified | v3.18.0 commit b95ebaffeab641907b38652f45c1502bd762972d observed on 2026-11-12 |
 | MOS-2.0 domain architecture reference | verified as reference | MOS-2.0 v2.0 architecture; old substrate was ZCode v3.14.3 |
-| ZCode code import | blocked / first TL action | GitHub integration used here does not expose repository-fork/import administration; TL must perform reviewed Git-level import and preserve bootstrap history |
+| ZCode code import | blocked / first TL action | GitHub integration used here does not expose repository-fork/import administration; direct reuse of the external upstream Git tree was also rejected by GitHub (422 Invalid tree info). TL must perform the documented local Git-level import and preserve bootstrap history |
 | Live provider integration | planned | No provider account or secrets supplied in this bootstrap |
 | Product behavior | planned | No application code imported or changed in this bootstrap |
 
