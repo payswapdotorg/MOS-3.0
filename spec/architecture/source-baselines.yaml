@@ -3,11 +3,13 @@ product: MOS-3.0
 repository: payswapdotorg/MOS-3.0
 bootstrap:
   initial_commit: e3c0fa0e2f477988441d283428b259c6409180f6
-  imported_application_code: false
+  imported_application_code: true
   note: >
-    Architecture bootstrap is committed. The repository is not yet populated with
-    the ZCode source tree. The TL must perform a reviewed, history-preserving
-    import/fork operation before product implementation and then update this record.
+    Architecture bootstrap committed 2026-11-12. ZCode v3.18.0 substrate imported
+    2026-11-12 on branch bootstrap/import-zcode-v3.18.0 as two-parent merge commit
+    545910f3ecf4ebc149c690c3bb7b77124e1e747e (parents: MOS main base
+    3a1f50babca07a4b045634873c08d18d81d997e6 and upstream pin
+    b95ebaffeab641907b38652f45c1502bd762972d).
 upstream:
   repository: zai-org/ZCode
   url: https://github.com/zai-org/ZCode
@@ -18,8 +20,89 @@ upstream:
   commit_date_utc: "2026-11-11T03:11:53Z"
   verification_url: https://github.com/zai-org/ZCode/commit/b95ebaffeab641907b38652f45c1502bd762972d
   source_note: >
-    Re-verified against upstream main during repository bootstrap on 2026-11-12.
-    Recheck before importing; upstream may have advanced.
+    Imported exactly at the pin. Upstream main HEAD observed at import time
+    (2026-11-12T11:20:00Z) was identical to the pin: upstream had not advanced.
+takeover:
+  observed_at_utc: "2026-11-12T11:20:00Z"
+  mos_3_head_before_import: 3a1f50babca07a4b045634873c08d18d81d997e6
+  upstream_main_head_at_import: b95ebaffeab641907b38652f45c1502bd762972d
+  exact_imported_upstream_commit: b95ebaffeab641907b38652f45c1502bd762972d
+  upstream_tree_sha: d7ebeb994cb8f46b16761fc9c550ae3f6e039c3d
+  imported_tree_sha: e18bc2ea182da7b1b9efec62a818574d57ac0663
+  merge_or_import_commit: 545910f3ecf4ebc149c690c3bb7b77124e1e747e
+  preserved_bootstrap_commit: e3c0fa0e2f477988441d283428b259c6409180f6
+  import_branch: bootstrap/import-zcode-v3.18.0
+  upstream_remote_and_tracking_ref: >
+    upstream https://github.com/zai-org/ZCode.git (fetch), tracking upstream/main;
+    local tag mos3-zcode-v3.18.0 = pin commit; upstream tags v3.15.x through
+    v3.18.0 fetched during import.
+  merge_topology:
+    - "Merge commit 545910f3 is a two-parent commit: MOS main base 3a1f50b + upstream pin b95ebaff."
+    - "git merge-base HEAD b95ebaffeab641907b38652f45c1502bd762972d == b95ebaffeab641907b38652f45c1502bd762972d."
+    - "Bootstrap commit e3c0fa0e and MOS main base 3a1f50b are ancestors of the merge."
+    - "Diff vs upstream pin lists exactly 20 paths: 16 MOS bootstrap files, root README.md and AGENTS.md kept as MOS content, and 2 relocated upstream copies under docs/upstream/; all other 18,655 upstream files are byte-identical to the pin."
+  conflicts:
+    - path: README.md
+      resolution: kept MOS-3.0 root README as product source-of-truth entrypoint; upstream ZCode README preserved at docs/upstream/README-ZCODE-v3.18.0.md
+    - path: AGENTS.md
+      resolution: kept MOS-3.0 root AGENTS.md as fork governance; upstream ZCode AGENTS.md preserved at docs/upstream/AGENTS-ZCODE-v3.18.0.md
+  source_file_inventory_sha256: 13c2c2a8345cb48defb8e88783d7ae29e164bf3285498788af4c62f6cffa91ac
+  source_file_inventory_path: docs/upstream/source-inventory-sha256-import-v3.18.0.txt
+  source_file_inventory_generation: >
+    git ls-files -z | xargs -0 sha256sum, run in a clean worktree at merge commit
+    545910f3 (18,675 tracked files; manifest itself hashes to the recorded value).
+  toolchain_observed:
+    package_manager: pnpm@10.33.2 (corepack-pinned; packageManager field honored)
+    node: 24.22.2 (sandbox) vs mise pin 24.14.0 (root engines >=24 satisfied)
+    typescript: 6.0.2
+    oxlint: 1.57.x (declared ^1.57.0)
+    oxfmt: 0.41.x (declared ^0.41.0)
+    vitest: 4.1.x (declared ^4.1.1)
+  test_baseline_commands_and_results:
+    - command: pnpm install
+      result: PASS exit 0, 61s, 2680 packages, all postinstall/native builds OK (node-pty, ssh2, cpu-features, electron-rebuild); only core-js build script ignored per pnpm 10 policy
+    - command: node scripts/check-workspace-freshness.mjs
+      result: PASS exit 0, tool reports "baseline fresh", branch ahead 10 / behind 0 vs origin/main
+    - command: pnpm bootstrap
+      result: PARTIAL-FAIL exit 1 - build:bootstrap stage SIGKILL (OOM) at packages/web vite build on a 4.1GiB sandbox; all other workspace packages then built successfully via serial continuation (pnpm -r --workspace-concurrency=1)
+    - command: pnpm typecheck
+      result: PASS exit 0, ~2m10s, full workspace tsc project references
+    - command: pnpm lint
+      result: PASS exit 0 - oxlint reports 538 pre-existing upstream warnings, 0 errors on 5616 files; session-control boundary check passed
+    - command: pnpm fmt:check
+      result: FAIL exit 1, 1558 files flagged (1546 inherited from upstream pin + 12 MOS bootstrap docs); fmt:check is not part of upstream verify:pre-push gate; MOS docs left byte-identical pending ACR-governed formatting decision
+    - command: pnpm test:architecture
+      result: PASS exit 0 (node --test architecture governance suites)
+    - command: pnpm db:schema:check
+      result: PASS exit 0 - SQLite schema compatible for services project-storage and zcode-cli session store
+    - command: pnpm docs:stale-phrases:check
+      result: PASS exit 0 (2287 files clean)
+    - command: pnpm check:e2e-remote-targets
+      result: exit 0, tool's own graceful skip (private queue absent)
+    - command: pnpm test:engineering
+      result: 1018 passed / 1 failed / 8 skipped, 96.7s; single failure packages/desktop/test/miseToolchainEnv.test.ts is environment-sensitive (expects dirname(process.execPath) != /usr/bin; sandbox node lives at /usr/bin), function under test behaves correctly per its dedup contract
+    - command: pnpm architecture:check -- --changed
+      result: exit 1 - 7 unmanaged-new-file findings for packages/zcode-cua/*.js placeholder files; latent upstream module-registry gap that only surfaces when every path is "new" (first import PR); upstream remediation (pnpm architecture:adopt) intentionally NOT run inside the import PR
+    - command: pnpm --filter @zcode/desktop build:no-runtime-assets
+      result: FAIL - renderer vite build SIGKILL/OOM during chunk rendering after 8436 modules transformed (sandbox RAM)
+    - command: packages/web vite build (within build:bootstrap)
+      result: FAIL - SIGKILL/OOM after 8565 modules transformed; also fails with --minify false (sandbox RAM, not source)
+    - command: pnpm test:e2e (desktop e2e)
+      result: SKIPPED - sandbox has no DISPLAY, no Docker, no Xvfb
+  deviations_and_reasons:
+    - mise absent in sandbox; corepack-pinned pnpm@10.33.2 used; node v24.22.2 satisfies root engines >=24.0.0 but not the apps/zcode-cli exact 24.14.0 pin (warning only)
+    - "Sandbox limits 4.1GiB RAM / 2 cores / no swap: renderer-scale vite/rolldown builds (packages/web, packages/desktop renderer) exceed kernel memory and are OOM-killed; source is not implicated (full typecheck and all other package builds pass); full build confirmation pending on adequate hardware/CI"
+    - NODE_OPTIONS=--max-old-space-size=3072 required for tsc typecheck peak on this box
+    - pnpm -r --workspace-concurrency=1 used for serial package builds (upstream's own documented low-memory mitigation from scripts/bootstrap.mjs)
+    - upstream snapshot ships no .github CI workflows; nothing to preserve there; baselines recorded locally instead
+    - packages/zcode-cua v3.18.0 is an API-compatible fail-closed placeholder (zcodeCuaPlaceholder true) - browser/CUA runtime surfaces report unavailable by upstream design
+    - scripts/bootstrap.mjs still calls git submodule update for apps/zcode-cli, but the upstream snapshot tree contains apps/zcode-cli as regular files (no .gitmodules, no gitlinks); the call is a no-op at the pin
+  baseline_verdict: >
+    Stage 0 import accepted with recorded environment-bounded exceptions: green
+    typecheck, lint, architecture governance, schema, doc checks and 1018 engineering
+    tests; renderer-scale builds and desktop E2E require adequate hardware (>=16GiB
+    RAM, display/docker) and remain to be re-confirmed by the owner/CI before
+    feature work relies on them.
 mos_2_reference:
   repository: payswapdotorg/MOS-2.0
   url: https://github.com/payswapdotorg/MOS-2.0
