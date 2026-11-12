@@ -1812,6 +1812,109 @@ modules:
       ui: .
     owner: conversation
 
+  # ===== MOS Week 1（纯增量扩展；spec/architecture/module-registry-v3.0.yaml）=====
+  # 契约层：core-contracts-v3.0.yaml 的 zod 投影 + 不变量守卫；零 ZCode 依赖。
+  - id: mos-contracts
+    roots:
+      - packages/mos-contracts/src
+      - packages/mos-contracts/vitest.config.ts
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - packages/mos-contracts/src/index.ts
+      - packages/mos-contracts/src/contract.ts
+    layers: {contract: contract, domain: domain, app: application}
+    owner: tl
+  # 底物端口层：ProviderPort/SessionFactsPort 结构化注入；生产源码零 ZCode 导入，
+  # requires 的 zcode-cli 只由集成测试贡献（真实 MCP 客户端栈 + 真实凭据存储）。
+  - id: zcode-mos-adapters
+    roots:
+      - packages/zcode-mos-adapters/src
+      - packages/zcode-mos-adapters/vitest.config.ts
+    managed: true
+    requires: [zcode-cli]
+    publicEntrypoints:
+      - packages/zcode-mos-adapters/src/index.ts
+      - packages/zcode-mos-adapters/src/contract.ts
+    layers: {contract: contract, domain: domain, app: application}
+    owner: tl
+  # 身份桥：ZCode 身份/工作区事实 → TenantContext（fail-closed）。
+  - id: mos-identity-bridge
+    roots:
+      - packages/mos-identity-bridge/src
+      - packages/mos-identity-bridge/vitest.config.ts
+    managed: true
+    requires: [mos-contracts, zcode-mos-adapters]
+    publicEntrypoints:
+      - packages/mos-identity-bridge/src/index.ts
+      - packages/mos-identity-bridge/src/contract.ts
+    layers: {domain: domain, app: application}
+    owner: tl
+  # provider 集成层：HubSpot 描述符/连接存储（只存不透明 credential_ref）/读适配器/负向矩阵。
+  - id: mos-integrations
+    roots:
+      - packages/mos-integrations/src
+      - packages/mos-integrations/vitest.config.ts
+    managed: true
+    requires: [mos-contracts, mos-identity-bridge, zcode-mos-adapters]
+    publicEntrypoints:
+      - packages/mos-integrations/src/index.ts
+      - packages/mos-integrations/src/contract.ts
+    layers: {contract: contract, domain: domain, app: application}
+    owner: integration
+  # 能力层：描述符 schema/目录 + fail-closed 账户能力实例解析器。
+  - id: mos-capabilities
+    roots:
+      - packages/mos-capabilities/src
+      - packages/mos-capabilities/vitest.config.ts
+    managed: true
+    requires: [mos-contracts, mos-integrations]
+    publicEntrypoints:
+      - packages/mos-capabilities/src/index.ts
+      - packages/mos-capabilities/src/contract.ts
+    layers: {contract: contract, domain: domain, app: application}
+    owner: integration
+  # Mission sidecar：逐字 intake（零推断）、tenant 范围持久存储、graceful-failure 关联。
+  - id: mos-missions
+    roots:
+      - packages/mos-missions/src
+      - packages/mos-missions/vitest.config.ts
+    managed: true
+    requires: [mos-contracts, mos-identity-bridge, zcode-mos-adapters]
+    publicEntrypoints:
+      - packages/mos-missions/src/index.ts
+      - packages/mos-missions/src/contract.ts
+    layers: {contract: contract, domain: domain, app: application}
+    owner: mission
+  # 路线层：existing/conditional/blocked/unknown 候选评估（fail-closed，无静默回退）。
+  - id: mos-routes
+    roots:
+      - packages/mos-routes/src
+      - packages/mos-routes/vitest.config.ts
+    managed: true
+    requires: [mos-contracts, mos-capabilities, mos-missions]
+    publicEntrypoints:
+      - packages/mos-routes/src/index.ts
+      - packages/mos-routes/src/contract.ts
+    layers: {contract: contract, domain: domain, app: application}
+    owner: mission
+  # UI 扩展片段（未挂载；组合接线 deferred）：fail-closed 可用性 + sidecar store + 状态 chip + 注册缝。
+  - id: mos-extension
+    roots:
+      - packages/ui/src/mos-extension
+    managed: true
+    requires: [ui]
+    publicEntrypoints:
+      - packages/ui/src/mos-extension/index.ts
+      - packages/ui/src/mos-extension/contract.ts
+    layers:
+      domain: domain
+      app: app
+      adapters: adapters
+      ui: components
+    layerOrder: [domain, app, adapters, ui]
+    owner: tl
+
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。
   # 基于领先 staging 很多的分支开工时，merge-base 之前的"新增"文件不应被追溯。

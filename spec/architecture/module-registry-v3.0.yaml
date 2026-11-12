@@ -1,3 +1,9 @@
+# Week 1 实现说明（2026-11-12）：
+#   - 七个 week-1 模块（本文件 id）已在分支 w1/integration-foundation 实现；contract-tested。
+#   - 本文件模块 id zcode-substrate-adapters 在仓库治理层（architecture-policy.yaml）登记为
+#     zcode-mos-adapters（目录 packages/zcode-mos-adapters）；同一权威、两个命名空间的映射在此记录。
+#   - UI 扩展片段以 governance 模块 id mos-extension（packages/ui/src/mos-extension）登记：
+#     contract-tested、未挂载（组合接线 deferred，见 docs/handoff/IMPLEMENTATION-STATE.md）。
 schema_version: 1
 product: MOS-3.0
 governance:
@@ -17,37 +23,37 @@ modules:
     authority: contracts
     depends_on: []
     stage: week-1
-    status: planned
+    status: contract-tested  # W1 2026-11-12：实现+契约测试全绿；状态词汇见 AGENTS.md §7
   - id: mos-identity-bridge
     responsibility: Map ZCode identity, org and workspace context to MOS tenant/brand context
     authority: identity-mapping
     depends_on: [mos-contracts, zcode-substrate-adapters]
     stage: week-1
-    status: planned
+    status: contract-tested  # W1 2026-11-12：实现+契约测试全绿；状态词汇见 AGENTS.md §7
   - id: mos-missions
     responsibility: Mission/objective intake and ZCode session association
     authority: missions
     depends_on: [mos-contracts, mos-identity-bridge, zcode-substrate-adapters]
     stage: week-1
-    status: planned
+    status: contract-tested  # W1 2026-11-12：实现+契约测试全绿；状态词汇见 AGENTS.md §7
   - id: mos-integrations
     responsibility: Provider connections, account capability bindings, adapters, webhooks and provider evidence
     authority: integrations
     depends_on: [mos-contracts, mos-identity-bridge, zcode-substrate-adapters]
     stage: week-1
-    status: planned
+    status: contract-tested  # W1 2026-11-12：实现+契约测试全绿；状态词汇见 AGENTS.md §7
   - id: mos-capabilities
     responsibility: Capability catalog, implementations and account-specific capability instances
     authority: capabilities
     depends_on: [mos-contracts, mos-integrations]
     stage: week-1
-    status: planned
+    status: contract-tested  # W1 2026-11-12：实现+契约测试全绿；状态词汇见 AGENTS.md §7
   - id: mos-routes
     responsibility: Route candidates, preconditions, comparison and fallback evaluation
     authority: route-planning
     depends_on: [mos-contracts, mos-capabilities, mos-missions]
     stage: week-1
-    status: planned
+    status: contract-tested  # W1 2026-11-12：实现+契约测试全绿；状态词汇见 AGENTS.md §7
   - id: mos-agent-organizations
     responsibility: Domain roles, Agent Bodies, organizations and node offers
     authority: agent-organizations
@@ -125,7 +131,7 @@ modules:
     authority: adapters-only
     depends_on: [zcode-host]
     stage: week-1
-    status: planned
+    status: contract-tested  # W1 2026-11-12：实现+契约测试全绿；状态词汇见 AGENTS.md §7
     note: Does not own any ZCode authority.
   - id: zcode-host
     responsibility: The existing ZCode source tree and generic application/runtime capabilities
