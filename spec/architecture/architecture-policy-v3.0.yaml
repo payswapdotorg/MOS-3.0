@@ -1,0 +1,41 @@
+schema_version: 1
+scope: MOS-3.0
+limits:
+  max_parallel_workstreams: 3
+  max_public_methods_per_domain_service: 12
+  max_managed_source_file_lines: 500
+  max_contract_file_lines: 400
+  max_dependency_depth_between_domain_modules: 4
+  max_domain_import_cycles: 0
+  max_duplicate_authorities: 0
+required:
+  - Explicit module owner and authority for every domain record.
+  - Tenant/workspace scope validated at every read and write boundary.
+  - Versioned public contracts and event envelopes.
+  - Append-only event/provenance/rights/experiment evidence where historical meaning matters.
+  - Idempotency for side-effecting provider operations and event ingestion.
+  - Opaque credential references; secret material only in approved credential store.
+  - Explicit preconditions, cost, latency, rate limits, side effects and approval for routes.
+  - Provider capability instances derived from live account authorization/evidence.
+  - Tests for supported, unsupported and unknown states.
+  - Tests for revoked credentials, scope denial, rate limiting, retries and ambiguous writes.
+  - Rollback and feature flags for additive UX.
+forbidden:
+  - New model router, generic tool executor, generic plugin marketplace, workflow engine or scheduler.
+  - Provider SDK/network calls from Lab, Studio, Missions, Routes, Experiments or Learning.
+  - Engine package imports from domain modules.
+  - Hidden automatic publishing, spending, messaging, deletion or account mutations.
+  - Password/cookie/session-token scraping or storage.
+  - Treating MCP/plugin installation as permission for external side effects.
+  - Treating workflow process isolation as an engine sandbox.
+  - Mocks/in-memory stores presented as production connectivity or durability.
+  - Silent route fallback that changes account, cost, destination, audience or rights.
+quality_gates:
+  unknown_capability: fail_closed
+  unsupported_operation: fail_closed
+  missing_tenant: fail_closed
+  missing_approval: fail_closed
+  revoked_auth: invalidate_instance
+  ambiguous_write_result: reconcile_before_retry
+  provider_rate_limit: backoff_and_surface
+  rights_or_consent_unknown: block_distribution

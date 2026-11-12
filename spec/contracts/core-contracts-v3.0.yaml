@@ -1,0 +1,198 @@
+schema_version: 1
+status: normative-bootstrap-contract
+conventions:
+  ids: opaque-stable-ids
+  timestamps: RFC3339-UTC
+  tenant_scope: required
+  monetary_values: decimal-string-with-currency
+  provenance: source-and-observed-at-required-for-external-facts
+  unknown_values: null-plus-explicit-status; never guessed
+  contract_evolution: additive-with-version-bump-for-breaking-changes
+enums:
+  capability_support: [supported, unsupported, unknown]
+  implementation_status: [available, degraded, unavailable, unknown]
+  route_class: [existing, conditional, opportunity_constrained, blocked, unknown]
+  route_status: [candidate, ready_for_approval, executing, succeeded, failed, blocked, cancelled, unknown]
+  risk_level: [low, medium, high, critical, unknown]
+  side_effect: [none, read, create, update, publish, message, spend, delete, irreversible, unknown]
+  evidence_kind: [provider_response, provider_webhook, user_confirmation, human_review, platform_insight, analytics_event, experiment_observation, simulation, inferred]
+  actor_kind: [human, agent, engine, tool, provider, organization, team]
+  artifact_kind: [source, draft, media, copy, campaign, evidence, report, transcript, caption, derivative, unknown]
+objects:
+  TenantContext:
+    required: [tenant_id, workspace_id, actor_id]
+    fields:
+      tenant_id: string
+      workspace_id: string
+      actor_id: string
+      brand_id: nullable-string
+      source_zcode_session_id: nullable-string
+      source_zcode_task_id: nullable-string
+  Mission:
+    required: [id, version, tenant_id, objective, created_at, status]
+    fields:
+      id: string
+      version: integer
+      tenant_id: string
+      workspace_id: string
+      objective: string
+      target_audience: nullable-string
+      geography: nullable-string
+      desired_outcomes: array
+      constraints: object
+      budget: nullable-money
+      deadline: nullable-timestamp
+      success_metrics: array
+      source_zcode_session_id: nullable-string
+      source_zcode_task_id: nullable-string
+      status: string
+      created_at: timestamp
+      updated_at: timestamp
+  ProviderConnection:
+    required: [id, tenant_id, provider_id, auth_method, credential_ref, status]
+    fields:
+      id: string
+      tenant_id: string
+      provider_id: string
+      provider_account_id: nullable-string
+      auth_method: enum
+      credential_ref: opaque-reference
+      granted_scopes: array
+      account_type: nullable-string
+      app_review_status: nullable-string
+      status: enum
+      last_verified_at: nullable-timestamp
+  Capability:
+    required: [id, version, domain, input_schema, output_schema, side_effect, support_status]
+    fields:
+      id: string
+      version: integer
+      domain: string
+      description: string
+      input_schema: object
+      output_schema: object
+      side_effect: enum
+      support_status: enum
+      required_scopes: array
+      required_account_types: array
+      risk_level: enum
+  ProviderImplementation:
+    required: [id, provider_id, capability_id, version, operation_mapping, status]
+    fields:
+      id: string
+      provider_id: string
+      capability_id: string
+      version: integer
+      operation_mapping: array
+      required_scopes: array
+      rate_limit_notes: nullable-string
+      cost_model: nullable-object
+      latency_model: nullable-object
+      status: enum
+      evidence_refs: array
+  CapabilityInstance:
+    required: [id, tenant_id, connection_id, capability_id, implementation_id, support_status, status, checked_at]
+    fields:
+      id: string
+      tenant_id: string
+      connection_id: string
+      capability_id: string
+      implementation_id: string
+      support_status: enum
+      status: enum
+      available_quota: nullable-object
+      constraints: array
+      missing_preconditions: array
+      checked_at: timestamp
+      evidence_refs: array
+  Route:
+    required: [id, tenant_id, mission_id, route_class, status, steps, preconditions, approvals]
+    fields:
+      id: string
+      tenant_id: string
+      mission_id: string
+      route_class: enum
+      status: enum
+      steps: array
+      preconditions: array
+      approvals: array
+      estimated_cost: nullable-money
+      estimated_latency_ms: nullable-integer
+      confidence: nullable-number
+      evidence_refs: array
+      unknowns: array
+      risks: array
+      fallback_route_ids: array
+  ExternalActionPreview:
+    required: [id, tenant_id, connection_id, capability_instance_id, operation, target, side_effect, approval_state]
+    fields:
+      id: string
+      tenant_id: string
+      connection_id: string
+      capability_instance_id: string
+      operation: string
+      target: object
+      artifact_id: nullable-string
+      artifact_version: nullable-integer
+      scheduled_at: nullable-timestamp
+      estimated_cost: nullable-money
+      side_effect: enum
+      approval_state: [not_required, pending, approved, rejected, expired]
+      idempotency_key: nullable-string
+      preview_hash: string
+  Evidence:
+    required: [id, tenant_id, kind, observed_at, source, confidence]
+    fields:
+      id: string
+      tenant_id: string
+      kind: enum
+      observed_at: timestamp
+      source: object
+      subject_ref: nullable-string
+      facts: object
+      confidence: nullable-number
+      limitations: array
+      raw_payload_ref: nullable-string
+  Artifact:
+    required: [id, tenant_id, kind, version, provenance, rights_status]
+    fields:
+      id: string
+      tenant_id: string
+      kind: enum
+      version: integer
+      content_ref: string
+      parent_artifact_refs: array
+      transform_id: nullable-string
+      created_by: object
+      provenance: array
+      rights_status: enum
+      quality_status: enum
+      created_at: timestamp
+  DomainEvent:
+    required: [id, tenant_id, aggregate_type, aggregate_id, aggregate_version, event_type, occurred_at, payload]
+    fields:
+      id: string
+      tenant_id: string
+      aggregate_type: string
+      aggregate_id: string
+      aggregate_version: integer
+      event_type: string
+      occurred_at: timestamp
+      actor: object
+      correlation_id: string
+      causation_id: nullable-string
+      payload: object
+invariants:
+  - A capability instance is never available unless a live connection/account check and required scope checks support that assertion.
+  - Provider static profile is not evidence of a tenant's account capability.
+  - Unsupported and unknown are distinct states.
+  - Every side-effecting external action has a preview and existing ZCode permission approval binding.
+  - Every external action has tenant, connection, target, operation, side-effect and idempotency/reconciliation information.
+  - Every observed fact has source and observed_at; simulation cannot be stored as provider observation.
+  - Artifact versions and their parent lineage are immutable.
+  - Provider secrets are represented only by opaque credential_ref.
+  - No missing value is inferred from a marketing brief.
+compatibility:
+  - Keep ZCode session/task identifiers as external references; do not duplicate messages or transcript state.
+  - Preserve existing ZCode plugin manifest and MCP tool schemas; MOS descriptors map onto them.
+  - Only TL may revise this core contract during Week 1.

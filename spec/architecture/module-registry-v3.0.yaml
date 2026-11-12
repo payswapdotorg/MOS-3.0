@@ -1,0 +1,140 @@
+schema_version: 1
+product: MOS-3.0
+governance:
+  max_parallel_workstreams: 3
+  architecture_owner: TL
+  central_composition_owner: TL
+  no_cyclic_dependencies: true
+  domain_provider_calls_forbidden: true
+  engine_direct_imports_forbidden: true
+  versioned_contracts_required: true
+  tenant_scope_required: true
+  durable_business_state_required: true
+  preserve_zcode_as_host: true
+modules:
+  - id: mos-contracts
+    responsibility: Versioned provider-neutral domain contracts and event envelopes
+    authority: contracts
+    depends_on: []
+    stage: week-1
+    status: planned
+  - id: mos-identity-bridge
+    responsibility: Map ZCode identity, org and workspace context to MOS tenant/brand context
+    authority: identity-mapping
+    depends_on: [mos-contracts, zcode-substrate-adapters]
+    stage: week-1
+    status: planned
+  - id: mos-missions
+    responsibility: Mission/objective intake and ZCode session association
+    authority: missions
+    depends_on: [mos-contracts, mos-identity-bridge, zcode-substrate-adapters]
+    stage: week-1
+    status: planned
+  - id: mos-integrations
+    responsibility: Provider connections, account capability bindings, adapters, webhooks and provider evidence
+    authority: integrations
+    depends_on: [mos-contracts, mos-identity-bridge, zcode-substrate-adapters]
+    stage: week-1
+    status: planned
+  - id: mos-capabilities
+    responsibility: Capability catalog, implementations and account-specific capability instances
+    authority: capabilities
+    depends_on: [mos-contracts, mos-integrations]
+    stage: week-1
+    status: planned
+  - id: mos-routes
+    responsibility: Route candidates, preconditions, comparison and fallback evaluation
+    authority: route-planning
+    depends_on: [mos-contracts, mos-capabilities, mos-missions]
+    stage: week-1
+    status: planned
+  - id: mos-agent-organizations
+    responsibility: Domain roles, Agent Bodies, organizations and node offers
+    authority: agent-organizations
+    depends_on: [mos-contracts, mos-capabilities]
+    stage: week-2
+    status: planned
+  - id: mos-lab
+    responsibility: Marketing research, evidence, ideas, strategy and production program discovery
+    authority: lab
+    depends_on: [mos-contracts, mos-missions, mos-capabilities, mos-routes]
+    stage: week-2
+    status: planned
+  - id: mos-engines
+    responsibility: Engine catalog, adapters, benchmark/license policy and sandbox invocation
+    authority: engines
+    depends_on: [mos-contracts, mos-capabilities, zcode-substrate-adapters]
+    stage: week-3
+    status: planned
+  - id: mos-content-artifacts
+    responsibility: Content assets, immutable versions, provenance and artifact lineage
+    authority: artifacts
+    depends_on: [mos-contracts, mos-identity-bridge]
+    stage: week-3
+    status: planned
+  - id: mos-rights-policy
+    responsibility: Rights, consent, source licensing, platform policy and review decisions
+    authority: rights-policy
+    depends_on: [mos-contracts, mos-content-artifacts, mos-identity-bridge]
+    stage: week-3
+    status: planned
+  - id: mos-production
+    responsibility: Transform definitions, production graphs and durable production business state
+    authority: production
+    depends_on: [mos-contracts, mos-engines, mos-content-artifacts, mos-rights-policy, mos-capabilities]
+    stage: week-3
+    status: planned
+  - id: mos-studio
+    responsibility: Human-facing production coordination and source-to-output creative workflow
+    authority: studio
+    depends_on: [mos-contracts, mos-production, mos-content-artifacts, mos-rights-policy]
+    stage: week-3
+    status: planned
+  - id: mos-distribution
+    responsibility: Provider publish/update/delete intents, previews, approval bindings and execution records
+    authority: distribution
+    depends_on: [mos-contracts, mos-integrations, mos-capabilities, mos-content-artifacts, mos-rights-policy]
+    stage: week-3
+    status: planned
+  - id: mos-experiments
+    responsibility: Actual-world experiment design, assignment, measurement evidence and outcome
+    authority: experiments
+    depends_on: [mos-contracts, mos-missions, mos-distribution]
+    stage: week-3
+    status: planned
+  - id: mos-learning
+    responsibility: Calibration and recommendations from verified evidence, with delayed-mode safeguards
+    authority: learning
+    depends_on: [mos-contracts, mos-experiments, mos-lab]
+    stage: week-3
+    status: planned
+  - id: mos-commerce
+    responsibility: Offer, product, pricing and customer/market intelligence as later domain capabilities
+    authority: commerce
+    depends_on: [mos-contracts, mos-integrations]
+    stage: week-4
+    status: planned
+  - id: mos-resource-network
+    responsibility: Human/agent/tool/engine/team node discovery, service offers, gigs and matching
+    authority: resource-network
+    depends_on: [mos-contracts, mos-agent-organizations, mos-capabilities]
+    stage: week-4
+    status: planned
+  - id: zcode-substrate-adapters
+    responsibility: Narrow adapters to existing ZCode session/runtime/workflow/tool/permission/plugin/model/extension services
+    authority: adapters-only
+    depends_on: [zcode-host]
+    stage: week-1
+    status: planned
+    note: Does not own any ZCode authority.
+  - id: zcode-host
+    responsibility: The existing ZCode source tree and generic application/runtime capabilities
+    authority: upstream-substrate
+    depends_on: []
+    stage: foundation
+    status: preserve
+rules:
+  - "A module has one explicit authority; cross-authority writes use owner APIs/events."
+  - "No import cycles; domain contracts do not import provider or UI packages."
+  - "Only TL edits this registry and central composition root."
+  - "Do not scaffold every listed module in Week 1; implement only required vertical slice."

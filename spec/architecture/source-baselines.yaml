@@ -1,0 +1,47 @@
+schema_version: 1
+product: MOS-3.0
+repository: payswapdotorg/MOS-3.0
+bootstrap:
+  initial_commit: e3c0fa0e2f477988441d283428b259c6409180f6
+  imported_application_code: false
+  note: >
+    Architecture bootstrap is committed. The repository is not yet populated with
+    the ZCode source tree. The TL must perform a reviewed, history-preserving
+    import/fork operation before product implementation and then update this record.
+upstream:
+  repository: zai-org/ZCode
+  url: https://github.com/zai-org/ZCode
+  default_branch_observed: main
+  version: v3.18.0
+  commit: b95ebaffeab641907b38652f45c1502bd762972d
+  source_commit: cc1f87e46ee496845be243b475bb116c35d952f6
+  commit_date_utc: "2026-11-11T03:11:53Z"
+  verification_url: https://github.com/zai-org/ZCode/commit/b95ebaffeab641907b38652f45c1502bd762972d
+  source_note: >
+    Re-verified against upstream main during repository bootstrap on 2026-11-12.
+    Recheck before importing; upstream may have advanced.
+mos_2_reference:
+  repository: payswapdotorg/MOS-2.0
+  url: https://github.com/payswapdotorg/MOS-2.0
+  role: domain architecture, contracts and prior implementation research only
+  architecture_version: "2.0"
+  architecture_status: FROZEN
+  old_substrate_version: v3.14.3
+  old_substrate_commit: 29628c9acdb81b703bbd4080c207a0e7ce5e276e
+  rule: >
+    Do not mechanically copy MOS-2.0 shell, app surface, package tree or compiled
+    artifacts into this repo. Reconcile domain contracts against this architecture
+    and current ZCode v3.18.0.
+required_takeover_record:
+  - observed_at_utc
+  - mos_3_head_before_import
+  - upstream_main_head_at_import
+  - exact_imported_upstream_commit
+  - upstream_tree_sha
+  - imported_tree_sha
+  - merge_or_import_commit
+  - preserved_bootstrap_commit
+  - upstream_remote_and_tracking_ref
+  - test_baseline_commands_and_results
+  - deviations_and_reasons
+  - source_file_inventory_sha256

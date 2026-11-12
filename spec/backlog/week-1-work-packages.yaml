@@ -1,0 +1,122 @@
+schema_version: 1
+stage: week-1-integration
+parallel_workstreams_max: 3
+tech_lead:
+  owns:
+    - repo_takeover_and_upstream_import
+    - source_baselines_and_preservation_inventory
+    - architecture_and_contract_lock
+    - shared_types_and_composition_root
+    - session_identity_boundary
+    - final_review_and_regression
+  must_not_delegate:
+    - main_branch_writes
+    - architecture_lock_changes
+    - shared_contract_approval
+    - composition_root_merge
+work_packages:
+  - id: W1-A
+    name: ZCode source takeover and preservation baseline
+    owner: TL
+    status: blocking
+    paths:
+      - AGENTS.md
+      - README.md
+      - spec/architecture/**
+      - docs/handoff/IMPLEMENTATION-STATE.md
+    tasks:
+      - Recheck ZCode latest main and pinned v3.18.0 commit; record both.
+      - Import full upstream code preserving bootstrap commit, history and main.
+      - Establish explicit upstream remote and tracked branch.
+      - Inventory actual New Task, Composer, session, model, plugin, MCP, tools, permissions, workflow, automation, browser, terminal, Git, transports, packaging and tests.
+      - Capture pre-change test/build/lint/typecheck outcomes.
+    deliverables:
+      - takeover_record
+      - source_inventory
+      - preservation_test_matrix
+      - exact_upstream_baseline
+    acceptance:
+      - MOS-3.0 is buildable application source, not documentation-only.
+      - Fork point and preserved architecture commit are verifiable.
+      - No upstream file deletions or history replacement are unexplained.
+      - Baseline commands and results are reproducible.
+  - id: W1-B
+    name: Provider descriptor, official auth and live read adapter
+    owner: worker-b
+    paths:
+      - packages/mos-integrations/**
+      - packages/mos-capabilities/**
+      - packages/zcode-mos-adapters/provider/**
+      - spec/integrations/provider-evidence/**
+    forbidden_paths:
+      - spec/architecture/**
+      - packages/**/composition-root*
+      - packages/ui/**
+    tasks:
+      - Map actual ZCode OAuth/credential/MCP APIs from the pinned source.
+      - Define adjacent MOS capability descriptor without changing plugin.json.
+      - Select HubSpot remote MCP first unless exact source/access evidence favors a closer viable connector.
+      - Implement tenant-scoped account connection metadata and current capability resolution.
+      - Implement one read capability with real provider authorization.
+      - Cover no-scope, expired/revoked auth, wrong account, rate limit, unknown and provider error cases.
+    deliverables:
+      - adapter_source
+      - descriptor_and_schema
+      - contract_tests
+      - real_provider_evidence_redacted
+      - setup_and_reproduction_notes
+    acceptance:
+      - Uses existing ZCode auth/credential/tool permission paths.
+      - No secret material is persisted/logged.
+      - Capability instance is account-specific and evidence-backed.
+      - A real read succeeds; mocks are labeled contract-only.
+  - id: W1-C
+    name: Additive mission sidecar and New Task integration
+    owner: worker-c
+    paths:
+      - packages/mos-missions/**
+      - packages/mos-routes/**
+      - packages/zcode-mos-adapters/session/**
+      - packages/ui/src/mos-extension/**
+    forbidden_paths:
+      - packages/ui/src/NewTaskButtonGroup.tsx
+      - packages/ui/src/v4/composer/V4ComposerToolbar.tsx
+      - app-shell-root-files
+      - spec/architecture/**
+    tasks:
+      - Inspect and pin the actual New Task/session-extension boundaries; no control replacement.
+      - Add intent-to-Mission sidecar linkage after normal ZCode task creation succeeds.
+      - Build route candidate evaluation from W1-B capability instance outputs.
+      - Add the smallest supported contextual extension; retain standard New Task path.
+      - On parser/mission error, fall back to ordinary ZCode task with no behavioral regression.
+    deliverables:
+      - mission_and_route_source
+      - additive_ui_contribution
+      - preservation_tests
+      - browser_or_desktop_journey_evidence
+    acceptance:
+      - Original New Task controls and task path are unchanged.
+      - Existing session remains conversation authority.
+      - Mission association is optional, tenant-scoped and durable.
+      - Routes disclose missing prerequisites and unknowns.
+      - Existing task path works without connector or MOS state.
+  - id: TL-COMPOSE
+    name: Contract integration and end-to-end verification
+    owner: TL
+    paths:
+      - packages/zcode-mos-adapters/**
+      - packages/**/composition/**
+      - spec/architecture/module-registry-v3.0.yaml
+      - spec/backlog/**
+      - docs/handoff/IMPLEMENTATION-STATE.md
+    tasks:
+      - Align W1-B and W1-C on approved contract only; no local contract forks.
+      - Compose adapters through existing ZCode host boundaries.
+      - Build end-to-end mission -> capability instance -> route -> ZCode tool execution -> evidence.
+      - Run and compare preservation baseline and all regression evidence.
+      - Verify no dead UI controls and inspect actual provider request and output.
+    acceptance:
+      - Every dependency direction follows module registry.
+      - One reproducible real provider read and source-linked runtime evidence.
+      - Existing ZCode tool permission boundary remains authoritative.
+      - All Week 1 exit criteria are satisfied or explicitly blocked/deferred.
