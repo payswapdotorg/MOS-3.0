@@ -1,6 +1,6 @@
 # MOS 3.0 implementation state
 
-**Last verified:** 2026-11-12 Stage 0 source takeover (branch `bootstrap/import-zcode-v3.18.0`)
+**Last verified:** 2026-11-12 Week 1 publication (branch `w1/integration-foundation`, PR #2; prior: Stage 0 source takeover on `bootstrap/import-zcode-v3.18.0`)
 **Repository:** payswapdotorg/MOS-3.0
 **Main bootstrap commit:** e3c0fa0e2f477988441d283428b259c6409180f6
 **ZCode v3.18.0 import merge commit:** 545910f3ecf4ebc149c690c3bb7b77124e1e747e (two-parent merge of MOS main base 3a1f50b + upstream pin b95ebaff)
@@ -82,4 +82,11 @@ and the 8 packages above. `pnpm-lock.yaml` updated for the new workspace package
 - `pnpm docs:stale-phrases:check` + `pnpm db:schema:check`: PASS
 - `pnpm test:engineering`: 1229 passed / 1 failed / 8 skipped (1238 total; 185 files passed). The single failure is the pre-existing environment-sensitive `packages/desktop/test/miseToolchainEnv.test.ts` (sandbox node at /usr/bin), identical to the Stage 0 baseline — not a regression. All 19 newly listed MOS test files passed (211 MOS tests).
 - `pnpm --filter @mos/adapters test` (real-stack integration): 8/8 PASS (requires `pnpm --filter @zcode/adapters... build` first)
-- `git push -u origin w1/integration-foundation`: BLOCKED — no GitHub credentials in this environment (unchanged Stage 0 blocker)
+- `git push -u origin w1/integration-foundation`: DONE — pushed 2026-11-12 22:39 UTC, PR #2 opened; see publication record below
+
+**Publication record (2026-11-12 22:39 UTC):**
+
+- `git push -u origin w1/integration-foundation` succeeded (first push of this branch; GitHub identity `payswapdotorg`, PAT supplied in-environment). Pre-push gate `verify:pre-push` fully green during the push: worktree check, e2e remote targets, lint (0 errors / 538 pre-existing warnings), docs:stale-phrases:check, db:schema:check, test:architecture (61/61), architecture:check --changed (violations 0 / baseline 0 / new 0).
+- `test:engineering:affected --scope push` environment note: the script's default first-push baseline `origin/staging` does not exist on this fork's remote (remote has only `main` and `bootstrap/import-zcode-v3.18.0`); the caller-specified baseline `ZCODE_PRE_PUSH_BASE=origin/main` (the actual merge-base e7099a74 of this branch) was used, per the script's supported override (`scripts/engineering-tests/scope.mjs`, explicit-base precedence). Vitest official selection chose the entire 188-spec engineering suite, and per the script's full-selection rule the run was skipped without blocking the push; the full-suite result is recorded above (1229 passed / 1 pre-existing environment failure / 8 skipped). No repository file was modified for this override.
+- PR #2 opened: https://github.com/payswapdotorg/MOS-3.0/pull/2 (head `w1/integration-foundation` → base `main`; 5 commits, 138 changed files; body from `docs/handoff/w1-pr-body.md`). No CI workflows exist in this repository, so the pre-push gate evidence above and in the PR body is the verification record.
+- Credentials handling: all supplied secrets are stored only outside the repository (`~/.git-credentials`, `~/.mos-secrets.env`, mode 0600, sourced from `~/.bashrc`); no secret is present in any commit of this branch.
