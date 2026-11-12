@@ -7,7 +7,7 @@ Import the complete ZCode v3.18.0 source tree into MOS-3.0 while preserving the 
 ## Required lineage
 
 - MOS base: e3c0fa0e2f477988441d283428b259c6409180f6
-- MOS docs head before import: 3c4b589d817f7a91e8d09915d82dce51786542a1
+- MOS current main SHA at import time: record the exact live HEAD here before opening the PR.
 - ZCode pin: b95ebaffeab641907b38652f45c1502bd762972d
 - ZCode Source-Commit: cc1f87e46ee496845be243b475bb116c35d952f6
 

@@ -12,7 +12,7 @@ This preserves the architecture documents and the real upstream code/history. A 
 
 ## Preconditions
 
-- Confirm current MOS-3.0 main contains bootstrap commit e3c0fa0e2f477988441d283428b259c6409180f6 and current documentation commit 3e892ea05adc079461ff5609ad1b041dc4923180.
+- Confirm the actual current MOS-3.0 main HEAD contains bootstrap commit e3c0fa0e2f477988441d283428b259c6409180f6 and all latest canonical documentation. Record the observed main SHA in the import PR; do not rely on an old SHA copied from this template.
 - Confirm worktree is clean.
 - Re-fetch ZCode upstream and verify commit b95ebaffeab641907b38652f45c1502bd762972d exists and its source version/metadata match the pinned record.
 - Reconfirm whether upstream main has advanced. Do not silently import the newer head instead of the pin.
