@@ -56,16 +56,17 @@ This repository is the only implementation and architecture authority for MOS 3.
 4. `spec/architecture/preservation-contract.md`
 5. `docs/handoff/UPSTREAM-IMPORT-PLAYBOOK.md`
 6. `spec/decisions/ACR-TEMPLATE.md`
-5. `spec/architecture/source-baselines.yaml`
-6. `spec/architecture/module-registry-v3.0.yaml`
-7. `spec/architecture/architecture-policy-v3.0.yaml`
-8. `spec/contracts/core-contracts-v3.0.yaml`
-9. `spec/integrations/provider-integration-strategy-v3.0.md`
-10. `spec/backlog/week-1-integration.md`
-11. `spec/backlog/week-1-work-packages.yaml`
-12. `docs/handoff/FINAL-TL-HANDOFF-WEEK-1.md`
-13. `docs/handoff/WORKER-CONTRACT.md`
-14. The exact assigned work package and current implementation-state record.
+7. `spec/architecture/source-baselines.yaml`
+8. `spec/architecture/module-registry-v3.0.yaml`
+9. `spec/architecture/architecture-policy-v3.0.yaml`
+10. `spec/contracts/core-contracts-v3.0.yaml`
+11. `spec/integrations/provider-integration-strategy-v3.0.md`
+12. `spec/backlog/week-1-integration.md`
+13. `spec/backlog/week-1-work-packages.yaml`
+14. `docs/handoff/FINAL-TL-HANDOFF-WEEK-1.md`
+15. `docs/handoff/WORKER-CONTRACT.md`
+16. `docs/handoff/IMPLEMENTATION-STATE.md`
+17. The exact assigned work package.
 
 Architecture changes require a repository Architecture Change Record. Chat, memory, issue descriptions, PR text, worker reports and screenshots are not architecture authority.
 
