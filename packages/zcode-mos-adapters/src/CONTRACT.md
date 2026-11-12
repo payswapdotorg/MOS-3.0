@@ -33,6 +33,13 @@
 - `missingScopes` 精确集合差，无通配符、无前缀推断。
 - `requires: [zcode-cli]` 只由集成测试贡献（真实 MCP 客户端栈 + 真实凭据存储）；
   生产源码不 import `apps/zcode-cli/**`。
+- typecheck 拆分（与集成测试运行同一前置条件，沿仓库"dist 依赖留在包本地"先例）：
+  - `typecheck`（`tsconfig.json`，根 `pnpm typecheck` 链使用）不包含 `test/integration/**`，
+    因为其 import `@zcode/adapters`/`@zcode/contracts`（types 解析到 `apps/zcode-cli/packages/*` 的
+    `dist/*.d.ts` 构建产物）——全新克隆在 `tsc -b` 产物生成前必须可独立通过。
+  - `typecheck:integration`（`tsconfig.integration.json`，包本地）覆盖含集成测试的完整检查，
+    需先运行 `pnpm --filter @zcode/adapters... build`（与 `pnpm --filter @mos/adapters test`
+    中真实栈集成用例的前置条件一致）。
 
 ## 消费方
 

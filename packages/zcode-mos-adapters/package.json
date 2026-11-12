@@ -9,6 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck:integration": "tsc --noEmit -p tsconfig.integration.json",
     "test": "vitest run --config vitest.config.ts"
   },
   "devDependencies": {
