@@ -1,0 +1,14 @@
+{
+  "name": "mos-hubspot-connector",
+  "version": "0.1.0",
+  "description": "MOS HubSpot connector template: declares the official HubSpot remote MCP server (HTTP) with OAuth authorization-code flow. MOS capability metadata lives in the adjacent MOS provider/capability descriptors, never in this manifest. Installing this template is not authorization for any external action.",
+  "mcpServers": {
+    "hubspot": {
+      "type": "http",
+      "url": "https://mcp.hubspot.com/",
+      "oauth": {
+        "type": "authorization_code"
+      }
+    }
+  }
+}
