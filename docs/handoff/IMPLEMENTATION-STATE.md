@@ -1,6 +1,6 @@
 # MOS 3.0 implementation state
 
-**Last verified:** 2026-11-12 Week 1 publication (branch `w1/integration-foundation`, PR #2; prior: Stage 0 source takeover on `bootstrap/import-zcode-v3.18.0`)
+**Last verified:** 2026-11-12 Week 1 merge to main (PR #2, merge commit 0601ef00; prior: Week 1 publication on branch `w1/integration-foundation`)
 **Repository:** payswapdotorg/MOS-3.0
 **Main bootstrap commit:** e3c0fa0e2f477988441d283428b259c6409180f6
 **ZCode v3.18.0 import merge commit:** 545910f3ecf4ebc149c690c3bb7b77124e1e747e (two-parent merge of MOS main base 3a1f50b + upstream pin b95ebaff)
@@ -90,3 +90,5 @@ and the 8 packages above. `pnpm-lock.yaml` updated for the new workspace package
 - `test:engineering:affected --scope push` environment note: the script's default first-push baseline `origin/staging` does not exist on this fork's remote (remote has only `main` and `bootstrap/import-zcode-v3.18.0`); the caller-specified baseline `ZCODE_PRE_PUSH_BASE=origin/main` (the actual merge-base e7099a74 of this branch) was used, per the script's supported override (`scripts/engineering-tests/scope.mjs`, explicit-base precedence). Vitest official selection chose the entire 188-spec engineering suite, and per the script's full-selection rule the run was skipped without blocking the push; the full-suite result is recorded above (1229 passed / 1 pre-existing environment failure / 8 skipped). No repository file was modified for this override.
 - PR #2 opened: https://github.com/payswapdotorg/MOS-3.0/pull/2 (head `w1/integration-foundation` → base `main`; 5 commits, 138 changed files; body from `docs/handoff/w1-pr-body.md`). No CI workflows exist in this repository, so the pre-push gate evidence above and in the PR body is the verification record.
 - Credentials handling: all supplied secrets are stored only outside the repository (`~/.git-credentials`, `~/.mos-secrets.env`, mode 0600, sourced from `~/.bashrc`); no secret is present in any commit of this branch.
+- **PR #2 MERGED to main**: merge commit `0601ef0043b0aaa1ce9cf48c285c4b1920009338` (parents `e7099a74` main + `0d7ecf4e` branch head), merged via GitHub API (merge method: merge commit, consistent with PR #1) at 2026-11-12 22:48:57 UTC. Local main synced to `0601ef00`, worktree clean. Week 1 code is now the canonical main.
+- Remaining open Week 1 items (unchanged blockers, tracked below): real provider read (no provider account/OAuth client yet) and renderer-scale build / desktop E2E re-confirmation (local sandbox OOMs at 4.1 GiB). Cloud compute credentials (E2B/Daytona/Modal) were supplied in-environment on 2026-11-12 and will be used to re-run the OOM-blocked builds on adequate hardware; evidence will be appended when observed.
