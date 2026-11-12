@@ -54,6 +54,8 @@ This repository is the only implementation and architecture authority for MOS 3.
 2. `spec/architecture/architecture-v3.0.md`
 3. `spec/architecture/decision-lock-v3.0.md`
 4. `spec/architecture/preservation-contract.md`
+5. `docs/handoff/UPSTREAM-IMPORT-PLAYBOOK.md`
+6. `spec/decisions/ACR-TEMPLATE.md`
 5. `spec/architecture/source-baselines.yaml`
 6. `spec/architecture/module-registry-v3.0.yaml`
 7. `spec/architecture/architecture-policy-v3.0.yaml`
