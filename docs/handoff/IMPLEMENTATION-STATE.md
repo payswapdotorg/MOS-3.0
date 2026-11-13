@@ -222,3 +222,7 @@ contract-tested + notes).
 - Remaining open items after Week 2: HubSpot live read (no HubSpot account/OAuth client),
   in-app UI composition/mounting (composition-root ownership), New Task journey + cross-client
   regression, desktop E2E (needs display/docker).
+- **PR #4 MERGED to main**: merge commit `79437ab22d1ac07dd07573e91575bcb2fe7aacb3`
+  (parents `bfec2aab` main + `b36f794e` branch head), merged via GitHub API (merge method:
+  merge commit, consistent with PRs #1-#3) at 2026-11-13 ~01:15 UTC. Local main synced to
+  `79437ab2`, worktree clean. Week 2 code is now the canonical main.
