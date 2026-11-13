@@ -44,6 +44,30 @@ import {
 } from "./lib/platforms.mjs";
 import { sha256File, sha256SumLine } from "./lib/artifact-facts.mjs";
 import { createEvidenceRecorder } from "./lib/evidence.mjs";
+import { parseDpkgInfo } from "./inspect-package.mjs";
+
+test("parseDpkgInfo：真实 dpkg-deb -I 输出形态（控制字段带一个前导空格）", () => {
+  // 实测样本（dpkg 1.22，构建机/runner 家族）：首部摘要行不带 Key: 形态，必须被忽略。
+  const sample = [
+    " new Debian package, version 2.0.",
+    " size 660 bytes: control archive=284 bytes.",
+    "      91 bytes,     4 lines      control",
+    " Package: mos",
+    " Version: 3.0.0-rc.1",
+    " Maintainer: PaySwap <mos@payswap.org>",
+    " Architecture: amd64",
+  ].join("\n");
+  const info = parseDpkgInfo(sample);
+  assert.equal(info.Package, "mos");
+  assert.equal(info.Version, "3.0.0-rc.1");
+  assert.equal(info.Maintainer, "PaySwap <mos@payswap.org>");
+  assert.equal(info.Architecture, "amd64");
+  // 非字段行（无 Key: 形态/含逗号）不产生键。
+  assert.equal(info.size, undefined);
+  assert.equal(Object.keys(info).length, 4);
+  // 历史回归：早期正则只匹配 0/2 个前导空格，1 空格形态全字段丢失（CI run 3 实测捕获）。
+  assert.notEqual(parseDpkgInfo(" Package: mos").Package, undefined);
+});
 
 test("MCP 握手帧：initialize → initialized → tools/list → tools/call 与协议版本支持集", () => {
   const init = buildInitializeRequest(1);

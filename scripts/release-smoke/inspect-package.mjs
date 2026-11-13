@@ -82,7 +82,9 @@ export function parseArgs(argv = process.argv.slice(2)) {
 export function parseDpkgInfo(text) {
   const info = {};
   for (const line of String(text).split(/\r?\n/)) {
-    const match = /^ {2}([A-Za-z][A-Za-z0-9-]*): ?(.*)$/.exec(line) || /^([A-Za-z][A-Za-z0-9-]*): ?(.*)$/.exec(line);
+    // dpkg-deb -I 的控制字段带一个前导空格（实测 dpkg 1.22：“ Package: mos”）；
+    // 容忍任意缩进而不是精确计数空格——首部摘要行（“ new Debian package...”）不含冒号键形态。
+    const match = /^[ \t]*([A-Za-z][A-Za-z0-9-]*):[ \t]?(.*)$/.exec(line);
     if (match && info[match[1]] === undefined) {
       info[match[1]] = match[2].trim();
     }
@@ -416,8 +418,13 @@ async function inspectWindowsExeArtifact({ filePath, extractDir, platformKey }) 
   const failures = [];
   const fileName = basename(filePath);
 
-  // NSIS 安装包由 7z 列表/定向解出（GH runner 预装 7z；本地可能叫 7zz）。
-  const sevenZip = await firstExistingBinary(["7z", "7zz"]);
+  // NSIS 安装包由 7z 列表/定向解出。GH Windows runner 预装 7-Zip 但不在 PATH：
+  // 除 PATH 候选外显式探测标准安装位置（实测 windows-2022：C:\Program Files\7-Zip\7z.exe）。
+  const sevenZip = (await firstExistingBinary(["7z", "7zz"])) ??
+    (await firstExistingBinary([
+      "C:\\Program Files\\7-Zip\\7z.exe",
+      "C:\\Program Files (x86)\\7-Zip\\7z.exe",
+    ]));
   checks.sevenZip = { tool: sevenZip, available: Boolean(sevenZip) };
   if (!sevenZip) {
     artifactFailure(failures, fileName, "sevenZip.available", "构建机缺少 7z/7zz（NSIS 内容断言必需）");
