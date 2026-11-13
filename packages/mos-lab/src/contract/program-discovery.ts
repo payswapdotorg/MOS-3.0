@@ -1,11 +1,10 @@
 import { z } from "zod";
 import {
-  nodeOfferSchema,
   opaqueIdSchema,
   rfc3339TimestampSchema,
   routeSchema,
 } from "@mos/contracts";
-import type { Hypothesis, Mission, NodeOffer, Route } from "@mos/contracts";
+import type { Hypothesis, Mission, NodeOffer } from "@mos/contracts";
 
 /**
  * Program discovery（程序发现）契约：从既有记录（mission + hypotheses + 路由候选 + offers）

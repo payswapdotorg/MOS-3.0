@@ -10,7 +10,6 @@ import type {
   Route,
 } from "@mos/contracts";
 import { researchNoteFromIntake } from "./domain/research-note.js";
-import { hypothesisFromProposal } from "./domain/hypothesis.js";
 import { ResearchNoteStore } from "./application/research-note-store.js";
 import { HypothesisStore } from "./application/hypothesis-store.js";
 import { ProgramDiscoveryService } from "./application/program-discovery-service.js";

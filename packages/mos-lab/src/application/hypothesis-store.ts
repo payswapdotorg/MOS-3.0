@@ -81,7 +81,8 @@ export class HypothesisStore {
       proposal,
     ) as HypothesisProposal;
 
-    const mission = this.lookupMission(tenantId, normalized.mission_id);
+    // mission 必须存在且属同一租户（未命中/跨租户 → MissionNotFoundError/InvariantViolation）。
+    this.lookupMission(tenantId, normalized.mission_id);
 
     const record = hypothesisFromProposal(normalized, { id: deps.id, now: deps.now });
     assertTenantScope(record, { tenant_id: tenantId }, "hypothesis");

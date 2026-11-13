@@ -1,8 +1,5 @@
 import { z } from "zod";
-import {
-  providerDescriptorSchema,
-  type ProviderDescriptor,
-} from "./hubspot-descriptor.js";
+import type { ProviderDescriptor } from "./hubspot-descriptor.js";
 
 /**
  * Composio provider 描述符 —— 与 hubspot-descriptor 同一 schema（providerDescriptorSchema），

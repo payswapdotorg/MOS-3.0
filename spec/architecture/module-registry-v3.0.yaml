@@ -59,13 +59,15 @@ modules:
     authority: agent-organizations
     depends_on: [mos-contracts, mos-capabilities]
     stage: week-2
-    status: planned
+    status: contract-tested  # W2 2026-11-13：实现+契约测试全绿；capability 引用经不透明 id 字符串满足
+    note: governance 层 requires=[mos-contracts]；registry 的 mos-capabilities 依赖以 capability-id 字符串表达（module.ts 记录映射）。
   - id: mos-lab
     responsibility: Marketing research, evidence, ideas, strategy and production program discovery
     authority: lab
     depends_on: [mos-contracts, mos-missions, mos-capabilities, mos-routes]
     stage: week-2
-    status: planned
+    status: contract-tested  # W2 2026-11-13：实现+契约测试全绿；决策锁 #18 边界由写路径守卫强制
+    note: mission/route/offer 依赖经结构化 lookup 端口注入（module.ts 记录映射；与 mos-routes 的 seam 方式一致）。
   - id: mos-engines
     responsibility: Engine catalog, adapters, benchmark/license policy and sandbox invocation
     authority: engines

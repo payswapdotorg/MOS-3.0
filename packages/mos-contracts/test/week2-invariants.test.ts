@@ -5,7 +5,6 @@ import {
   assertResearchFindingEvidence,
   assertTenantScope,
   InvariantViolation,
-  parseOrFail,
   nodeOfferSchema,
   hypothesisSchema,
 } from "../src/index.js";
