@@ -120,10 +120,10 @@ jobs:
         run: pnpm --filter @zcode/adapters... build
       - name: MOS Studio 类型检查
         run: pnpm --filter @mos/studio typecheck
+      - name: 构建 MOS Studio（单测断言 dist 产物；integration typecheck 同样需要）
+        run: pnpm --filter @mos/studio build
       - name: MOS Studio 单元测试
         run: pnpm --filter @mos/studio test
-      - name: 构建 MOS Studio（产物供 integration typecheck 使用）
-        run: pnpm --filter @mos/studio build
       - name: MOS Studio 集成类型检查
         run: pnpm --filter @mos/studio typecheck:integration
 
