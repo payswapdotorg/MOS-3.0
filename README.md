@@ -1,6 +1,6 @@
 # MOS 3.0 — Marketing Operating Harness
 
-**Status:** Architecture bootstrap  
+**Status:** Week 1–4 domain foundations and composition-root merged; distributable desktop release is the next delivery milestone  
 **Repository:** `payswapdotorg/MOS-3.0`  
 **Application substrate:** `zai-org/ZCode`  
 **Canonical upstream baseline at bootstrap:** `b95ebaffeab641907b38652f45c1502bd762972d` (ZCode v3.18.0, 2026-11-11)
@@ -12,6 +12,8 @@ MOS 3.0 is a marketing operating harness built by extending ZCode itself. It is 
 Preserve ZCode as the recognizable, fully functional general-purpose application and execution substrate. Add MOS domain intelligence and operating capabilities so users can connect professional platforms once, express objectives through the existing ZCode New Task experience, discover available and conditional routes, orchestrate tools/engines/agents/people, execute with approval, and learn from real outcomes.
 
 **ZCode stays the application and generic execution substrate. MOS adds the marketing operating system.**
+
+MOS is distributed as its own desktop product built from this repository. The Tech Lead and repository CI build and publish platform-specific installers. A user's local AI agent only downloads a published installer, verifies its checksum, and invokes the normal OS installer; it must never need to build MOS from source.
 
 ## Non-negotiable preservation contract
 
@@ -66,7 +68,9 @@ This repository is the only implementation and architecture authority for MOS 3.
 14. `docs/handoff/FINAL-TL-HANDOFF-WEEK-1.md`
 15. `docs/handoff/WORKER-CONTRACT.md`
 16. `docs/handoff/IMPLEMENTATION-STATE.md`
-17. The exact assigned work package.
+17. `spec/backlog/release-engineering.md`
+18. `docs/handoff/FINAL-TL-HANDOFF-DISTRIBUTABLE-RELEASE.md`
+19. The exact assigned work package.
 
 Architecture changes require a repository Architecture Change Record. Chat, memory, issue descriptions, PR text, worker reports and screenshots are not architecture authority.
 
@@ -79,9 +83,13 @@ Architecture changes require a repository Architecture Change Record. Chat, memo
 
 The weeks are delivery targets, not assumptions about third-party app-review timelines or API availability.
 
-## First implementation stage
+## Current delivery stage
 
-The Tech Lead must begin with Week 1 as specified in `docs/handoff/FINAL-TL-HANDOFF-WEEK-1.md`. Do not begin by redesigning the UI or mass-producing plugins. First verify the current upstream/fork baseline, preserve the ZCode application, freeze the provider/capability boundaries, then ship one end-to-end real connector journey through the existing New Task experience.
+The Week 1–4 domain foundations and the `mos-studio` composition-root milestone have been merged. Their implementation status and known limitations are recorded in `docs/handoff/IMPLEMENTATION-STATE.md`; the project is not yet a published desktop release.
+
+The next delivery milestone is to build and publish the modified ZCode application as downloadable MOS installers. The Tech Lead owns product identity, packaged MOS Studio, reproducible CI builds, checksums, platform smoke tests and the GitHub Release. Follow `spec/backlog/release-engineering.md` and `docs/handoff/FINAL-TL-HANDOFF-DISTRIBUTABLE-RELEASE.md`. Do not ask the local AI agent to build from source: it is only the later download, verify and install consumer.
+
+Do not begin by redesigning the UI or mass-producing plugins. Preserve the existing ZCode application and complete the release gates against the actual installed product.
 
 ## Completion standard
 
