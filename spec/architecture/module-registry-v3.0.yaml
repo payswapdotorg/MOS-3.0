@@ -73,28 +73,32 @@ modules:
     authority: engines
     depends_on: [mos-contracts, mos-capabilities, zcode-substrate-adapters]
     stage: week-3
-    status: planned
+    status: contract-tested  # W3 2026-11-13：实现+契约测试全绿；状态词汇见 AGENTS.md §7
+    note: registry 级 catalog + 匹配 + 沙箱策略描述符；实际调用适配器归组合根（零 engine 导入，决策锁 #9）。
   - id: mos-content-artifacts
     responsibility: Content assets, immutable versions, provenance and artifact lineage
     authority: artifacts
     depends_on: [mos-contracts, mos-identity-bridge]
     stage: week-3
-    status: planned
+    status: contract-tested  # W3 2026-11-13：实现+契约测试全绿；状态词汇见 AGENTS.md §7
   - id: mos-rights-policy
     responsibility: Rights, consent, source licensing, platform policy and review decisions
     authority: rights-policy
     depends_on: [mos-contracts, mos-content-artifacts, mos-identity-bridge]
     stage: week-3
-    status: planned
+    status: contract-tested  # W3 2026-11-13：实现+契约测试全绿；状态词汇见 AGENTS.md §7
   - id: mos-production
     responsibility: Transform definitions, production graphs and durable production business state
     authority: production
     depends_on: [mos-contracts, mos-engines, mos-content-artifacts, mos-rights-policy, mos-capabilities]
     stage: week-3
-    status: planned
+    status: contract-tested  # W3 2026-11-13：实现+契约测试全绿；状态词汇见 AGENTS.md §7
+    note: 零执行器（决策锁 #5）：job 只记录业务状态 + 外部 zcode_execution_ref。
   - id: mos-studio
     responsibility: Human-facing production coordination and source-to-output creative workflow
     authority: studio
+    # W3 2026-11-13：deferred——人面表面依赖组合根所有权决策（W1 起 UI 挂载 blocker 未决）；
+    # 其域缝（production graph + artifact + rights 读取）已由 W3 各模块交付。
     depends_on: [mos-contracts, mos-production, mos-content-artifacts, mos-rights-policy]
     stage: week-3
     status: planned
@@ -103,19 +107,22 @@ modules:
     authority: distribution
     depends_on: [mos-contracts, mos-integrations, mos-capabilities, mos-content-artifacts, mos-rights-policy]
     stage: week-3
-    status: planned
+    status: contract-tested  # W3 2026-11-13：实现+契约测试全绿；状态词汇见 AGENTS.md §7
+    note: execution_records 只是证据引用；provider 调用归 Integration adapters（组合根接线）。
   - id: mos-experiments
     responsibility: Actual-world experiment design, assignment, measurement evidence and outcome
     authority: experiments
     depends_on: [mos-contracts, mos-missions, mos-distribution]
     stage: week-3
-    status: planned
+    status: contract-tested  # W3 2026-11-13：实现+契约测试全绿；状态词汇见 AGENTS.md §7
+    note: Experiment authority（决策锁 #18）：outcome 唯一写入方；假设采纳经 HypothesisUpdatePort 写回 @mos/lab。
   - id: mos-learning
     responsibility: Calibration and recommendations from verified evidence, with delayed-mode safeguards
     authority: learning
     depends_on: [mos-contracts, mos-experiments, mos-lab]
     stage: week-3
-    status: planned
+    status: contract-tested  # W3 2026-11-13：实现+契约测试全绿；状态词汇见 AGENTS.md §7
+    note: delayed_mode 锁死 true；建议记录 only，零修改 API；实验经结构化端口消费。
   - id: mos-commerce
     responsibility: Offer, product, pricing and customer/market intelligence as later domain capabilities
     authority: commerce

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { opaqueIdSchema, rfc3339TimestampSchema } from "@mos/contracts";
+import { opaqueIdSchema } from "@mos/contracts";
 
 /**
  * mos-learning 契约 —— 校准记录（CalibrationRecord）的写入口与类型化错误。

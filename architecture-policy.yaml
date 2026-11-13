@@ -1928,6 +1928,94 @@ modules:
       - packages/mos-lab/src/contract.ts
     layers: {contract: contract, domain: domain, app: application}
     owner: tl
+  # ===== MOS Week 3（纯增量扩展；spec/backlog/week-3-work-packages.yaml）=====
+  # 内容资产层：不可变版本 + 血缘（assertArtifactVersionLineage）；content_ref 只存不透明引用。
+  - id: mos-content-artifacts
+    roots:
+      - packages/mos-content-artifacts/src
+      - packages/mos-content-artifacts/vitest.config.ts
+    managed: true
+    requires: [mos-contracts]
+    publicEntrypoints:
+      - packages/mos-content-artifacts/src/index.ts
+      - packages/mos-content-artifacts/src/contract.ts
+    layers: {contract: contract, domain: domain, app: application}
+    owner: tl
+  # 权利政策层：fail-closed 权利门禁（缺记录/待决/过期/拒绝 = 拒绝，具名原因）；review_decision 只追加。
+  - id: mos-rights-policy
+    roots:
+      - packages/mos-rights-policy/src
+      - packages/mos-rights-policy/vitest.config.ts
+    managed: true
+    requires: [mos-contracts]
+    publicEntrypoints:
+      - packages/mos-rights-policy/src/index.ts
+      - packages/mos-rights-policy/src/contract.ts
+    layers: {contract: contract, domain: domain, app: application}
+    owner: tl
+  # 引擎注册表层：catalog + 匹配 + 沙箱策略描述符；零 engine 导入、零调用（决策锁 #9）。
+  - id: mos-engines
+    roots:
+      - packages/mos-engines/src
+      - packages/mos-engines/vitest.config.ts
+    managed: true
+    requires: [mos-contracts]
+    publicEntrypoints:
+      - packages/mos-engines/src/index.ts
+      - packages/mos-engines/src/contract.ts
+    layers: {contract: contract, domain: domain, app: application}
+    owner: tl
+  # 生产层：transform 注册表 + 图校验（DAG/孤儿/未解析引用具名错误）+ 持久业务状态；
+  # 零执行器（决策锁 #5：zcode_execution_ref 只作外部引用）。
+  - id: mos-production
+    roots:
+      - packages/mos-production/src
+      - packages/mos-production/vitest.config.ts
+    managed: true
+    requires: [mos-contracts]
+    publicEntrypoints:
+      - packages/mos-production/src/index.ts
+      - packages/mos-production/src/contract.ts
+    layers: {contract: contract, domain: domain, app: application}
+    owner: tl
+  # 分发层：意图状态机（执行前必须 approved preview 绑定）；execution_records 只是证据引用，零 provider I/O。
+  - id: mos-distribution
+    roots:
+      - packages/mos-distribution/src
+      - packages/mos-distribution/vitest.config.ts
+    managed: true
+    requires: [mos-contracts]
+    publicEntrypoints:
+      - packages/mos-distribution/src/index.ts
+      - packages/mos-distribution/src/contract.ts
+    layers: {contract: contract, domain: domain, app: application}
+    owner: tl
+  # 实验层：决策锁 #18 的 Experiment authority（outcome 唯一写入方，须证据支撑）；
+  # 假设采纳经结构化 HypothesisUpdatePort 写回 @mos/lab（组合根接线）。
+  - id: mos-experiments
+    roots:
+      - packages/mos-experiments/src
+      - packages/mos-experiments/vitest.config.ts
+    managed: true
+    requires: [mos-contracts]
+    publicEntrypoints:
+      - packages/mos-experiments/src/index.ts
+      - packages/mos-experiments/src/contract.ts
+    layers: {contract: contract, domain: domain, app: application}
+    owner: tl
+  # 学习层：校准只源自带证据的收尾实验（结构化端口）；delayed_mode schema 锁死 true，
+  # 零修改 API（建议记录 only）。
+  - id: mos-learning
+    roots:
+      - packages/mos-learning/src
+      - packages/mos-learning/vitest.config.ts
+    managed: true
+    requires: [mos-contracts]
+    publicEntrypoints:
+      - packages/mos-learning/src/index.ts
+      - packages/mos-learning/src/contract.ts
+    layers: {contract: contract, domain: domain, app: application}
+    owner: tl
   # UI 扩展片段（未挂载；组合接线 deferred）：fail-closed 可用性 + sidecar store + 状态 chip + 注册缝。
   - id: mos-extension
     roots:

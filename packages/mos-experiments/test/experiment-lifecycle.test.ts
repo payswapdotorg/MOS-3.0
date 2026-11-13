@@ -14,7 +14,6 @@ import {
 import type { Experiment } from "@mos/contracts";
 import {
   ASSIGNMENT_RECORD,
-  baseExperiment,
   baseInput,
   CONCLUDED_AT,
   EVIDENCE_REF,

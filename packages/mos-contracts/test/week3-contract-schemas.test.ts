@@ -101,7 +101,7 @@ function jobInput(overrides: Record<string, unknown> = {}) {
 }
 
 function rightsInput(overrides: Record<string, unknown> = {}) {
-  return {
+  return rightsRecordSchema.parse({
     id: "rights-1",
     tenant_id: "tenant-1",
     kind: "source_license",
@@ -115,7 +115,7 @@ function rightsInput(overrides: Record<string, unknown> = {}) {
     created_at: NOW,
     updated_at: NOW,
     ...overrides,
-  };
+  });
 }
 
 function intentInput(overrides: Record<string, unknown> = {}) {

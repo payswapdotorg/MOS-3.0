@@ -160,7 +160,8 @@ describe("DistributionIntentStore lifecycle (write boundary)", () => {
     });
     expect(withEvidence.execution_records).toEqual([EVIDENCE_REF]);
 
-    const succeeded = store.applyTransition(TENANT, "intent-1", "succeeded", {
+    // 状态推进到 succeeded（结果本身在上一断言覆盖 execution_records；此处仅推进）。
+    store.applyTransition(TENANT, "intent-1", "succeeded", {
       now: T3,
     });
     const more = store.recordExecution(TENANT, "intent-1", EVIDENCE_REF_2, { now: T3 });

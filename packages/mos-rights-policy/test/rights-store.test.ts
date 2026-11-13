@@ -14,7 +14,6 @@ import {
   InvariantViolation,
   rightsRecordSchema,
 } from "@mos/contracts";
-import type { RightsRecord } from "@mos/contracts";
 import {
   RightsGateService,
   RightsRecordNotFoundError,
