@@ -11,6 +11,11 @@ import {
   resolveCapabilityInstance,
 } from "../src/index.js";
 import {
+  exampleComposioConnection,
+  exampleComposioDiscussionSearchDescriptor,
+  exampleResolveComposioDiscussionSearch,
+} from "../src/contract.example.js";
+import {
   baseConnection,
   baseDescriptor,
   baseImplementation,
@@ -393,5 +398,57 @@ describe("CapabilityInstanceResolverService (catalog + TimePort wiring)", () => 
         now: NOW,
       }),
     ).toThrow(InvariantViolation);
+  });
+});
+
+/**
+ * Composio 样例（W2，contract.example.ts）：第一条 toolMappingVerified=true 的能力。
+ * 与真实 Composio 账号（auth_method=api_key，无 scope 要求）+ live 证据支撑的实现
+ * 一起解析 → available（与 HubSpot 样例的 unknown/unavailable 现状相对）。
+ */
+describe("exampleResolveComposioDiscussionSearch (verified mapping + real evidence)", () => {
+  test("resolves available for a connected Composio api-key connection", () => {
+    const instance = exampleResolveComposioDiscussionSearch();
+    expect(instance.status).toBe("available");
+    expect(instance.support_status).toBe("supported");
+    expect(instance.missing_preconditions).toEqual([]);
+    expect(instance.evidence_refs).toEqual([
+      "spec/integrations/provider-evidence/composio-connector-evidence.md",
+    ]);
+    expect(() =>
+      assertCapabilityInstanceAvailability(instance, {
+        liveConnectionChecked: true,
+        requiredScopesCovered: true,
+      }),
+    ).not.toThrow();
+    expect(() => capabilityInstanceSchema.parse(instance)).not.toThrow();
+  });
+
+  test("the same path stays fail-closed without a connected Composio connection", () => {
+    const degraded = resolveCapabilityInstance({
+      tenantId: "tenant-acme",
+      connection: { ...exampleComposioConnection(), status: "error" },
+      capability: new CapabilityCatalog().register(
+        exampleComposioDiscussionSearchDescriptor(),
+      ),
+      implementation: new CapabilityCatalog().registerImplementation({
+        id: "impl-composio-discussion-search",
+        provider_id: "composio",
+        capability_id: "research.discussion.search",
+        version: 1,
+        operation_mapping: [
+          {
+            tool_name: "COMPOSIO_MULTI_EXECUTE_TOOL",
+            arguments: { tools: [{ tool_slug: "HACKERNEWS_SEARCH_POSTS", arguments: {} }] },
+          },
+        ],
+        status: "available",
+        evidence_refs: ["spec/integrations/provider-evidence/composio-connector-evidence.md"],
+      }),
+      toolMappingVerified: true,
+      now: NOW,
+    });
+    expect(degraded.status).toBe("unavailable");
+    expect(degraded.missing_preconditions.join(" ")).toContain("connection:");
   });
 });

@@ -13,6 +13,7 @@ export const mosIntegrationsModule = {
     "mos-provider-descriptors",
     "mos-provider-connections",
     "mos-hubspot-read-adapter",
+    "mos-composio-session-descriptor",
     "mos-connector-templates",
   ],
   publicEntrypoints: ["index.ts", "contract.ts"],

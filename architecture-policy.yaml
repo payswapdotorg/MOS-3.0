@@ -1898,6 +1898,36 @@ modules:
       - packages/mos-routes/src/contract.ts
     layers: {contract: contract, domain: domain, app: application}
     owner: mission
+  # ===== MOS Week 2（纯增量扩展；spec/backlog/week-2-work-packages.yaml）=====
+  # 节点/组织层：AgentBody/Organization/NodeOffer 登记 + §8 服务要约 fail-closed 发布门禁。
+  # requires 只有 mos-contracts：registry 的 mos-capabilities 依赖经不透明 capability-id
+  # 字符串满足（module.ts/CONTRACT.md 记录该映射）。
+  - id: mos-agent-organizations
+    roots:
+      - packages/mos-agent-organizations/src
+      - packages/mos-agent-organizations/vitest.config.ts
+    managed: true
+    requires: [mos-contracts]
+    publicEntrypoints:
+      - packages/mos-agent-organizations/src/index.ts
+      - packages/mos-agent-organizations/src/contract.ts
+    layers: {contract: contract, domain: domain, app: application}
+    owner: tl
+  # Lab 层：ResearchNote（证据门禁 intake）/Hypothesis（决策锁 #18，零结果语义）/
+  # program discovery（只引用既有 route/offer 记录）。
+  # registry 的 mos-missions/mos-capabilities/mos-routes 依赖全部经结构化 lookup 端口
+  # 注入（module.ts/CONTRACT.md 记录该映射；与 mos-routes 消费能力实例的 seam 一致）。
+  - id: mos-lab
+    roots:
+      - packages/mos-lab/src
+      - packages/mos-lab/vitest.config.ts
+    managed: true
+    requires: [mos-contracts]
+    publicEntrypoints:
+      - packages/mos-lab/src/index.ts
+      - packages/mos-lab/src/contract.ts
+    layers: {contract: contract, domain: domain, app: application}
+    owner: tl
   # UI 扩展片段（未挂载；组合接线 deferred）：fail-closed 可用性 + sidecar store + 状态 chip + 注册缝。
   - id: mos-extension
     roots:

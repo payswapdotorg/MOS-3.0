@@ -1,6 +1,6 @@
 # MOS 3.0 implementation state
 
-**Last verified:** 2026-11-12 adequate-hardware build re-verification (cloud fresh clone; PR #2 merged 0601ef00, PR #3 fix merged b0d9ac0e; prior: Week 1 publication on `w1/integration-foundation`)
+**Last verified:** 2026-11-13 Week 2 (branch `w2/discovery-orchestration`; W1 merged to main at b0d9ac0e; Composio live verification closes the two open W1 ledger items — see Week 2 record)
 **Repository:** payswapdotorg/MOS-3.0
 **Main bootstrap commit:** e3c0fa0e2f477988441d283428b259c6409180f6
 **ZCode v3.18.0 import merge commit:** 545910f3ecf4ebc149c690c3bb7b77124e1e747e (two-parent merge of MOS main base 3a1f50b + upstream pin b95ebaff)
@@ -13,11 +13,12 @@
 - [x] Upstream remote, fork point and preservation inventory recorded. (upstream remote + `upstream/main` tracking; tag `mos3-zcode-v3.18.0`; takeover record in `spec/architecture/source-baselines.yaml`; inventory in `docs/handoff/PRESERVATION-INVENTORY-v3.18.0.md`; SHA-256 manifest `docs/upstream/source-inventory-sha256-import-v3.18.0.txt` = `13c2c2a8345cb48defb8e88783d7ae29e164bf3285498788af4c62f6cffa91ac`)
 - [x] Upstream build/test baseline established and recorded. (typecheck, lint, architecture governance, db schema, doc checks and 1018 engineering tests PASS; renderer-scale builds **re-verified on adequate hardware 2026-11-12**, see adequate-hardware record below; desktop E2E still pending — needs a display/docker environment)
 - [x] Week 1 capability/adapter code implemented. (branch w1/integration-foundation; 8 modules registered in architecture-policy.yaml; contract-tested per package suites)
-- [ ] Real provider account connected.
-- [ ] Real provider read operation verified.
+- [x] Real provider account connected. (2026-11-13: provider=composio, project API key + hosted session MCP; see Week 2 record)
+- [x] Real provider read operation verified. (2026-11-13: one real external-data read — HACKERNEWS_SEARCH_POSTS via COMPOSIO_MULTI_EXECUTE_TOOL over the real ZCode MCP client http transport + real encrypted credential store; evidence spec/integrations/provider-evidence/composio-connector-evidence.md)
 - [x] MOS mission sidecar linkage implemented and contract-tested (observeTaskCreated-based, graceful failure). In-app composition/mounting deferred; live New Task journey evidence pending (see blockers).
 - [x] Existing/conditional/blocked/unknown route evaluation implemented and contract-tested (fail-closed; no silent fallback).
 - [ ] New Task preservation and cross-client regression verified.
+- [x] Week 2 discovery/orchestration modules implemented and contract-tested (mos-agent-organizations 56 tests, mos-lab 60 tests; see Week 2 record).
 
 ## Evidence ledger
 
@@ -28,7 +29,8 @@
 | MOS-2.0 domain architecture reference | verified as reference | MOS-2.0 v2.0 architecture; old substrate was ZCode v3.14.3 |
 | ZCode code import | imported (Stage 0) | Merge commit 545910f3ecf4ebc149c690c3bb7b77124e1e747e; parents 3a1f50b (MOS main) + b95ebaff (pin); only conflicts were README.md/AGENTS.md, upstream copies preserved at docs/upstream/; 18,675-file SHA-256 manifest 13c2c2a8345cb48defb8e88783d7ae29e164bf3285498788af4c62f6cffa91ac |
 | Upstream build/test baseline | recorded + renderer builds re-verified | typecheck / lint / test:architecture / db:schema:check / docs:stale-phrases:check / 1018 engineering tests PASS (local 4.1GiB sandbox); renderer-scale `pnpm build:bootstrap` **PASS on a 4 vCPU / 8 GiB cloud fresh clone** (2026-11-12 23:32 UTC, adequate-hardware record below) — the local OOM was environment-only, as suspected; desktop E2E still pending (needs display/docker) |
-| Live provider integration | planned | No provider account or secrets supplied in this bootstrap |
+| Live provider integration | verified (provider=composio) | Composio project API key (in-environment only, never in repo) + hosted session MCP transport; W2 record below. HubSpot remains blocked (no account) |
+| HubSpot live read | blocked | No HubSpot account/OAuth client in this environment; HubSpot descriptor stays toolMappingVerified=false; its live-verification plan is unchanged |
 | Week 1 domain/adapter code | contract-tested | 8 packages on w1/integration-foundation: mos-contracts 21 tests, zcode-mos-adapters 16 unit + 8 real-stack integration, mos-identity-bridge 6, mos-integrations 41, mos-capabilities 41, mos-missions 30, mos-routes 16, ui mos-extension 40; per-package suites green (`pnpm --filter <pkg> test`) |
 | Real-stack MCP/credential integration tests | contract-tested | packages/zcode-mos-adapters/test/integration/mcp-real-stack.test.ts: stand-in stdio MCP server over the REAL ZCode MCP client (createMcpAdapter) + REAL encrypted credential store (createSharedZCodeCredentialStore); requires `pnpm --filter @zcode/adapters... build` first; NOT in engineering list (dist dependency), matches repo precedent for apps/zcode-cli package-local tests |
 | HubSpot provider evidence | recorded + re-verified | spec/integrations/provider-evidence/hubspot-connector-evidence.md; live observations 2026-11-12 UTC: mcp.hubspot.com OAuth protected-resource + authorization-server discovery both HTTP 200; exact tool names/scope bindings UNVERIFIED (no provider account) — capability resolver fail-closed until verified |
@@ -109,3 +111,114 @@ and the 8 packages above. `pnpm-lock.yaml` updated for the new workspace package
   6. `pnpm --filter @mos/adapters test` — **PASS** (real-stack integration suite: stand-in stdio MCP server over the real ZCode MCP client + real encrypted credential store; 8/8, 23.3 s)
 - Local re-verification after the fix (dev tree, dist present): `pnpm --filter @mos/adapters typecheck` PASS, `typecheck:integration` PASS, root `pnpm typecheck` PASS (with `NODE_OPTIONS=--max-old-space-size=3072`, unchanged local constraint); exclusion semantics verified via `tsc --listFiles` (0 integration files in the base config, 1 in the integration config).
 - Resource notes for repeat runs: install+build consumed ~9.5 GB of the 10 GB disk (95%) — use a larger disk; peak memory fit comfortably in 8 GiB with `NODE_OPTIONS=--max-old-space-size=6144`.
+
+## Week 2 record (branch w2/discovery-orchestration, 2026-11-13)
+
+**Stage:** Week 2 discovery and orchestration (architecture §12; backlog
+spec/backlog/week-2-discovery-orchestration.md, work packages spec/backlog/week-2-work-packages.yaml).
+Workstreams: W2-A (worker-a, mos-agent-organizations) + W2-B (worker-b, mos-lab) + TL-W2
+(shared contracts, Composio live verification, gates, publication). Worker record:
+/home/z/agent-ctx/W2-A-worker-a.md (outside the repo).
+
+**Deliverables (all additive; zero core ZCode files touched; `git diff --name-only origin/main`
+confirms changes are limited to the paths listed in the work packages):**
+
+- `packages/mos-contracts` (TL): additive core-contract extension — AgentBody, Organization,
+  NodeOffer (§8 disclosure object), ResearchNote, Hypothesis schemas + enums (offer_status,
+  hypothesis_status, organization_status, agent_body_status, auth_method += api_key) +
+  invariant guards (offer publish gate, hypothesis-no-outcome per decision lock #18,
+  simulation-not-provider-observation, tenant-scope isolation). Spec yaml extended additively
+  (spec/contracts/core-contracts-v3.0.yaml). 46 tests (25 new).
+- `packages/mos-agent-organizations` (W2-A): AgentBody/Organization/NodeOffer tenant-scoped
+  stores (atomic JSON writes), §8 fail-closed offer publish gate (missing disclosures named,
+  OfferPublishBlockedError, final guard assertNodeOfferPublishable), listPublishedByCapability.
+  56 tests. module.ts requires=[mos-contracts]; registry depends_on mos-capabilities satisfied
+  via opaque capability-id strings (deviation recorded in module.ts/CONTRACT.md).
+- `packages/mos-lab` (W2-B): ResearchNote verbatim intake with evidence-lookup port
+  (assertResearchFindingEvidence: missing refs + simulation-as-provider-observation fail
+  closed), HypothesisStore (decision lock #18: creation always proposed/null experiment_ref;
+  outcome vocabulary unwritable from lab), program discovery referencing existing route/offer
+  records only, missing preconditions explicit. Structural lookup ports; zero imports beyond
+  @mos/contracts + zod + node builtins. 60 tests (TL fixed 2 test-fixture mismatches after
+  worker context deadline; re-verified 60/60).
+- `packages/zcode-mos-adapters` (TL): ProviderServerConfig http/sse variants accept injected
+  `headers` (authorization material; runtime-injected only, never in source/logs/persisted
+  config); local stand-in http MCP server tests (header passthrough + 401 negative) in
+  mcp-real-stack.test.ts (10 tests); live suite composio-live-stack.test.ts (env-gated).
+- `packages/mos-integrations` (TL): composio-descriptor (toolMappingVerified=true backed by
+  live observation; auth_method=api_key; session factory request/response schemas) + 7 tests
+  (48 package total).
+- `packages/mos-capabilities` (TL): Composio capability example (verified mapping + real
+  evidence → resolves available; contrast with HubSpot unknown/unavailable) + 2 tests
+  (43 package total).
+- Evidence: spec/integrations/provider-evidence/composio-connector-evidence.md (live
+  observation record, redacted; key material only in env + real encrypted credential store).
+
+**Composio live verification (closes the two open W1 ledger items, 2026-11-13 00:51–00:53 UTC):**
+
+- Live suite 5/5 PASS with COMPOSIO_API_KEY present (`pnpm --filter @zcode/adapters... build`
+  then `COMPOSIO_API_KEY=... pnpm --filter @mos/adapters test`); skips without the key:
+  1. REST session factory (POST /api/v3.1/tool_router/session, mcp:true, toolkits scoped to
+     the no-auth hackernews toolkit) → 201, session_id, hosted mcp.url
+  2. key round-trips the REAL encrypted ZCode credential store (opaque ref) and the loaded
+     value connects the session MCP over the REAL createMcpAdapter http transport with the
+     x-api-key header → connected
+  3. listTools enumerates the real session meta-tools (COMPOSIO_SEARCH_TOOLS,
+     COMPOSIO_GET_TOOL_SCHEMAS, COMPOSIO_MULTI_EXECUTE_TOOL, ...)
+  4. one real external-data read end-to-end: COMPOSIO_MULTI_EXECUTE_TOOL →
+     HACKERNEWS_SEARCH_POSTS → successful:true, non-empty hits (shapes asserted; no payload
+     copying into repo artifacts)
+  5. negative matrix: invalid key → 401 → connect failed, zero tools (fail-closed); live
+     negatives also probed on REST (401) and unknown session id (404)
+- HubSpot remains blocked (no HubSpot account/OAuth client); nothing in the Composio record
+  changes the HubSpot record or claims HubSpot capability.
+- Credential discipline: COMPOSIO_API_KEY exists only in the environment
+  (~/.mos-secrets.env, mode 0600, outside the repo) and transiently in the real encrypted
+  credential store during tests; never in source, tests, logs, evidence, or any commit.
+
+**Gate wiring:** architecture-policy.yaml (+2 module registrations),
+scripts/engineering-test-files.json (+11 files, 199 total), package.json typecheck chain
+(+@mos/agent-organizations, +@mos/lab), module-registry-v3.0.yaml (W2 statuses
+contract-tested + notes).
+
+**Gate evidence (run on this tree, 2026-11-13):**
+
+- `pnpm test:architecture`: PASS (61/61, 0 fail)
+- `pnpm architecture:check -- --changed`: violations 0 / baseline 0 / new 0
+- `pnpm typecheck` (root, full chain incl. both new packages): PASS
+  (NODE_OPTIONS=--max-old-space-size=3072, unchanged local 4.1 GiB constraint)
+- `pnpm lint`: 0 errors / 538 warnings — identical to the Stage 0/W1 baseline (0 new; 6
+  new-code warnings found and fixed before the gate run)
+- `pnpm docs:stale-phrases:check` + `pnpm db:schema:check`: PASS
+- `pnpm test:engineering`: 1379 passed / 1 failed / 8 skipped (199 files) — the single
+  failure is the pre-existing environment-sensitive miseToolchainEnv.test.ts (sandbox node
+  at /usr/bin), identical to Stage 0/W1 baselines — not a regression. All 11 newly listed
+  MOS test files passed (150 new MOS tests since W1: 1229 → 1379)
+- MOS package suites: mos-contracts 46, mos-identity-bridge 6, mos-integrations 48,
+  mos-capabilities 43, mos-missions 30, mos-routes 16, mos-agent-organizations 56,
+  mos-lab 60, ui mos-extension 40 — all green
+- `pnpm --filter @mos/adapters test` (real-stack + live): 29/29 PASS with the key present
+  (8 real-stack stdio + 2 http stand-in + 5 live + 16 unit); live suite skips without it
+
+**Publication record (2026-11-13):** see the publication addendum appended after the push.
+
+**Week 2 publication record (2026-11-13):**
+
+- `git push -u origin w2/discovery-orchestration` succeeded 2026-11-13 ~01:10 UTC (GitHub
+  identity `payswapdotorg`, PAT supplied in-environment; credentials only outside the repo).
+  Pre-push gate `verify:pre-push` fully green during the push: worktree check, e2e remote
+  targets, lint (0 errors / 538 baseline warnings), docs:stale-phrases:check, db:schema:check,
+  test:architecture (61/61), architecture:check --changed (violations 0 / baseline 0 / new 0).
+- `test:engineering:affected --scope push` used the caller-specified baseline
+  `ZCODE_PRE_PUSH_BASE=origin/main` (same supported override as W1; fork remote has no
+  origin/staging); merge-base bfec2aab selected the entire 199-spec engineering suite, and per
+  the script's full-selection rule the run was skipped without blocking the push; the
+  full-suite result is recorded above (1379 passed / 1 pre-existing environment failure /
+  8 skipped). No repository file was modified for this override.
+- **PR #4 opened**: https://github.com/payswapdotorg/MOS-3.0/pull/4 (head
+  `w2/discovery-orchestration` → base `main`; 5 commits, 78 changed files; body from
+  `docs/handoff/w2-pr-body.md`). No CI workflows exist in this repository, so the gate
+  evidence above and in the PR body is the verification record.
+- Remaining open items after Week 2: HubSpot live read (no HubSpot account/OAuth client),
+  in-app UI composition/mounting (composition-root ownership), New Task journey + cross-client
+  regression, desktop E2E (needs display/docker).

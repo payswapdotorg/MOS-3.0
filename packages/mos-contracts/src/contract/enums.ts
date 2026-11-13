@@ -106,6 +106,9 @@ export const authMethodSchema = z.enum([
   "oauth_authorization_code",
   "oauth_client_credentials",
   "zcode_official_mcp",
+  // Week 2 additive：provider 文档化的 API-key header 授权（连接材料仍只存不透明
+  // credential_ref；header 值由组合根在运行时从凭据存储注入，永不落源码/日志）。
+  "api_key",
   "unknown",
 ]);
 export type AuthMethod = z.infer<typeof authMethodSchema>;
@@ -130,6 +133,36 @@ export type ApprovalState = z.infer<typeof approvalStateSchema>;
 
 export const rightsStatusSchema = z.enum(["cleared", "restricted", "unknown"]);
 export type RightsStatus = z.infer<typeof rightsStatusSchema>;
+
+/**
+ * Week 2 additive 状态枚举（core-contracts-v3.0.yaml §enums，additive-only）。
+ * - offer：architecture §8 披露不全的 offer 只能停留在 draft（fail-closed 发布门禁）。
+ * - hypothesis：决策锁 #18——Lab 只提出假设，实验结果归 Experiment authority；
+ *   因此状态词汇里没有任何结果语义（无 validated/succeeded/failed）。
+ */
+export const offerStatusSchema = z.enum([
+  "draft",
+  "published",
+  "withdrawn",
+  "expired",
+  "unknown",
+]);
+export type OfferStatus = z.infer<typeof offerStatusSchema>;
+
+export const hypothesisStatusSchema = z.enum([
+  "proposed",
+  "superseded",
+  "withdrawn",
+  "adopted_by_experiment",
+  "unknown",
+]);
+export type HypothesisStatus = z.infer<typeof hypothesisStatusSchema>;
+
+export const organizationStatusSchema = z.enum(["active", "inactive", "unknown"]);
+export type OrganizationStatus = z.infer<typeof organizationStatusSchema>;
+
+export const agentBodyStatusSchema = z.enum(["active", "inactive", "unknown"]);
+export type AgentBodyStatus = z.infer<typeof agentBodyStatusSchema>;
 
 export const qualityStatusSchema = z.enum(["unreviewed", "approved", "rejected", "unknown"]);
 export type QualityStatus = z.infer<typeof qualityStatusSchema>;

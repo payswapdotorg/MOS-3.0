@@ -7,6 +7,7 @@
  *   pnpm --filter @mos/adapters test
  * 本文件不进入 scripts/engineering-test-files.json（工程套件不依赖 CLI dist 构建）。
  */
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -43,7 +44,11 @@ function providerPortOverMcp(mcp: McpPort): ProviderPort {
         ...(config.env ? { env: { ...config.env } } : {}),
       };
     }
-    return { type: config.kind, url: config.url };
+    return {
+      type: config.kind,
+      url: config.url,
+      ...(config.headers ? { headers: { ...config.headers } } : {}),
+    };
   };
   return {
     async connectServer(name, config) {
@@ -207,5 +212,102 @@ describe("real shared credential store", () => {
     // MOS 只保存 credential_ref 前缀本身；永不读取/记录存储的值。
     expect(await store.load(`${credentialRef}:tokens`)).toBe("opaque");
     await rm(dir, { recursive: true, force: true });
+  });
+});
+
+/**
+ * 本地替身 streamable HTTP MCP server（contract-only，同目录 fixtures/standin-http-mcp-server.mjs）：
+ * 验证 ProviderPort http 配置的 headers 透传（W2：Composio session MCP 的授权形态）。
+ * 与 stdio 替身同语义级别：真实 ZCode MCP 客户端栈 + 真实 http transport，
+ * 不是任何真实 provider 端点的替代证据（live 证据见 composio-live-stack.test.ts）。
+ */
+describe("real ZCode MCP client stack over http transport with header auth", () => {
+  const HTTP_FIXTURE = fileURLToPath(
+    new URL("../fixtures/standin-http-mcp-server.mjs", import.meta.url),
+  );
+
+  async function startStandinHttp(): Promise<{ url: string; stop(): Promise<void> }> {
+    const child = spawn(process.execPath, [HTTP_FIXTURE], {
+      stdio: ["ignore", "pipe", "inherit"],
+    });
+    const port = await new Promise<number>((resolve, reject) => {
+      const stdout = child.stdout;
+      if (!stdout) {
+        reject(new Error("standin http server has no stdout"));
+        return;
+      }
+      const timer = setTimeout(
+        () => reject(new Error("standin http server did not start")),
+        10_000,
+      );
+      stdout.once("data", (chunk: Buffer) => {
+        clearTimeout(timer);
+        resolve(Number(String(chunk).trim()));
+      });
+    });
+    return {
+      url: `http://127.0.0.1:${port}/`,
+      stop: () =>
+        new Promise<void>((resolve) => {
+          child.once("exit", () => resolve());
+          child.kill();
+        }),
+    };
+  }
+
+  test("http server connects with the injected x-api-key header and serves tools", async () => {
+    const standin = await startStandinHttp();
+    try {
+      const mcp: McpPort = createMcpAdapter({
+        clientName: "mos-integration",
+        clientVersion: "0.1.0",
+      });
+      const provider = providerPortOverMcp(mcp);
+      ports.push(provider);
+      const state = await provider.connectServer("standin-http", {
+        kind: "http",
+        url: standin.url,
+        headers: { "x-api-key": "standin-test-key" },
+      });
+      expect(state.status).toBe("connected");
+      const tools = await provider.listTools();
+      const tool = tools.find((candidate) => candidate.toolName === "http_echo_read");
+      expect(tool).toBeDefined();
+      expect(parseProviderToolName(tool?.canonicalName ?? "")?.serverName).toBe("standin-http");
+
+      const result = await provider.callTool({
+        serverName: "standin-http",
+        toolName: "http_echo_read",
+        arguments: { query: "http passthrough" },
+      });
+      expect(result.isError).toBe(false);
+      const text = result.content.find((block) => typeof block.text === "string")?.text ?? "";
+      expect(JSON.parse(text)).toEqual({ records: [], query: "http passthrough" });
+    } finally {
+      await standin.stop();
+    }
+  });
+
+  test("wrong header value fails closed (401 → status=failed, no tools)", async () => {
+    const standin = await startStandinHttp();
+    try {
+      const mcp: McpPort = createMcpAdapter({
+        clientName: "mos-integration",
+        clientVersion: "0.1.0",
+      });
+      const provider = providerPortOverMcp(mcp);
+      ports.push(provider);
+      const state = await provider.connectServer("standin-http-bad", {
+        kind: "http",
+        url: standin.url,
+        headers: { "x-api-key": "wrong-key" },
+      });
+      expect(state.status).toBe("failed");
+      expect(state.error).not.toBeNull();
+      const tools = await provider.listTools();
+      expect(tools.filter((tool) => tool.serverName === "standin-http-bad")).toEqual([]);
+    } finally {
+      await standin.stop();
+    }
   });
 });
