@@ -201,7 +201,29 @@ contract-tested + notes).
 - `pnpm --filter @mos/adapters test` (real-stack + live): 29/29 PASS with the key present
   (8 real-stack stdio + 2 http stand-in + 5 live + 16 unit); live suite skips without it
 
-**Publication record (2026-11-13):** see the publication addendum appended after the push.
+**Publication record (2026-11-13, ~02:20 UTC):**
+
+- `git push -u origin w3/transformations-artifacts` succeeded (GitHub identity
+  `payswapdotorg`; credentials only outside the repo). Pre-push gate `verify:pre-push`
+  fully green during the push: worktree check, e2e remote targets, lint (0 errors / 538
+  baseline warnings), docs:stale-phrases:check, db:schema:check, test:architecture (0
+  fail), architecture:check --changed (violations 0 / baseline 0 / new 0).
+  `test:engineering:affected --scope push` used `ZCODE_PRE_PUSH_BASE=origin/main`
+  (supported override; same as W1/W2); full-suite result recorded above.
+- One pre-push worktree rejection fixed before the successful push: the additive
+  `experiment_status += cancelled` spec edit had been left uncommitted (worktree check
+  fail-closed as designed); committed as its own spec commit and re-pushed.
+- **PR #5 opened**: https://github.com/payswapdotorg/MOS-3.0/pull/5 (head
+  `w3/transformations-artifacts` -> base `main`; 6 commits, 122 changed files; body from
+  `docs/handoff/w3-pr-body.md`). No CI workflows exist in this repository; the gate
+  evidence above is the verification record.
+- **PR #5 MERGED to main**: merge commit `10c3c95fc5d83dc8ddc20332fb28e764eb91165d`
+  (merge method: merge commit, consistent with PRs #1-#4). Local main synced to
+  `10c3c95f`, worktree clean. Week 3 code is the canonical main.
+- Remaining open items after Week 3: mos-studio (composition-root ownership blocker),
+  in-app UI composition/mounting (same blocker), New Task journey + cross-client
+  regression, desktop E2E (needs display/docker), HubSpot live read (no HubSpot account),
+  engine execution adapters (composition-root concern, contract-level only this week).
 
 **Week 2 publication record (2026-11-13):**
 
