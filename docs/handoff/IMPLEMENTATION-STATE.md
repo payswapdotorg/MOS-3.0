@@ -439,3 +439,30 @@ HubSpot remains blocked at the account boundary (Google SSO 2-Step Verification 
 the account owner's device; HubSpot-native password for payswaporg@gmail.com is not the
 Google password; nothing was reset or worked around) — its descriptor stays
 toolMappingVerified=false and the evidence record is unchanged.
+
+**Publication addendum (2026-11-13, composition-root milestone):**
+
+- `git push -u origin w4/composition-root-journey` succeeded (GitHub identity
+  `payswaporg`, PAT in-environment only; credentials never in the repo). Pre-push gate
+  `verify:pre-push` fully green during the push: worktree check, e2e remote targets, lint
+  (0 errors / 538 baseline warnings), docs:stale-phrases:check, db:schema:check,
+  test:architecture (61/61), architecture:check --changed (violations 0 / baseline 0 / new 0).
+  `test:engineering:affected --scope push` used the caller-specified baseline
+  `ZCODE_PRE_PUSH_BASE=origin/main` (same supported override as W1–W3); Vitest selected the
+  entire 222-spec engineering suite and the script skipped per its full-selection rule
+  (never blocks the push); the full-suite result is recorded above (1710 passed / 1
+  pre-existing environment failure / 8 skipped). No repository file was modified for the
+  override.
+- **PR #6 opened and MERGED to main**: merge commit
+  `8834b35ecb5761f309e4da86a51eb09eb251727c` (merge method: merge commit, consistent with
+  PRs #1–#5) — https://github.com/payswapdotorg/MOS-3.0/pull/6 (head
+  `w4/composition-root-journey` → base `main`; 1 commit, 51 changed files; body from
+  `docs/handoff/w4-pr-body.md`). Local main synced to `8834b35e`, worktree clean. The
+  composition-root milestone code is now the canonical main.
+- Remaining open items after this milestone: Desktop visual mount + desktop E2E (no
+  docker/display; same hardware blocker as Weeks 1–3), cross-client visual regression
+  (same blocker), HubSpot live read (blocked at the account owner's Google 2-Step
+  Verification — all methods require their physical device; nothing reset or bypassed),
+  mos-studio production-surface reads (domain seams delivered in W3; wiring planned for a
+  later studio milestone), marketplace copy-style plugin packaging (vendoring the external
+  native module chain).
