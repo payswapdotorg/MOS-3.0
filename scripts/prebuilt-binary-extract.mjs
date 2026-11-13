@@ -55,11 +55,16 @@ export function extractPrebuiltArchive({ archivePath, archiveExt, extractDir, cw
   }
 
   const tarCwd = cwd ?? process.cwd();
-  runCommand(
-    "tar",
-    ["-xzf", resolveTarArchiveArg(archivePath, tarCwd), "-C", toTarPosixPath(extractDir)],
-    { cwd: tarCwd },
-  );
+  // Windows 上 GH runner 的 tar 解析到 Git Bash 的 GNU tar：`-f D:/...` 的盘符冒号被当作
+  // 远程主机语法（"Cannot connect to D:"）。上游已有的相对路径退化在跨盘符（归档在仓库盘、
+  // 解压目标在用户临时盘）时失效，落回绝对路径仍触发该解析；--force-local 一次性关闭它。
+  // GNU tar 专用开关，仅在 win32 注入（bsdtar 与 Linux/macOS CI 不受影响）。
+  const tarArgs = [];
+  if (process.platform === "win32") {
+    tarArgs.push("--force-local");
+  }
+  tarArgs.push("-xzf", resolveTarArchiveArg(archivePath, tarCwd), "-C", toTarPosixPath(extractDir));
+  runCommand("tar", tarArgs, { cwd: tarCwd });
 }
 
 export function findPrebuiltBinary(rootDir, binaryName) {

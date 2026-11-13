@@ -56,13 +56,26 @@ export async function collectArtifacts({
   // 禁用文件必须整体失败，而不是只跳过被收集的文件：上游 feed 元数据出现在 MOS 构建里
   // 属于供应链约束违规（更新器可能被指向上游 ZCode feed）。
   const forbidden = [];
+  const inertByproducts = [];
   for (const entry of entries) {
     if (!entry.isFile()) continue;
     const hit = FORBIDDEN_ARTIFACT_PATTERNS.find(({ pattern }) => pattern.test(entry.name));
-    if (hit) forbidden.push(`${entry.name}（${hit.label}）`);
+    if (!hit) continue;
+    if (hit.inert === true) {
+      // electron-builder 26 在 mac 目标上无条件生成 .blockmap（differentialPackage 选项
+      // 仅存在于 NsisOptions；publish=null 也无法关闭）——没有 latest*.yml 时它是无副作用
+      // 的构建残留物，不会进入发布产物集，也不能因为 electron-builder 的实现细节阻塞
+      // 全部 mac 产物。nsis.differentialPackage=false 已在 Windows 侧从源头关闭。
+      inertByproducts.push(`${entry.name}（${hit.label}，仅排除，不上传）`);
+      continue;
+    }
+    forbidden.push(`${entry.name}（${hit.label}）`);
   }
   if (forbidden.length) {
     throw new Error(`${FORBIDDEN_SUFFIX_HINT}：\n- ${forbidden.join("\n- ")}`);
+  }
+  if (inertByproducts.length) {
+    console.warn(`[collect-artifacts] 产物目录存在惰性更新残留（不收集不上传）：\n- ${inertByproducts.join("\n- ")}`);
   }
 
   const { os, arch } = MOS_PLATFORMS[platform];

@@ -931,6 +931,8 @@ export default {
     category: "public.app-category.developer-tools",
     artifactName: buildDesktopArtifactName("mac"),
     // MOS 使用独立品牌图标（build/mos-brand/mos-icon.icns）；上游 ZCode 继续用 build/icon.icns。
+    // （mac 的 .blockmap 是 electron-builder 26 的无条件构建残留，无 differentialPackage 开关；
+    // publish=null 保证没有 latest*.yml，collect-artifacts 把 blockmap 记录为惰性残留并不上传。）
     icon: isMosDesktopProduct ? mosBrandAsset("mos-icon.icns") : "build/icon.icns",
     // macOS 语言包是 en.lproj / zh_CN.lproj，沿用顶层 "en-US" 会一个都匹配不上被全部删掉，
     // Chromium 自带文案随之丢失（视频控件菜单只剩图标、播放速度子菜单空白）。
@@ -1054,6 +1056,8 @@ export default {
   nsis: {
     oneClick: false,
     allowToChangeInstallationDirectory: true,
+    // 与 mac 同一约束：MOS 不发差分更新 blockmap（nsis.differentialPackage 默认 true）。
+    ...(isMosDesktopProduct ? { differentialPackage: false } : {}),
     // Windows 安装流程使用独立安装图标，和应用运行时图标解耦。
     // MOS 用独立品牌安装器图标；上游 ZCode 继续用 build/icon_installer.ico。
     ...(isMosDesktopProduct
