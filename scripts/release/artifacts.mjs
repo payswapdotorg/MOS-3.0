@@ -54,7 +54,10 @@ export const MIN_OS_BY_OS = Object.freeze({
 /** MOS publish 必须为 null：产物目录出现这些文件说明更新 feed 配置回流，收集阶段直接失败。 */
 export const FORBIDDEN_ARTIFACT_PATTERNS = [
   { pattern: /^latest.*\.ya?ml$/iu, label: "latest*.yml（electron-builder 更新清单）" },
-  { pattern: /\.blockmap$/iu, label: "*.blockmap（差分更新块文件）" },
+  // inert: true —— blockmap 在 electron-builder 26 的 mac 目标上无条件生成（无
+  // differentialPackage 开关），没有 latest*.yml 时不构成 feed 元数据；不收集不上传，
+  // 仅记录。Windows 侧由 nsis.differentialPackage=false 从源头关闭。
+  { pattern: /\.blockmap$/iu, label: "*.blockmap（差分更新块文件）", inert: true },
 ];
 
 /** 未发布目标的显式声明（backlog §3 "Publish only after native/runtime smoke verification"）。 */

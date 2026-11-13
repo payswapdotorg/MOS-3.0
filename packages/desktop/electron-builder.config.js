@@ -930,11 +930,9 @@ export default {
     target: ["dmg", "zip"],
     category: "public.app-category.developer-tools",
     artifactName: buildDesktopArtifactName("mac"),
-    // MOS 不发更新元数据：publish=null 关闭 latest-*.yml，differentialPackage=false 关闭
-    // blockmap 差分文件（两者与自动更新无关但默认开启；collect-artifacts 对残留更新元数据硬失败）。
-    // 上游 ZCode 构建保留默认差分更新链路。
-    ...(isMosDesktopProduct ? { differentialPackage: false } : {}),
     // MOS 使用独立品牌图标（build/mos-brand/mos-icon.icns）；上游 ZCode 继续用 build/icon.icns。
+    // （mac 的 .blockmap 是 electron-builder 26 的无条件构建残留，无 differentialPackage 开关；
+    // publish=null 保证没有 latest*.yml，collect-artifacts 把 blockmap 记录为惰性残留并不上传。）
     icon: isMosDesktopProduct ? mosBrandAsset("mos-icon.icns") : "build/icon.icns",
     // macOS 语言包是 en.lproj / zh_CN.lproj，沿用顶层 "en-US" 会一个都匹配不上被全部删掉，
     // Chromium 自带文案随之丢失（视频控件菜单只剩图标、播放速度子菜单空白）。

@@ -85,16 +85,18 @@ test("collect-artifacts：缺必选格式直接失败", async (t) => {
   );
 });
 
-test("collect-artifacts：出现更新元数据（blockmap / latest*.yml）必须整体失败", async (t) => {
+test("collect-artifacts：feed 元数据（latest*.yml）整体失败；blockmap 记录为惰性残留且不上传", async (t) => {
   const { distDir, outDir } = await fixture(t);
   await writeInstaller(distDir, "MOS-3.0.0-rc.1-linux-x64.AppImage");
   await writeInstaller(distDir, "MOS-3.0.0-rc.1-linux-x64.deb");
-  await writeFile(join(distDir, "MOS-3.0.0-rc.1-linux-x64.AppImage.blockmap"), "diff");
-  await assert.rejects(
-    collectArtifacts({ distDir, platform: "linux-x64", outDir }),
-    /blockmap/u,
-  );
-  await rm(join(distDir, "MOS-3.0.0-rc.1-linux-x64.AppImage.blockmap"));
+  // blockmap：electron-builder 26 在 mac 目标上无条件生成（无配置开关），无 feed 元数据时
+  // 属于惰性残留 —— 收集继续，不上传（Windows 由 nsis.differentialPackage=false 源头关闭）。
+  await writeFile(join(distDir, "MOS-3.0.0-rc.1-mac-arm64.zip.blockmap"), "diff");
+  const result = await collectArtifacts({ distDir, platform: "linux-x64", outDir });
+  const uploaded = result.collected.map((entry) => entry.filename).join(",");
+  assert.ok(!uploaded.includes("blockmap"), "blockmap 不得进入发布产物集");
+  await rm(join(distDir, "MOS-3.0.0-rc.1-mac-arm64.zip.blockmap"));
+  // latest*.yml：feed 元数据，供应链硬违规。
   await writeFile(join(distDir, "latest-linux.yml"), "version: 3.0.0-rc.1");
   await assert.rejects(
     collectArtifacts({ distDir, platform: "linux-x64", outDir }),
