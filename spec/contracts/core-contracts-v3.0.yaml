@@ -28,7 +28,7 @@ enums:
   distribution_status: [intent, previewed, pending_approval, approved, rejected, executing, succeeded, failed, unknown]
   rights_kind: [source_license, consent, platform_policy, review_decision, unknown]
   rights_decision: [granted, denied, pending, expired, unknown]
-  experiment_status: [defined, assigned, measuring, analyzed, concluded, unknown]
+  experiment_status: [defined, assigned, measuring, analyzed, concluded, cancelled, unknown]
   experiment_outcome: [succeeded, failed, inconclusive, unknown]
   artifact_kind: [source, draft, media, copy, campaign, evidence, report, transcript, caption, derivative, unknown]
 objects:
