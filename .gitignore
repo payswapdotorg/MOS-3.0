@@ -10,6 +10,8 @@ bundled-resources/
 mock-cdn/
 packages/desktop/bundled-resources/
 packages/desktop/bundled-agents/
+# MOS 品牌素材由 prepare:mos-brand 在构建期生成（确定性输出）。
+packages/desktop/build/mos-brand/
 packages/desktop/bundled-tools/
 packages/desktop/mock-cdn/
 packages/desktop/.e2e-home/
