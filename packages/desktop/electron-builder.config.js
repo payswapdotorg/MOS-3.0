@@ -612,6 +612,8 @@ export default {
   extraMetadata: {
     version: buildMetadata.appVersion,
     zcodeProductFlavor: desktopProductIdentity.flavor,
+    // fpm 从 app package.json 的 description 取 deb/rpm 包描述；MOS 包不得顶着 ZCode 描述发布。
+    ...(isMosDesktopProduct ? { description: "MOS Desktop App — PaySwap" } : {}),
     homepage: isMosDesktopProduct ? "https://github.com/payswapdotorg/MOS-3.0" : "https://zcode.z.ai",
     author: isMosDesktopProduct
       ? {
@@ -976,7 +978,10 @@ export default {
       : {}),
   },
   linux: {
-    target: ["AppImage", "deb", "rpm", "pacman"],
+    // pacman（.pkg.tar.zst）在 GitHub runner 上需要 runner 不稳定携带的打包工具链；
+    // backlog §3：无法构建与冒烟的目标从支持矩阵显式剔除（release manifest 的 omittedTargets
+    // 记录）。MOS 只发布 AppImage+deb（必需）+rpm（best-effort）；上游 ZCode 构建保持原矩阵。
+    target: isMosDesktopProduct ? ["AppImage", "deb", "rpm"] : ["AppImage", "deb", "rpm", "pacman"],
     artifactName: buildDesktopArtifactName("linux"),
     // desktop 包名是 scoped package（@zcode/desktop），electron-builder 默认会把
     // Linux executable/Icon 推成 @zcodedesktop。部分桌面环境无法按这个 icon name 命中
