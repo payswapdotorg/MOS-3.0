@@ -59,6 +59,8 @@ import {
   MOS_DEB_INSTALL_DIR,
   MOS_LINUX_EXECUTABLE_NAME,
   MOS_LINUX_PACKAGE_NAME,
+  MOS_PLUGIN_ID,
+  MOS_PLUGIN_NAME,
   MOS_STUDIO_PLUGIN_RESOURCE_PATH,
   MOS_USER_DATA_MARKER_FILE,
   nsisUninstallRegistryKey,
@@ -145,6 +147,76 @@ async function waitForDir(dir, timeoutMs) {
   return { ok: false };
 }
 
+/**
+ * 驱动安装包内 agent 走真实 bootstrap seed（`plugins list` 子命令 → resolveOfficialPluginRoots
+ * → prepare → 落盘官方插件缓存；实测 seed 仅在插件发现时触发，裸 app-server 等协议请求不 seed）。
+ *
+ * 为什么需要它：桌面首启可能停在 onboarding（未登录不进入 host/agent 阶段）。本步骤用与桌面
+ * buildHostProcessEnv 相同语义的环境直接运行安装包自带的 glm/zcode.cjs —— 同一份安装资产、
+ * 同一套隔离家目录，不依赖登录；环境必须显式携带 MOS 的全套数据隔离变量，agent 才不会
+ * 回落到 ~/.zcode（storage.dir/sessionDb/log 默认都从字面 homedir() 派生）。
+ */
+async function driveAgentSeed(ctx, { timeoutMs = 120_000 } = {}) {
+  if (!ctx.agentRunner) {
+    return { ok: false, reason: "install 步骤未记录 agentRunner（安装失败级联）" };
+  }
+  const zcodeCjs = join(ctx.agentRunner.resourcesDir, "glm", "zcode.cjs");
+  if (!(await pathExists(zcodeCjs))) {
+    return { ok: false, reason: `安装包缺少 agent bundle：${zcodeCjs}`, zcodeCjs };
+  }
+  const mosDataRoot = join(mosDataBaseDir(ctx.home), ".zcode");
+  const env = {
+    ...ctx.env,
+    ELECTRON_RUN_AS_NODE: "1",
+    ZCODE_DATA_BASE_DIR: mosDataBaseDir(ctx.home),
+    ZCODE_STORAGE_DIR: mosDataRoot,
+    ZCODE_SESSION_DB_PATH: join(mosDataRoot, "cli", "db", "db.sqlite"),
+    ZCODE_LOG_DIR: join(mosDataRoot, "cli", "log"),
+  };
+  const child = spawn(ctx.agentRunner.binary, [zcodeCjs, "plugins", "list"], {
+    cwd: ctx.workdir,
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+    detached: process.platform !== "win32",
+    windowsHide: true,
+  });
+  let output = "";
+  child.stdout?.on("data", (chunk) => {
+    if (output.length < 100_000) output += String(chunk);
+  });
+  child.stderr?.on("data", (chunk) => {
+    if (output.length < 100_000) output += String(chunk);
+  });
+  const seedWait = await waitForDir(ctx.seededRoot, timeoutMs);
+  let terminate = "n/a";
+  if (child.exitCode === null && child.signalCode === null) {
+    try {
+      if (process.platform === "win32") {
+        const kill = await runCapture("taskkill", ["/PID", String(child.pid), "/T", "/F"], { timeoutMs: 30_000 });
+        terminate = kill.code === 0 ? "taskkill" : "taskkill-failed";
+      } else {
+        process.kill(-child.pid, "SIGTERM");
+        terminate = "sigterm";
+      }
+    } catch {
+      try {
+        child.kill("SIGTERM");
+        terminate = "child-sigterm";
+      } catch {
+        terminate = "already-exited";
+      }
+    }
+  }
+  return {
+    ok: seedWait.ok,
+    binary: ctx.agentRunner.binary,
+    zcodeCjs,
+    seededWithinAgentRun: seedWait.ok,
+    terminate,
+    outputTail: output.slice(-2000),
+  };
+}
+
 /** decoy 准备：目录不存在则创建带 marker 的诱饵；已存在（真实上游数据）绝不写入，只做快照。 */
 async function prepareDecoy(dir, note) {
   const markerPath = join(dir, DECOY_MARKER_FILE);
@@ -197,13 +269,17 @@ async function checkDecoyUntouched(decoy) {
   return { untouched: changes.length === 0, changes, observed: true };
 }
 
-/** 启动 Electron 应用（linux 优先 xvfb-run -a；无显示服务器时降级直启并如实记录）。 */
+/** 启动 Electron 应用（linux 优先 xvfb-run -a；调用方已提供 DISPLAY 时直启；均不可用时降级直启并如实记录）。 */
 async function launchElectronApp({ binary, args, env, cwd, platformKey, label }) {
   let command = binary;
   let finalArgs = [...args];
   let mode = "direct";
   if (platformKey.startsWith("linux")) {
-    if (await commandExists("xvfb-run")) {
+    if (env.DISPLAY && env.DISPLAY.trim() !== "") {
+      // 调用方已提供 X 显示（如预启 Xvfb -ac 的 CI 或本地复现环境）：直启，不再包一层 xvfb-run
+      // （xvfb-run 依赖 xauth，部分最小环境缺失；预置 DISPLAY 是同等有效的验收形态）。
+      mode = `direct (DISPLAY=${env.DISPLAY.trim()} 由调用方提供)`;
+    } else if (await commandExists("xvfb-run")) {
       command = "xvfb-run";
       finalArgs = ["-a", binary, ...args];
       mode = "xvfb-run -a";
@@ -501,6 +577,10 @@ async function runPipeline(args) {
       if (debs.length > 0 && (await pathExists(debBinary))) {
         ctx.installDir = MOS_DEB_INSTALL_DIR;
         ctx.binaries.deb = debBinary;
+        ctx.agentRunner = {
+          binary: debBinary,
+          resourcesDir: join(MOS_DEB_INSTALL_DIR, "resources"),
+        };
       } else if (debs.length > 0) {
         step.failed({ message: `deb 安装后缺少 ${debBinary}` });
       }
@@ -525,6 +605,14 @@ async function runPipeline(args) {
         }
         detail.appimages.push({ file: appImage.file, binary, mode, fuseAvailable });
         ctx.binaries.appimage = binary;
+        if (!ctx.agentRunner) {
+          const resourcesDir = binary.startsWith(join(workdir, "squashfs-root"))
+            ? join(workdir, "squashfs-root", "resources")
+            : null;
+          if (resourcesDir && (await pathExists(resourcesDir))) {
+            ctx.agentRunner = { binary, resourcesDir };
+          }
+        }
       }
       if (appImages.length === 0) {
         step.degraded({ message: "本任务未提供 AppImage 产物（linux 命名契约要求 AppImage+deb 双产物；发布矩阵需在另一个 job 补测）" });
@@ -571,6 +659,10 @@ async function runPipeline(args) {
       };
       ctx.installDir = join(installRoot, "MOS.app");
       ctx.binaries.app = join(ctx.installDir, "Contents", "MacOS", "MOS");
+      ctx.agentRunner = {
+        binary: ctx.binaries.app,
+        resourcesDir: join(ctx.installDir, "Contents", "Resources"),
+      };
       if (copy.code !== 0 || !(await pathExists(ctx.binaries.app))) {
         step.failed({ message: "MOS.app 复制到 ~/Applications 失败", detail: detail.dmg, stderr: copy.stderr?.slice(-2000) });
         return;
@@ -614,6 +706,10 @@ async function runPipeline(args) {
       detail.nsis.defaultInstallDir = expectedInstallDir;
       ctx.installDir = installDir;
       ctx.binaries.exe = join(installDir, "MOS.exe");
+      ctx.agentRunner = {
+        binary: ctx.binaries.exe,
+        resourcesDir: join(installDir, "resources"),
+      };
       if (!(await pathExists(ctx.binaries.exe))) {
         step.failed({ message: `安装目录缺少 MOS.exe：${ctx.binaries.exe}`, detail: detail.nsis });
         return;
@@ -823,22 +919,26 @@ async function runPipeline(args) {
     }
   });
 
-  // ── 6. plugin-seeded：首启 seed 出的官方插件缓存断言 + 改写形态断言。 ──
+  // ── 6. plugin-seeded：官方插件缓存断言 + 改写形态断言。 ──
+  // App 首启（onboarding 未登录）可能不进入 host/agent 阶段；seed 断言在应用级等待未果时，
+  // 用安装包内 agent 直接驱动 bootstrap seed（同一份安装资产；不依赖登录、不触碰 ~/.zcode）。
   await recorder.step("plugin-seeded", async (step) => {
     if (ctx.selfTest) {
       step.skipped({ message: "self-test 桩步骤：seed 断言未执行（不作验收证据）" });
       return;
     }
-    if (ctx.launchDegraded) {
-      step.degraded({ message: "launch 步骤已降级（无显示服务器），seed 断言跳过", seededRoot: ctx.seededRoot });
-      return;
-    }
     const detail = { seededRoot: ctx.seededRoot };
     if (!(await pathExists(ctx.seededRoot))) {
-      step.failed({
-        message: `首启后未 seed 出官方插件缓存：${ctx.seededRoot}（安装包未携带内置插件或 bootstrap seed 失败）`,
-      });
-      return;
+      const agentSeed = await driveAgentSeed(ctx);
+      detail.agentDrivenSeed = agentSeed;
+      if (!agentSeed.ok) {
+        step.failed({
+          message: `官方插件缓存未 seed：${ctx.seededRoot}（app 首启与安装包内 agent 驱动均未产出；安装包可能未携带内置插件或 bootstrap 失败）`,
+          agentDrivenSeed: agentSeed,
+        });
+        return;
+      }
+      detail.via = "agent-driven (app-server --stdio)";
     }
     const missing = await missingPaths(ctx.seededRoot, requiredStudioPluginFiles(ctx.platformKey));
     detail.missing = missing;
@@ -920,14 +1020,23 @@ async function runPipeline(args) {
     }
   });
 
+  // 与插件 loader 的 env overlay 同构（createPluginEnvOverlay：ROOT/DATA/ID/NAME），
+  // hook 才能走真实路径而不是仅验证降级分支。
+  const pluginOverlayEnv = {
+    ZCODE_PLUGIN_ID: MOS_PLUGIN_ID,
+    ZCODE_PLUGIN_NAME: MOS_PLUGIN_NAME,
+    ZCODE_PLUGIN_ROOT: ctx.seededRoot,
+    ZCODE_PLUGIN_DATA: join(mosDataBaseDir(ctx.home), ".zcode", "cli", "data", MOS_PLUGIN_ID),
+  };
+
   // ── 7. plugin-alive：经应用二进制 Node 模式跑通 MCP stdio 握手。 ──
   await recorder.step("plugin-alive", async (step) => {
     if (ctx.selfTest) {
       step.skipped({ message: "self-test 桩步骤：MCP 握手未执行（不作验收证据）" });
       return;
     }
-    if (ctx.launchDegraded) {
-      step.degraded({ message: "launch 步骤已降级（无显示服务器）；seed 不可用，握手跳过" });
+    if (!(await pathExists(ctx.seededRoot))) {
+      step.degraded({ message: "seed 根不存在（plugin-seeded 失败级联），MCP 握手跳过" });
       return;
     }
     const manifest = await readJsonOrNull(join(ctx.seededRoot, ".zcode-plugin", "plugin.json"));
@@ -939,7 +1048,7 @@ async function runPipeline(args) {
     const handshake = await runMcpHandshake({
       command: server.command,
       args: Array.isArray(server.args) ? server.args : [],
-      env: { ...ctx.env, ...(server.env ?? {}) },
+      env: { ...ctx.env, ...(server.env ?? {}), ...pluginOverlayEnv },
       cwd: workdir,
     });
     const statusView = handshake.toolCall?.structuredContent ?? null;
@@ -982,8 +1091,8 @@ async function runPipeline(args) {
       step.skipped({ message: "self-test 桩步骤：hook 执行未执行（不作验收证据）" });
       return;
     }
-    if (ctx.launchDegraded) {
-      step.degraded({ message: "launch 步骤已降级（无显示服务器）；seed 不可用，hook 跳过" });
+    if (!(await pathExists(ctx.seededRoot))) {
+      step.degraded({ message: "seed 根不存在（plugin-seeded 失败级联），hook 执行跳过" });
       return;
     }
     const hooks = await readJsonOrNull(join(ctx.seededRoot, "hooks", "hooks.json"));
@@ -1000,7 +1109,7 @@ async function runPipeline(args) {
         cwd: workdir,
       }),
       cwd: workdir,
-      env: ctx.env,
+      env: { ...ctx.env, ...pluginOverlayEnv },
     });
     const invocation = buildHookInvocation(ctx.platformKey, command);
     const detail = {
@@ -1168,6 +1277,12 @@ async function main() {
   };
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
   if (!recorder.ok) {
+    // 失败步骤的 detail 同步打到 stderr：CI 日志里直接可读（证据 JSON 同时落盘）。
+    for (const failure of recorder.failures) {
+      const stepRecord = recorder.steps.find((step) => step.name === failure.step);
+      const detailText = JSON.stringify(stepRecord?.detail ?? failure.detail, null, 2) ?? "";
+      process.stderr.write(`[run-platform-smoke] 步骤 ${failure.step} 失败：\n${detailText.slice(0, 4000)}\n`);
+    }
     process.stderr.write(`[run-platform-smoke] 失败步骤：${recorder.failures.map((failure) => failure.step).join(", ")}\n`);
   }
   return recorder.ok ? 0 : 1;

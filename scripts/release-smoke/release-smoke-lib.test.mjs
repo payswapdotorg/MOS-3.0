@@ -193,7 +193,17 @@ test("数据目录隔离：MOS 与上游 ZCode 的 userData/数据根在所有�
   assert.equal(mosDataBaseDir(home), join(home, ".mos"));
   assert.equal(
     seededPluginRoot(home),
-    join(home, ".mos", ".zcode", "cli", "cache", "zcode-plugins-official", "mos-studio", "0.1.0"),
+    join(
+      home,
+      ".mos",
+      ".zcode",
+      "cli",
+      "plugins",
+      "cache",
+      "zcode-plugins-official",
+      "mos-studio",
+      "0.1.0",
+    ),
   );
 });
 

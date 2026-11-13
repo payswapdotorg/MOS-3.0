@@ -201,6 +201,15 @@ jobs:
         shell: bash
         run: pnpm --filter @zcode/desktop bundle -- --os ${{ matrix.target.os }} --arch ${{ matrix.target.arch }}
 
+      - name: 包内面检查（app.asar / 内置 mos-studio 插件闭包 / 原生二进制 / 无更新元数据）
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release-smoke/inspect-package.mjs \
+            --dist-dir packages/desktop/dist \
+            --platform ${{ matrix.target.platform }} \
+            --mos-version "${{ env.ZCODE_DESKTOP_APP_VERSION }}"
+
       - name: 收集并机械校验产物（必选矩阵见 scripts/release/artifacts.mjs；更新元数据拒绝）
         shell: bash
         run: |
@@ -278,23 +287,46 @@ jobs:
           echo "path=$(pwd)/${files[0]}" >> "$GITHUB_OUTPUT"
           echo "主安装包: ${files[0]}"
 
+      - name: 组装冒烟入参（linux 需要 AppImage+deb 双产物：deb 走真实 dpkg 安装验收）
+        id: smoke-args
+        shell: bash
+        run: |
+          set -euo pipefail
+          args="--artifact ${{ steps.installer.outputs.path }}"
+          if [ "${{ matrix.target.platform }}" = "linux-x64" ] || [ "${{ matrix.target.platform }}" = "linux-arm64" ]; then
+            deb="$(cd artifacts && ls MOS-*.deb 2>/dev/null | head -1 || true)"
+            if [ -z "$deb" ]; then
+              echo "::error::linux 冒烟需要 deb 安装包（dpkg 安装验收），artifacts 目录缺失" >&2
+              exit 1
+            fi
+            args="$args --artifact $(pwd)/artifacts/$deb"
+          fi
+          {
+            echo "args<<SMOKE_ARGS_EOF"
+            echo "$args"
+            echo "SMOKE_ARGS_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: 平台安装/启动冒烟（安装 → 启动 → MOS 身份 + 内置 mos-studio 插件校验）
         shell: bash
         run: |
           set -euo pipefail
           node scripts/release-smoke/run-platform-smoke.mjs \
             --platform "${{ matrix.target.platform }}" \
-            --artifact "${{ steps.installer.outputs.path }}" \
+            ${{ steps.smoke-args.outputs.args }} \
             --mos-version "${{ needs.release-gate.outputs.mos_version }}" \
             --evidence-out "smoke-evidence-${{ matrix.target.platform }}.json"
 
-      - name: 上传冒烟证据（smoke-evidence-<platform>）
+      - name: 上传冒烟证据（失败也必须上传：证据是诊断与验收的第一手材料）
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: smoke-evidence-${{ matrix.target.platform }}
-          path: smoke-evidence-*.json
+          path: |
+            smoke-evidence-*.json
+            mos-release-smoke-work/**
           retention-days: 30
-          if-no-files-found: error
+          if-no-files-found: ignore
 
   release:
     name: 组装并创建 DRAFT release（绝不自动发布）

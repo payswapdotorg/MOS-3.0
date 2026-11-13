@@ -610,6 +610,18 @@ export function buildHostProcessEnv(hostProcessLocalEnv: Record<string, string>)
     ...(isMosPackagedRuntime && !inheritedEnv.ZCODE_HOME
       ? { ZCODE_HOME: getZCodeDataRootDir() }
       : {}),
+    // CLI/agent 自身可写状态的三条默认路径都从字面 homedir() 派生（storage.dir → ~/.zcode、
+    // sessionDb → ~/.zcode/cli/db、log → ~/.zcode/cli/log），全部是上游 ZCode 的可变数据目录。
+    // MOS 打包态用官方 env 配置面（ZCODE_STORAGE_DIR / ZCODE_SESSION_DB_PATH / ZCODE_LOG_DIR）
+    // 一并改指 MOS 数据根：插件缓存/skills（官方插件 seed 依赖 storage.dir）、会话库、日志。
+    // 未隔离会触发与上游 ZCode 的读写冲突（release 冒烟的上游 decoy 检查在 RC 首轮实测捕获）。
+    ...(isMosPackagedRuntime
+      ? {
+          ZCODE_STORAGE_DIR: getZCodeDataRootDir(),
+          ZCODE_SESSION_DB_PATH: join(getZCodeDataRootDir(), "cli", "db", "db.sqlite"),
+          ZCODE_LOG_DIR: join(getZCodeDataRootDir(), "cli", "log"),
+        }
+      : {}),
     // Dynamic Workflow 灰度的本地覆盖：Main 决策后写入，production 包为空对象（继承值已在上面删除）。
     ...dynamicWorkflowModeHostEnv,
     // 模型请求默认 header 由 agent 进程构造，过去只继承 shell env 导致桌面启动时拿不到 app 版本。

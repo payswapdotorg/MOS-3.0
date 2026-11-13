@@ -13,12 +13,16 @@
 // - dist 三件套由 packages/mos-studio scripts/build.mjs 产出，调用方必须先完成
 //   `pnpm --filter @mos/studio build`（本脚本只做 staging 与校验，不重复构建）。
 //
-// 用法：node scripts/mos-plugin-bundle.mjs [--platform <os>_<arch>] [--out <dir>]
-//   平台键与 target-platform.mjs 一致（win32_x64 / darwin_arm64 / linux_x64 ...）。
-//   默认平台 = 当前宿主；默认输出 = bundled-agents/<platform>/glm/packages/mos-studio-plugin。
+// 用法：node scripts/mos-plugin-bundle.mjs [--platform <os>-<arch>] [--out <dir>]
+//   平台键与 target-platform.mjs 的 getTargetPlatform().key 一致（win32-x64 / darwin-arm64 /
+//   linux-x64，连字符形式）—— glm staging 目录必须与 stage-agent-bundle.mjs 同键
+//   （electron-builder 按 bundled-agents/<key>/glm 整目录入包）；koffi 的内部原生目录
+//   仍按 koffi 自身约定使用 <os>_<arch> 下划线形式。默认平台 = 目标环境变量/宿主派生。
+//   默认输出 = bundled-agents/<key>/glm/packages/mos-studio-plugin。
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getTargetPlatform } from "./target-platform.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const desktopRoot = resolve(scriptDir, "..");
@@ -45,9 +49,17 @@ export function parseArgs(argv = process.argv.slice(2)) {
 }
 
 function hostPlatformKey() {
-  const os = process.platform;
-  const arch = process.arch === "x64" ? "x64" : process.arch === "arm64" ? "arm64" : process.arch;
-  return `${os}_${arch}`;
+  // 与 stage-agent-bundle.mjs 同源：glm 目录键 = getTargetPlatform().key（连字符形式）。
+  // 发布构建在 prepare:runtime-assets 链路里继承 ZCODE_TARGET_OS/ZCODE_TARGET_ARCH。
+  return getTargetPlatform().key;
+}
+
+function parseStagingPlatformKey(platformKey) {
+  const [os, arch] = String(platformKey).split("-");
+  if (!os || !arch) {
+    throw new Error(`[mos-plugin-bundle] 无效平台键：${platformKey}（应为 <os>-<arch>，如 linux-x64）`);
+  }
+  return { os, arch };
 }
 
 /** 在 pnpm 虚拟 store / hoisted 根中按包名解析真实包目录（koffi-package-assets 同模式）。 */
@@ -116,7 +128,8 @@ function verifyFiles(root, files) {
  */
 export function stageMosStudioPlugin(options = {}) {
   const platformKey = options.platform ?? hostPlatformKey();
-  const [os, arch] = platformKey.split("_");
+  const { os, arch } = parseStagingPlatformKey(platformKey);
+  const koffiArchKey = `${os}_${arch}`;
   const mosStudioRoot = resolve(options.mosStudioRoot ?? join(workspaceRoot, "packages", "mos-studio"));
   const stagedRoot = resolve(
     options.out ?? join(desktopRoot, "bundled-agents", platformKey, "glm", "packages", "mos-studio-plugin"),
@@ -163,9 +176,9 @@ export function stageMosStudioPlugin(options = {}) {
     join(nodeModulesRoot, "@napi-rs", keyringPlatformName.split("/")[1]),
   );
   // 3c) koffi：JS 入口 + package.json + 仅目标平台二进制（与 koffi-package-assets 的
-  //     glm staging 完全同一份最小闭包）。
+  //     glm staging 完全同一份最小闭包；koffi 内部目录用下划线 <os>_<arch> 约定）。
   const koffiRoot = resolveWorkspacePackage("koffi", mosStudioRoot);
-  const koffiNativeDir = join("build", "koffi", platformKey);
+  const koffiNativeDir = join("build", "koffi", koffiArchKey);
   const koffiNativeSource = join(koffiRoot, koffiNativeDir, "koffi.node");
   if (!existsSync(koffiNativeSource)) {
     throw new Error(
@@ -201,7 +214,7 @@ export function stageMosStudioPlugin(options = {}) {
     throw new Error(`[mos-plugin-bundle] keyring platform package has no .node binding for ${platformKey}`);
   }
   if (nativeKoffi.size === 0) {
-    throw new Error(`[mos-plugin-bundle] koffi.node for ${platformKey} is empty`);
+    throw new Error(`[mos-plugin-bundle] koffi.node for ${koffiArchKey} is empty`);
   }
 
   return { stagedRoot, platform: platformKey };
