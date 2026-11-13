@@ -201,3 +201,24 @@ contract-tested + notes).
   (8 real-stack stdio + 2 http stand-in + 5 live + 16 unit); live suite skips without it
 
 **Publication record (2026-11-13):** see the publication addendum appended after the push.
+
+**Week 2 publication record (2026-11-13):**
+
+- `git push -u origin w2/discovery-orchestration` succeeded 2026-11-13 ~01:10 UTC (GitHub
+  identity `payswapdotorg`, PAT supplied in-environment; credentials only outside the repo).
+  Pre-push gate `verify:pre-push` fully green during the push: worktree check, e2e remote
+  targets, lint (0 errors / 538 baseline warnings), docs:stale-phrases:check, db:schema:check,
+  test:architecture (61/61), architecture:check --changed (violations 0 / baseline 0 / new 0).
+- `test:engineering:affected --scope push` used the caller-specified baseline
+  `ZCODE_PRE_PUSH_BASE=origin/main` (same supported override as W1; fork remote has no
+  origin/staging); merge-base bfec2aab selected the entire 199-spec engineering suite, and per
+  the script's full-selection rule the run was skipped without blocking the push; the
+  full-suite result is recorded above (1379 passed / 1 pre-existing environment failure /
+  8 skipped). No repository file was modified for this override.
+- **PR #4 opened**: https://github.com/payswapdotorg/MOS-3.0/pull/4 (head
+  `w2/discovery-orchestration` → base `main`; 5 commits, 78 changed files; body from
+  `docs/handoff/w2-pr-body.md`). No CI workflows exist in this repository, so the gate
+  evidence above and in the PR body is the verification record.
+- Remaining open items after Week 2: HubSpot live read (no HubSpot account/OAuth client),
+  in-app UI composition/mounting (composition-root ownership), New Task journey + cross-client
+  regression, desktop E2E (needs display/docker).
