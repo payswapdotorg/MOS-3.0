@@ -930,6 +930,10 @@ export default {
     target: ["dmg", "zip"],
     category: "public.app-category.developer-tools",
     artifactName: buildDesktopArtifactName("mac"),
+    // MOS 不发更新元数据：publish=null 关闭 latest-*.yml，differentialPackage=false 关闭
+    // blockmap 差分文件（两者与自动更新无关但默认开启；collect-artifacts 对残留更新元数据硬失败）。
+    // 上游 ZCode 构建保留默认差分更新链路。
+    ...(isMosDesktopProduct ? { differentialPackage: false } : {}),
     // MOS 使用独立品牌图标（build/mos-brand/mos-icon.icns）；上游 ZCode 继续用 build/icon.icns。
     icon: isMosDesktopProduct ? mosBrandAsset("mos-icon.icns") : "build/icon.icns",
     // macOS 语言包是 en.lproj / zh_CN.lproj，沿用顶层 "en-US" 会一个都匹配不上被全部删掉，
@@ -1054,6 +1058,8 @@ export default {
   nsis: {
     oneClick: false,
     allowToChangeInstallationDirectory: true,
+    // 与 mac 同一约束：MOS 不发差分更新 blockmap（nsis.differentialPackage 默认 true）。
+    ...(isMosDesktopProduct ? { differentialPackage: false } : {}),
     // Windows 安装流程使用独立安装图标，和应用运行时图标解耦。
     // MOS 用独立品牌安装器图标；上游 ZCode 继续用 build/icon_installer.ico。
     ...(isMosDesktopProduct
