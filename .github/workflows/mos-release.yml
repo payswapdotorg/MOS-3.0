@@ -1,0 +1,437 @@
+# MOS Release — mos-v<semver> 标签触发的发布流水线（Worker A: Release automation）。
+#
+# 端状态与关键决策（全部显式，无隐藏跳过）：
+# 1. 流水线的终点是一个 DRAFT GitHub Release：安装包 + SHA256SUMS + release-manifest.json +
+#    发布说明。绝不自动发布；promote 由 TL 手动执行：
+#        gh release edit mos-v<version> --draft=false
+# 2. 绝不覆盖已有资产：标签上已存在"已发布" release 时直接失败；已存在 DRAFT 时只补传
+#    缺失资产（无 --clobber）。修正构建必须换新版本号/标签（backlog §4：标签不可变）。
+# 3. 矩阵：linux-x64（ubuntu-24.04）、mac-arm64（macos-15）、mac-x64（macos-15-intel）、
+#    win-x64（windows-2022）。显式省略 win-arm64 与 linux-arm64（pending native/runtime
+#    smoke verification，backlog §3）；linux rpm/pkg.tar.zst 为 best-effort：runner 缺 fpm
+#    依赖时收集脚本只记录缺失（写入 manifest limitations），AppImage+deb 必选。
+# 4. 本 RC 全平台未签名（无签名凭据）；notes/manifest 如实记录 unsigned 状态与
+#    Gatekeeper/SmartScreen 指引，绝不声称签名、公证或可信。
+# 5. actions/attest-build-provenance 为 best-effort（continue-on-error）：失败不阻断发布，
+#    但 manifest.signature.attestationStatus 如实记录 failed，绝不虚报 attestation。
+# 6. Action 一律使用 tag 引用；SHA 锁定推迟到 TL 的加固 pass（同 mos-ci.yml）。
+# 7. 权限最小化：只有 release job 拿 contents: write + id-token: write + actions: read；
+#    本工作流没有 pull_request 触发器，fork PR 无法触达任何发布权限。
+# 8. workflow_dispatch（输入 mos_version）是刻意的草稿/RC 路径：标签尚不存在时由
+#    gh release create 在 release-gate 校验过的 source commit 上创建标签。
+# 9. 发布后 clean-client 复验（TL 手动，见 release job 的注释命令）：
+#        node scripts/release/verify-release.mjs --artifacts-dir <空目录> \
+#          --manifest release-manifest.json \
+#          --download https://github.com/payswapdotorg/MOS-3.0/releases/download/mos-v<version>
+
+name: MOS Release
+
+on:
+  push:
+    tags:
+      - "mos-v*"
+  workflow_dispatch:
+    inputs:
+      mos_version:
+        description: "MOS 版本（semver，如 3.0.0-rc.1；将创建/复用 mos-v<version> 草稿）"
+        required: true
+        type: string
+
+concurrency:
+  # 同一标签的重复触发排队执行，不取消进行中的发布（避免半途取消留下不完整草稿）。
+  group: mos-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  COREPACK_ENABLE_PROJECT_SPEC: "0"
+
+jobs:
+  release-gate:
+    name: 发布门禁（标签形态 / main 祖先 / 版本上下文）
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      mos_version: ${{ steps.context.outputs.mos_version }}
+      tag: ${{ steps.context.outputs.tag }}
+      source_commit: ${{ steps.context.outputs.source_commit }}
+      zcode_baseline: ${{ steps.context.outputs.zcode_baseline }}
+    steps:
+      - name: 检出仓库（fetch-depth 0：merge-base 校验需要完整历史）
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: 解析并校验发布上下文（版本 / 上游形态拒绝 / main 祖先校验）
+        id: context
+        env:
+          # dispatch 输入经 env 间接进入 shell（GitHub 对 env 值不做 shell 解析），
+          # 避免把可输入字符串直接拼进命令行。
+          INPUT_MOS_VERSION: ${{ inputs.mos_version }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${GITHUB_REF_NAME}"
+            SOURCE_COMMIT="$(git rev-parse --verify "${TAG}^{commit}")"
+          else
+            TAG="mos-v${INPUT_MOS_VERSION}"
+            SOURCE_COMMIT="$(git rev-parse --verify HEAD)"
+          fi
+          # mos-version.mjs 拒绝上游 v<semver> 形态（v3.18.x）与非 semver 输入。
+          MOS_VERSION="$(node scripts/release/mos-version.mjs --assert "${TAG}" --field version)"
+          if ! git merge-base --is-ancestor "${SOURCE_COMMIT}" origin/main; then
+            echo "::error::标签 ${TAG} 指向的提交 ${SOURCE_COMMIT} 不是 origin/main 的祖先，拒绝发布" >&2
+            exit 1
+          fi
+          # zcodeBaseline = 导入的 ZCode 上游基线（root package.json version），与 MOS 版本互相独立。
+          ZCODE_BASELINE="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json','utf8')).version")"
+          {
+            echo "mos_version=${MOS_VERSION}"
+            echo "tag=${TAG}"
+            echo "source_commit=${SOURCE_COMMIT}"
+            echo "zcode_baseline=${ZCODE_BASELINE}"
+          } >> "$GITHUB_OUTPUT"
+          printf '发布上下文: tag=%s version=%s commit=%s zcode_baseline=%s\n' \
+            "${TAG}" "${MOS_VERSION}" "${SOURCE_COMMIT}" "${ZCODE_BASELINE}"
+
+      - name: 写出 release-context.json（审计用）
+        run: |
+          set -euo pipefail
+          node -e '
+            const context = {
+              product: "MOS",
+              version: process.env.MOS_VERSION,
+              tag: process.env.TAG,
+              sourceCommit: process.env.SOURCE_COMMIT,
+              zcodeBaseline: process.env.ZCODE_BASELINE,
+              buildRunId: process.env.GITHUB_RUN_ID,
+              buildRunUrl: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+              event: process.env.GITHUB_EVENT_NAME,
+            };
+            require("node:fs").writeFileSync("release-context.json", JSON.stringify(context, null, 2) + "\n");
+          '
+          cat release-context.json
+        env:
+          MOS_VERSION: ${{ steps.context.outputs.mos_version }}
+          TAG: ${{ steps.context.outputs.tag }}
+          SOURCE_COMMIT: ${{ steps.context.outputs.source_commit }}
+          ZCODE_BASELINE: ${{ steps.context.outputs.zcode_baseline }}
+
+      - name: 上传 release-context（审计工件）
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-context
+          path: release-context.json
+          retention-days: 30
+
+  build:
+    name: 构建 ${{ matrix.target.platform }} 安装包
+    needs: release-gate
+    strategy:
+      fail-fast: false
+      matrix:
+        # 键名不带连字符：GH 表达式点号路径不支持带连字符的属性名（必须用 ['x-os']），
+        # 这里直接用 os 作为打包目标 OS，避免整条工作流出现括号下标写法。
+        target:
+          - { runner: ubuntu-24.04, os: linux, arch: x64, platform: linux-x64 }
+          - { runner: macos-15, os: mac, arch: arm64, platform: mac-arm64 }
+          - { runner: macos-15-intel, os: mac, arch: x64, platform: mac-x64 }
+          - { runner: windows-2022, os: win, arch: x64, platform: win-x64 }
+    runs-on: ${{ matrix.target.runner }}
+    permissions:
+      contents: read
+    env:
+      # MOS 构建身份三件套；MOS_PRODUCT_IDENTITY 严格拼写（仅 1/0/空），错误值构建失败。
+      ZCODE_ENV: production
+      MOS_PRODUCT_IDENTITY: "1"
+      ZCODE_DESKTOP_APP_VERSION: ${{ needs.release-gate.outputs.mos_version }}
+    steps:
+      - name: 检出标签提交（不保留凭据：本 job 不需要 push 权限）
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: 释放磁盘空间（ubuntu runner：移除本构建不需要的托管工具链；安全清理）
+        if: matrix.target.platform == 'linux-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h /
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache
+          df -h /
+
+      - name: 安装 Node 24.14.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+
+      - name: 安装 pnpm 10.33.2（corepack 显式激活，并断言版本一致）
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.2 --activate
+          pnpm --version
+          test "$(pnpm --version)" = "10.33.2"
+
+      - name: 固定 pnpm store 目录
+        shell: bash
+        run: pnpm config set store-dir "$HOME/.pnpm-store"
+
+      - name: 缓存 pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: pnpm-store-v1-${{ runner.os }}-${{ matrix.target.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-v1-${{ runner.os }}-${{ matrix.target.arch }}-
+
+      - name: 安装依赖（frozen lockfile）
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建 MOS 安装包（显式 --os/--arch；bundle 自带产物存在性 + 体积审计）
+        shell: bash
+        run: pnpm --filter @zcode/desktop bundle -- --os ${{ matrix.target.os }} --arch ${{ matrix.target.arch }}
+
+      - name: 收集并机械校验产物（必选矩阵见 scripts/release/artifacts.mjs；更新元数据拒绝）
+        shell: bash
+        run: |
+          node scripts/release/collect-artifacts.mjs \
+            --dist-dir packages/desktop/dist \
+            --platform ${{ matrix.target.platform }} \
+            --out-dir release-out
+
+      - name: 上传安装包工件（installer-<platform>）
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.target.platform }}
+          path: release-out/*
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: 上传构建元数据/日志（允许缺失）
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ matrix.target.platform }}
+          path: |
+            packages/desktop/out/metadata/**
+            packages/desktop/*.log
+          retention-days: 14
+          if-no-files-found: ignore
+
+  smoke:
+    name: 安装/启动冒烟 ${{ matrix.target.platform }}
+    needs: [release-gate, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { runner: ubuntu-24.04, os: linux, arch: x64, platform: linux-x64 }
+          - { runner: macos-15, os: mac, arch: arm64, platform: mac-arm64 }
+          - { runner: macos-15-intel, os: mac, arch: x64, platform: mac-x64 }
+          - { runner: windows-2022, os: win, arch: x64, platform: win-x64 }
+    runs-on: ${{ matrix.target.runner }}
+    permissions:
+      contents: read
+    steps:
+      - name: 检出仓库（提供 scripts/release-smoke 冒烟 harness；Worker C 所有）
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: 安装 Node 24.14.0（harness 只依赖 Node 内置模块，无需 pnpm install）
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+
+      - name: 下载安装包工件
+        uses: actions/download-artifact@v4
+        with:
+          name: installer-${{ matrix.target.platform }}
+          path: artifacts
+
+      - name: 选择主安装包（mac=dmg / win=exe / linux=AppImage；必须唯一）
+        id: installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd artifacts
+          shopt -s nullglob
+          case "${{ matrix.target.platform }}" in
+            mac-*) files=(MOS-*.dmg) ;;
+            win-*) files=(MOS-*.exe) ;;
+            linux-*) files=(MOS-*.AppImage) ;;
+          esac
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "::error::期望唯一主安装包，实际: ${files[*]:-无}" >&2
+            exit 1
+          fi
+          echo "path=$(pwd)/${files[0]}" >> "$GITHUB_OUTPUT"
+          echo "主安装包: ${files[0]}"
+
+      - name: 平台安装/启动冒烟（安装 → 启动 → MOS 身份 + 内置 mos-studio 插件校验）
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release-smoke/run-platform-smoke.mjs \
+            --platform "${{ matrix.target.platform }}" \
+            --artifact "${{ steps.installer.outputs.path }}" \
+            --mos-version "${{ needs.release-gate.outputs.mos_version }}" \
+            --evidence-out "smoke-evidence-${{ matrix.target.platform }}.json"
+
+      - name: 上传冒烟证据（smoke-evidence-<platform>）
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-evidence-${{ matrix.target.platform }}
+          path: smoke-evidence-*.json
+          retention-days: 30
+          if-no-files-found: error
+
+  release:
+    name: 组装并创建 DRAFT release（绝不自动发布）
+    needs: [release-gate, build, smoke]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: mos-v${{ needs.release-gate.outputs.mos_version }}
+      MOS_VERSION: ${{ needs.release-gate.outputs.mos_version }}
+      SOURCE_COMMIT: ${{ needs.release-gate.outputs.source_commit }}
+      ZCODE_BASELINE: ${{ needs.release-gate.outputs.zcode_baseline }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: 检出仓库（提供 scripts/release 工具；gh 走 API，本地无需标签对象）
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: 安装 Node 24.14.0（scripts/release 只用 Node 内置模块）
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+
+      - name: 汇总全部安装包（文件名全局唯一，合并到同一目录）
+        uses: actions/download-artifact@v4
+        with:
+          path: release-staging
+          pattern: installer-*
+          merge-multiple: true
+
+      - name: 汇总全部冒烟证据
+        uses: actions/download-artifact@v4
+        with:
+          path: smoke-evidence
+          pattern: smoke-evidence-*
+          merge-multiple: true
+
+      - name: 生成 SHA256SUMS（最终包字节定稿后）
+        run: |
+          node scripts/release/generate-checksums.mjs \
+            --artifacts-dir release-staging \
+            --out release-staging/SHA256SUMS
+
+      - name: 生成构建证明 attestation（best-effort；失败不虚报）
+        id: attest
+        continue-on-error: true
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: release-staging/MOS-*
+
+      - name: 生成 release-manifest.json（attestation 状态如实写入）
+        run: |
+          if [ "${{ steps.attest.outcome }}" = "success" ]; then
+            ATTESTATION_STATUS="generated"
+          else
+            ATTESTATION_STATUS="failed"
+          fi
+          echo "attestation_status=${ATTESTATION_STATUS}"
+          node scripts/release/generate-release-manifest.mjs \
+            --artifacts-dir release-staging \
+            --out release-staging/release-manifest.json \
+            --version "$MOS_VERSION" \
+            --tag "$TAG" \
+            --source-commit "$SOURCE_COMMIT" \
+            --zcode-baseline "$ZCODE_BASELINE" \
+            --build-run-id "${{ github.run_id }}" \
+            --build-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --attestation-status "$ATTESTATION_STATUS"
+
+      - name: 发布终验（重算哈希 + SHA256SUMS 一致性 + 必选平台齐全）
+        run: |
+          node scripts/release/verify-release.mjs \
+            --artifacts-dir release-staging \
+            --manifest release-staging/release-manifest.json
+
+      - name: 生成发布说明
+        run: |
+          node scripts/release/generate-release-notes.mjs \
+            --manifest release-staging/release-manifest.json \
+            --evidence-dir smoke-evidence \
+            --out release-notes.md
+
+      - name: 创建/复用 DRAFT release 并上传资产（绝不覆盖已有资产）
+        run: |
+          set -euo pipefail
+          TITLE="MOS $MOS_VERSION (release candidate)"
+          # 远端标签已存在时必须指向本次构建提交；不存在时（manual dispatch）由
+          # release create 在 source commit 上创建标签（刻意的草稿/RC 路径）。
+          REMOTE_REF="$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.sha' 2>/dev/null || true)"
+          if [ -n "$REMOTE_REF" ]; then
+            PEELLED="$(gh api "repos/${REPO}/git/tags/${REMOTE_REF}" --jq '.object.sha' 2>/dev/null || true)"
+            RESOLVED="${PEELLED:-$REMOTE_REF}"
+            if [ "$RESOLVED" != "$SOURCE_COMMIT" ]; then
+              echo "::error::远端标签 ${TAG}（${RESOLVED}）与构建提交（${SOURCE_COMMIT}）不一致，拒绝发布" >&2
+              exit 1
+            fi
+          fi
+
+          CREATE_ARGS=(--draft --target "$SOURCE_COMMIT" --title "$TITLE" --notes-file release-notes.md)
+          if git rev-parse -q --verify "refs/tags/${TAG}^{commit}" >/dev/null 2>&1; then
+            # 标签推送路径：本地能看到标签对象时用 --verify-tag 再校验一次。
+            CREATE_ARGS+=(--verify-tag)
+          fi
+
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            IS_DRAFT="$(gh release view "$TAG" --repo "$REPO" --json isDraft --jq .isDraft)"
+            if [ "$IS_DRAFT" != "true" ]; then
+              echo "::error::标签 ${TAG} 已存在已发布的 release；拒绝覆盖（修正构建必须换新版本号）" >&2
+              exit 1
+            fi
+            echo "复用已存在的 DRAFT release（只补传缺失资产，不覆盖已有资产）"
+          else
+            gh release create "$TAG" "${CREATE_ARGS[@]}"
+          fi
+
+          # 只上传尚不存在的资产；绝不 --clobber。
+          mapfile -t EXISTING_ASSETS < <(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name')
+          has_asset() {
+            local wanted="$1" name
+            for name in "${EXISTING_ASSETS[@]}"; do
+              [ "$name" = "$wanted" ] && return 0
+            done
+            return 1
+          }
+          upload_if_missing() {
+            local file="$1"
+            local name
+            name="$(basename "$file")"
+            if has_asset "$name"; then
+              echo "已存在，跳过上传: $name"
+              return 0
+            fi
+            gh release upload "$TAG" "$file" --repo "$REPO"
+          }
+          for file in release-staging/MOS-* release-staging/SHA256SUMS release-staging/release-manifest.json; do
+            upload_if_missing "$file"
+          done
+
+          echo "::notice::草稿 release 已就绪（未发布）。发布（promote）由 TL 手动执行："
+          echo "::notice::  gh release edit ${TAG} --draft=false"
