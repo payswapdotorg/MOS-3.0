@@ -236,12 +236,18 @@ export function upstreamZCodeDataDir(homeDir) {
   return join(homeDir, ".zcode");
 }
 
-/** 首次启动 seed 出的官方插件缓存根（~/.mos/.zcode/cli/cache/zcode-plugins-official/mos-studio/<version>）。 */
+/**
+ * 首次启动 seed 出的官方插件缓存根。
+ * 实测形态（zcode plugins list 驱动 resolveOfficialPluginRoots → prepare）：
+ * `<ZCODE_STORAGE_DIR>/cli/plugins/cache/zcode-plugins-official/mos-studio/<version>`
+ * —— services 的 resolvePluginStorageRoot 在 storageRoot 下先落 plugins 段。
+ */
 export function seededPluginRoot(homeDir, pluginVersion = MOS_PLUGIN_VERSION) {
   return join(
     mosDataBaseDir(homeDir),
     ".zcode",
     "cli",
+    "plugins",
     "cache",
     ZCODE_OFFICIAL_MARKETPLACE,
     MOS_PLUGIN_NAME,
