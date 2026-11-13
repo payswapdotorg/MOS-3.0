@@ -49,6 +49,22 @@ export type {
   NodeOffer,
 } from "./contract/agent-organization.js";
 export type { ResearchFinding, ResearchNote, Hypothesis } from "./contract/lab.js";
+export type {
+  Transform,
+  Engine,
+  ProductionNodeKind,
+  ProductionGraphNode,
+  ProductionGraphEdge,
+  ProductionGraph,
+  ProductionJob,
+  RightsRecord,
+  DistributionIntent,
+  Experiment,
+  CalibrationRecord,
+} from "./contract/production.js";
+export {
+  PRODUCTION_NODE_KINDS,
+} from "./contract/production.js";
 export { NODE_OFFER_REQUIRED_DISCLOSURES } from "./contract/agent-organization.js";
 export { InvariantViolation } from "./domain/invariants.js";
 export { ContractValidationError } from "./application/validate.js";

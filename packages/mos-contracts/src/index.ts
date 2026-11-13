@@ -12,6 +12,7 @@ export * from "./contract/route.js";
 export * from "./contract/evidence.js";
 export * from "./contract/agent-organization.js";
 export * from "./contract/lab.js";
+export * from "./contract/production.js";
 export * from "./domain/invariants.js";
 export * from "./application/validate.js";
 export { mosContractsModule } from "./module.js";

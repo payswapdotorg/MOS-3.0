@@ -164,5 +164,90 @@ export type OrganizationStatus = z.infer<typeof organizationStatusSchema>;
 export const agentBodyStatusSchema = z.enum(["active", "inactive", "unknown"]);
 export type AgentBodyStatus = z.infer<typeof agentBodyStatusSchema>;
 
+/**
+ * Week 3 additive 状态枚举（core-contracts-v3.0.yaml §enums，additive-only）。
+ * - production_job_status 的 linked = 已绑定外部 ZCode execution ref（决策锁 #5：
+ *   MOS 不执行任何东西，只记录业务状态）。
+ * - experiment_outcome 只在 Experiment authority 可写（决策锁 #18）。
+ */
+export const transformStatusSchema = z.enum(["draft", "active", "retired", "unknown"]);
+export type TransformStatus = z.infer<typeof transformStatusSchema>;
+
+export const engineStatusSchema = z.enum([
+  "registered",
+  "benchmarked",
+  "deprecated",
+  "unknown",
+]);
+export type EngineStatus = z.infer<typeof engineStatusSchema>;
+
+export const productionGraphStatusSchema = z.enum([
+  "draft",
+  "validated",
+  "invalidated",
+  "unknown",
+]);
+export type ProductionGraphStatus = z.infer<typeof productionGraphStatusSchema>;
+
+export const productionJobStatusSchema = z.enum([
+  "pending",
+  "linked",
+  "executing",
+  "succeeded",
+  "failed",
+  "cancelled",
+  "unknown",
+]);
+export type ProductionJobStatus = z.infer<typeof productionJobStatusSchema>;
+
+export const distributionStatusSchema = z.enum([
+  "intent",
+  "previewed",
+  "pending_approval",
+  "approved",
+  "rejected",
+  "executing",
+  "succeeded",
+  "failed",
+  "unknown",
+]);
+export type DistributionStatus = z.infer<typeof distributionStatusSchema>;
+
+export const rightsKindSchema = z.enum([
+  "source_license",
+  "consent",
+  "platform_policy",
+  "review_decision",
+  "unknown",
+]);
+export type RightsKind = z.infer<typeof rightsKindSchema>;
+
+export const rightsDecisionSchema = z.enum([
+  "granted",
+  "denied",
+  "pending",
+  "expired",
+  "unknown",
+]);
+export type RightsDecision = z.infer<typeof rightsDecisionSchema>;
+
+export const experimentStatusSchema = z.enum([
+  "defined",
+  "assigned",
+  "measuring",
+  "analyzed",
+  "concluded",
+  "unknown",
+]);
+export type ExperimentStatus = z.infer<typeof experimentStatusSchema>;
+
+export const experimentOutcomeSchema = z.enum([
+  "succeeded",
+  "failed",
+  "inconclusive",
+  "unknown",
+]);
+export type ExperimentOutcome = z.infer<typeof experimentOutcomeSchema>;
+
 export const qualityStatusSchema = z.enum(["unreviewed", "approved", "rejected", "unknown"]);
 export type QualityStatus = z.infer<typeof qualityStatusSchema>;
