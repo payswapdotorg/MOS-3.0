@@ -567,4 +567,31 @@ dist is not produced by any root gate step (pre-existing build-state gap surface
 the fresh clone; flagged for a future gate-wiring decision, not fixed here to keep this
 branch additive-only).
 
-**Publication addendum:** see the publication note appended after the push.
+**Publication addendum (2026-11-14, Week 4):**
+
+- `git push -u origin w4/economy-capacity` succeeded (GitHub identity `payswaporg`,
+  PAT in-environment only; credentials never in the repo). The first push attempt was
+  blocked by the husky pre-push hook itself: `test:engineering:affected --scope push`
+  could not resolve its default baseline (`origin/staging` absent on this depth-25
+  clone). Re-pushed with the documented caller-specified baseline
+  `ZCODE_PRE_PUSH_BASE=origin/main` (same supported override as W1–W4-milestone); the
+  full pre-push chain then ran green: worktree check, e2e remote targets, lint
+  (0 errors / 538 baseline warnings), docs:stale-phrases:check, db:schema:check,
+  test:architecture (61/61), architecture:check --changed (violations 0 / baseline 0 /
+  new 0). `test:engineering:affected --scope push` selected the entire 232-spec
+  engineering suite and the script skipped per its full-selection rule (never blocks
+  the push); the full-suite result is recorded above (1845 passed / 1 pre-existing
+  environment failure / 8 skipped). No repository file was modified for the override.
+- **PR #7 opened and MERGED to main**: merge commit
+  `b80cd8afc49881703aa6c86e52bd0d12234b857d` (merge method: merge commit, consistent
+  with PRs #1–#6) — https://github.com/payswapdotorg/MOS-3.0/pull/7 (head
+  `w4/economy-capacity` → base `main`; 1 commit, 58 changed files; body from
+  `docs/handoff/w4-economy-pr-body.md`). Local main synced to `b80cd8af`, worktree
+  clean. The Week 4 economy/capacity code is now the canonical main.
+- Remaining open items after this stage (all previously recorded, none regressed):
+  Desktop visual mount + desktop E2E and cross-client visual regression (no
+  docker/display — same hardware blocker), HubSpot live read (account owner's Google
+  2-Step Verification), mos-studio production-surface reads (later studio milestone),
+  marketplace copy-style plugin packaging, `@zcode/contracts` dist build-state gap
+  (flagged this stage for a future gate-wiring decision), environment-sensitive
+  miseToolchainEnv failure (pre-existing baseline).
