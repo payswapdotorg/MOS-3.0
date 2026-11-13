@@ -237,6 +237,7 @@ export const experimentStatusSchema = z.enum([
   "measuring",
   "analyzed",
   "concluded",
+  "cancelled",
   "unknown",
 ]);
 export type ExperimentStatus = z.infer<typeof experimentStatusSchema>;

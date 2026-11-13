@@ -1,0 +1,148 @@
+schema_version: 1
+stage: week-3-transformations-artifacts
+parallel_workstreams_max: 3
+tech_lead:
+  owns:
+    - core_contract_additive_extension
+    - gate_wiring_and_registry
+    - mos_learning_slice
+    - final_review_and_publication
+  must_not_delegate:
+    - main_branch_writes
+    - architecture_lock_changes
+    - shared_contract_approval
+    - composition_root_merge
+work_packages:
+  - id: W3-A
+    name: Content artifacts and rights policy
+    owner: worker-a
+    paths:
+      - packages/mos-content-artifacts/**
+      - packages/mos-rights-policy/**
+    forbidden_paths:
+      - spec/architecture/**
+      - spec/contracts/**
+      - packages/mos-contracts/**
+      - packages/mos-production/**
+      - packages/mos-engines/**
+      - packages/mos-distribution/**
+      - packages/mos-experiments/**
+      - packages/mos-learning/**
+      - packages/ui/**
+    tasks:
+      - mos-content-artifacts: immutable versioned artifact store (version N created only
+        from parent version N-1 of the same artifact id; parent lineage immutable — use
+        assertArtifactVersionLineage from @mos/contracts); opaque content_ref only (no
+        content bytes in MOS); provenance (source + observed_at); quality_status transitions;
+        tenant-scoped atomic JSON store.
+      - mos-rights-policy: rights record store (kinds: source_license/consent/
+        platform_policy/review_decision); fail-closed rights gate evaluation — an artifact
+        is cleared for a usage ONLY with a granted, unexpired decision record covering it;
+        restricted/missing/expired/pending all deny; review decisions append-only.
+    deliverables:
+      - package_source
+      - contract_tests
+    acceptance:
+      - Zero core ZCode file changes; imports only @mos/contracts + zod + node builtins.
+      - Artifact version immutability + lineage enforced at write boundary; cross-tenant
+        access fails closed.
+      - Rights gate never guesses: unknown/missing → denied with named reason.
+  - id: W3-B
+    name: Engine catalog and production graphs
+    owner: worker-b
+    paths:
+      - packages/mos-engines/**
+      - packages/mos-production/**
+    forbidden_paths:
+      - spec/architecture/**
+      - spec/contracts/**
+      - packages/mos-contracts/**
+      - packages/mos-content-artifacts/**
+      - packages/mos-rights-policy/**
+      - packages/mos-distribution/**
+      - packages/mos-experiments/**
+      - packages/ui/**
+    tasks:
+      - mos-engines: engine registry records (display name, technical capability ids,
+        provider id nullable, sandbox policy object, benchmark refs, license, status);
+        capability-to-engine matching (fail-closed on unknown capability); sandbox
+        invocation policy DESCRIPTOR only — no engine imports, no actual invocation
+        (decision lock #9).
+      - mos-production: transform definition registry; production graph records (nodes:
+        transform/engine/human/review_gate/budget/deadline; edges) with DAG validation
+        (no cycles, no orphans) and fail-closed reference checks via structural lookup
+        ports (transformLookup/engineLookup) — unresolved refs are named errors, never
+        silently dropped; production job store: durable business state only, external
+        zcode_execution_ref, NO executor (decision lock #5 — jobs reference ZCode
+        execution ids, MOS never runs its own).
+    deliverables:
+      - package_source
+      - contract_tests
+    acceptance:
+      - Zero core ZCode file changes; imports only @mos/contracts + zod + node builtins
+        (cross-module record access via structural lookup ports).
+      - Graph validation rejects cycles/orphans/unresolved refs with typed named errors.
+      - Job store has no execution path — only state transitions + external refs.
+  - id: W3-C
+    name: Distribution intents and experiments
+    owner: worker-c
+    paths:
+      - packages/mos-distribution/**
+      - packages/mos-experiments/**
+    forbidden_paths:
+      - spec/architecture/**
+      - spec/contracts/**
+      - packages/mos-contracts/**
+      - packages/mos-content-artifacts/**
+      - packages/mos-rights-policy/**
+      - packages/mos-engines/**
+      - packages/mos-production/**
+      - packages/mos-learning/**
+      - packages/ui/**
+    tasks:
+      - mos-distribution: distribution intent store (operation publish/update/delete;
+        artifact ref+version; connection + capability instance ids); side-effecting
+        intents REQUIRE a bound ExternalActionPreview (from @mos/contracts) and approval
+        — executing/succeeded without approved preview is unwritable (fail-closed);
+        idempotency keys; execution records are evidence refs only (provider execution
+        happens through Integration adapters, not here).
+      - mos-experiments: the Experiment authority (decision lock #18) — experiment
+        records (definition, assignment, measurement evidence refs, outcome);
+        outcomes are writable ONLY here with evidence refs; hypothesis adoption seam:
+        adoptHypothesis(experimentId, hypothesisId) via an injected hypothesisUpdate port
+        (composition root maps it to @mos/lab saveHypothesis; the port contract matches
+        lab's write boundary — adopted_by_experiment + experiment_ref).
+    deliverables:
+      - package_source
+      - contract_tests
+    acceptance:
+      - Zero core ZCode file changes; imports only @mos/contracts + zod + node builtins.
+      - No outcome without measurement evidence; no side-effecting distribution step
+        without approved preview.
+      - Adoption port is structural (no @mos/lab import); fake-port tests prove both
+        success and fail-closed rejection.
+  - id: TL-W3
+    name: Shared contracts, learning slice, gates and publication
+    owner: TL
+    paths:
+      - spec/contracts/core-contracts-v3.0.yaml
+      - spec/backlog/week-3-*
+      - packages/mos-contracts/**
+      - packages/mos-learning/**
+      - architecture-policy.yaml
+      - scripts/engineering-test-files.json
+      - package.json
+      - spec/architecture/module-registry-v3.0.yaml
+      - docs/handoff/IMPLEMENTATION-STATE.md
+    tasks:
+      - Additive core contract extension: Transform, Engine, ProductionGraph,
+        ProductionJob, RightsRecord, DistributionIntent, Experiment, CalibrationRecord
+        (+ enums) with invariants; schemas + tests in mos-contracts.
+      - mos-learning: calibration records derived ONLY from concluded experiments with
+        evidence (guard); delayed-mode safeguard — the package exposes recommendation
+        records only, zero APIs that mutate routes/production.
+      - Gate wiring for all W3 modules; full gate suite; ledger and registry update
+        (studio deferral recorded); push, PR, merge, publication record.
+    acceptance:
+      - All gates green; publication recorded with SHAs and observed times.
+      - mos-studio stays planned with an explicit deferral note (composition blocker).
