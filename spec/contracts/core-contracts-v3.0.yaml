@@ -31,6 +31,15 @@ enums:
   experiment_status: [defined, assigned, measuring, analyzed, concluded, cancelled, unknown]
   experiment_outcome: [succeeded, failed, inconclusive, unknown]
   artifact_kind: [source, draft, media, copy, campaign, evidence, report, transcript, caption, derivative, unknown]
+  # ===== Week 4 additive enums（economy / network capacity；decision: additive-only）=====
+  network_node_status: [active, inactive, unknown]
+  gig_status: [draft, published, assigned, in_progress, delivered, accepted, rejected, cancelled, unknown]
+  execution_option_kind: [human_offer, agent_offer, engine, no_op_reuse]
+  execution_option_adequacy: [adequate, inadequate, unapproved, unknown]
+  execution_recommendation: [no_op_reuse, agent_or_engine, human, no_adequate_route]
+  product_status: [draft, active, retired, unknown]
+  pricing_model: [one_time, subscription, usage_based, revenue_share, unknown]
+  price_status: [active, retired, unknown]
 objects:
   TenantContext:
     required: [tenant_id, workspace_id, actor_id]
@@ -394,6 +403,101 @@ objects:
       evidence_refs: array
       created_at: timestamp
       updated_at: timestamp
+  # ===== Week 4 additive objects（economy / network capacity；authority: resource-network / commerce）=====
+  NetworkNode:
+    required: [id, tenant_id, node_ref, display_name, availability, status, created_at]
+    fields:
+      id: string
+      tenant_id: string
+      node_ref: object
+      display_name: string
+      evidenced_capability_ids: array
+      availability: object
+      geography: nullable-string
+      language: nullable-string
+      evidence_refs: array
+      status: enum
+      created_at: timestamp
+      updated_at: timestamp
+  Gig:
+    required: [id, tenant_id, objective, script_brief, expected_output, evaluator, status, created_at]
+    fields:
+      id: string
+      tenant_id: string
+      mission_id: nullable-string
+      objective: string
+      source_refs: array
+      script_brief: string
+      capture_or_execution_instructions: string
+      expected_output: string
+      consent_rights: array
+      evaluator: object
+      deadline: nullable-timestamp
+      budget_reward: nullable-money
+      expected_value_of_waiting: nullable-money
+      alternative_route_ids: array
+      route_comparison: nullable-object
+      assigned_node_ref: nullable-object
+      status: enum
+      created_at: timestamp
+      updated_at: timestamp
+  ExecutionOption:
+    required: [kind, ref, adequacy]
+    fields:
+      kind: enum
+      ref: string
+      estimated_cost: nullable-money
+      estimated_latency_ms: nullable-integer
+      adequacy: enum
+      inadequacy_reason: nullable-string
+  RouteComparison:
+    required: [compared_options, recommendation, compared_at]
+    fields:
+      compared_options: array
+      recommendation: enum
+      evidence_refs: array
+      compared_at: timestamp
+  CommerceProduct:
+    required: [id, tenant_id, name, status, created_at]
+    fields:
+      id: string
+      tenant_id: string
+      name: string
+      description: nullable-string
+      artifact_refs: array
+      status: enum
+      created_at: timestamp
+      updated_at: timestamp
+  PriceRecord:
+    required: [id, tenant_id, product_id, price, pricing_model, effective_from, status, created_at]
+    fields:
+      id: string
+      tenant_id: string
+      product_id: string
+      price: money
+      pricing_model: enum
+      effective_from: timestamp
+      effective_until: nullable-timestamp
+      superseded_by: nullable-string
+      evidence_refs: array
+      status: enum
+      created_at: timestamp
+      updated_at: timestamp
+  MarketIntelligenceRecord:
+    required: [id, tenant_id, topic, subject_ref, facts, evidence_refs, observed_at, created_at]
+    fields:
+      id: string
+      tenant_id: string
+      topic: string
+      subject_ref: string
+      facts: object
+      evidence_refs: array
+      insight: nullable-string
+      confidence: nullable-number
+      limitations: array
+      observed_at: timestamp
+      created_at: timestamp
+      updated_at: timestamp
 invariants:
   - A capability instance is never available unless a live connection/account check and required scope checks support that assertion.
   - Provider static profile is not evidence of a tenant's account capability.
@@ -414,6 +518,11 @@ invariants:
   - Calibration records cite only concluded experiments with evidence and are delayed-mode: they are recommendation records only and never mutate routes or production directly.
   - Provider secrets are represented only by opaque credential_ref.
   - No missing value is inferred from a marketing brief.
+  # ===== Week 4 additive invariants（economy / network capacity）=====
+  - A gig is never assigned to a human node by default (architecture §8): human assignment requires a route comparison that compared agent/engine and no-op/reuse alternatives, none of them adequate, with evidence; adequacy unknown never counts as adequate (decision locks 14/17).
+  - Pricing history is append-only (architecture §9): a price record's amount, pricing model and effective window never change after creation; supersession appends a new record.
+  - A customer/market intelligence record never carries unevidenced facts: evidence refs are required and empty evidence fails closed (no inference from briefs).
+  - Discovery never hides excluded capacity: inactive nodes and draft/withdrawn/non-publishable candidates are surfaced with named reasons, never silently filtered.
 compatibility:
   - Keep ZCode session/task identifiers as external references; do not duplicate messages or transcript state.
   - Preserve existing ZCode plugin manifest and MCP tool schemas; MOS descriptors map onto them.

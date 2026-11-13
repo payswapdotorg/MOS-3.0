@@ -252,3 +252,64 @@ export type ExperimentOutcome = z.infer<typeof experimentOutcomeSchema>;
 
 export const qualityStatusSchema = z.enum(["unreviewed", "approved", "rejected", "unknown"]);
 export type QualityStatus = z.infer<typeof qualityStatusSchema>;
+
+/**
+ * Week 4 additive 状态枚举（core-contracts-v3.0.yaml §enums，additive-only；
+ * economy / network capacity —— authority: resource-network / commerce）。
+ * - execution_option_adequacy 的 unknown 绝不算 adequate（决策锁 #14 投影）。
+ * - gig_status 的 assigned 之后人工指派必须已通过 §23 路线比较守卫。
+ */
+export const networkNodeStatusSchema = z.enum(["active", "inactive", "unknown"]);
+export type NetworkNodeStatus = z.infer<typeof networkNodeStatusSchema>;
+
+export const gigStatusSchema = z.enum([
+  "draft",
+  "published",
+  "assigned",
+  "in_progress",
+  "delivered",
+  "accepted",
+  "rejected",
+  "cancelled",
+  "unknown",
+]);
+export type GigStatus = z.infer<typeof gigStatusSchema>;
+
+export const executionOptionKindSchema = z.enum([
+  "human_offer",
+  "agent_offer",
+  "engine",
+  "no_op_reuse",
+]);
+export type ExecutionOptionKind = z.infer<typeof executionOptionKindSchema>;
+
+export const executionOptionAdequacySchema = z.enum([
+  "adequate",
+  "inadequate",
+  "unapproved",
+  "unknown",
+]);
+export type ExecutionOptionAdequacy = z.infer<typeof executionOptionAdequacySchema>;
+
+export const executionRecommendationSchema = z.enum([
+  "no_op_reuse",
+  "agent_or_engine",
+  "human",
+  "no_adequate_route",
+]);
+export type ExecutionRecommendation = z.infer<typeof executionRecommendationSchema>;
+
+export const productStatusSchema = z.enum(["draft", "active", "retired", "unknown"]);
+export type ProductStatus = z.infer<typeof productStatusSchema>;
+
+export const pricingModelSchema = z.enum([
+  "one_time",
+  "subscription",
+  "usage_based",
+  "revenue_share",
+  "unknown",
+]);
+export type PricingModel = z.infer<typeof pricingModelSchema>;
+
+export const priceStatusSchema = z.enum(["active", "retired", "unknown"]);
+export type PriceStatus = z.infer<typeof priceStatusSchema>;

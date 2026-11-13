@@ -1,6 +1,6 @@
 # MOS 3.0 implementation state
 
-**Last verified:** 2026-11-13 composition-root milestone (branch `w4/composition-root-journey`; W3 merged to main at 10c3c95f — see composition-root milestone record)
+**Last verified:** 2026-11-14 Week 4 economy/capacity (branch `w4/economy-capacity`; composition-root milestone merged to main at 8834b35e — see Week 4 record)
 **Repository:** payswapdotorg/MOS-3.0
 **Main bootstrap commit:** e3c0fa0e2f477988441d283428b259c6409180f6
 **ZCode v3.18.0 import merge commit:** 545910f3ecf4ebc149c690c3bb7b77124e1e747e (two-parent merge of MOS main base 3a1f50b + upstream pin b95ebaff)
@@ -21,6 +21,7 @@
 - [x] Week 2 discovery/orchestration modules implemented and contract-tested (mos-agent-organizations 56 tests, mos-lab 60 tests; see Week 2 record).
 - [x] Week 3 transformation/artifact-lineage modules implemented and contract-tested (7 packages, 274 new tests; mos-studio deferred — composition blocker; see Week 3 record).
 - [x] Composition-root milestone delivered (mos-studio plugin: New Task → Mission → capabilities → routes → authorized read; see composition-root milestone record).
+- [x] Week 4 economy/capacity modules implemented and contract-tested (mos-commerce + mos-resource-network, architecture §8 invariants §23–§26; see Week 4 record).
 
 ## Evidence ledger
 
@@ -466,3 +467,104 @@ toolMappingVerified=false and the evidence record is unchanged.
   mos-studio production-surface reads (domain seams delivered in W3; wiring planned for a
   later studio milestone), marketplace copy-style plugin packaging (vendoring the external
   native module chain).
+
+## Week 4 record (branch w4/economy-capacity, 2026-11-14)
+
+**Stage:** Week 4 model/engine economy and network capacity (architecture §12; economic
+model §8; backlog spec/backlog/week-4-economy-capacity.md). Single TL workstream (the
+composition-root precedent; both modules share the contract extension and would collide
+on shared-contract ownership under worker split).
+
+**Scope decisions (backlog doc, in full):** service offers are NOT re-modeled (W2
+NodeOffer + fail-closed publish gate stays authoritative; mos-resource-network consumes
+offers only via the injected `OfferLookup` port, mos-lab precedent); code-level
+dependencies stay `@mos/contracts`-only (registry-level mos-agent-organizations /
+mos-capabilities / mos-integrations dependencies reconcile through structural lookup
+ports wired by the composition root); Gig = the §8 Human Production Task Package
+verbatim; do-not-assign-people-by-default is contract invariant §23, not advice;
+pricing history is append-only (§24); customer/market intelligence is evidence-gated
+(§25) with opaque subject refs (zero PII in records); discovery surfaces, never hides
+(§26).
+
+**Deliverables (all additive; zero core ZCode files touched; `git diff --name-only
+origin/main` = gate wiring + docs only):**
+
+- `packages/mos-contracts` (TL): additive objects NetworkNode, Gig, ExecutionOption,
+  RouteComparison, CommerceProduct, PriceRecord, MarketIntelligenceRecord in a new
+  `src/contract/economy.ts` (zod projection of the new YAML `# ===== Week 4 additive
+  objects =====` block, field-for-field); 8 new enums (Week 4 block in enums.ts); 4 new
+  invariant guards §23–§26 appended to invariants.ts (gig human-assignment justification
+  covering agent/engine + no-op/reuse comparison with adequacy unknown never counting as
+  adequate; price-record immutability; market-intelligence evidence gate; discovery
+  honest surfacing). 82 tests (+19; the W3-era file count 63 → 82).
+- `packages/mos-resource-network` (60 tests, 5 files): NetworkNode registration store
+  (`mos-network-nodes.json`, upsert by id, active/inactive); Gig state machine
+  (draft → published → assigned → in_progress → delivered → accepted/rejected;
+  cancelled from pre-delivery states; unknown: no out-edges) with two fail-closed gates —
+  publish requires the full §8 package (deadline / budget_reward /
+  expected_value_of_waiting / alternative_route_ids), human assignment additionally
+  requires the §23 route comparison (candidate-class coverage, zero adequate non-human
+  options, evidence refs; typed GigAssignmentBlockedError with the named missing list);
+  pure `compareExecutionOptions` (recommendation order no-op/reuse > agent/engine >
+  human per decision locks #17/#8-paragraph; empty input → no_adequate_route, never
+  default-to-human); pure `discoverCapacityForCapability` (matched/excluded with named
+  reasons across network nodes + NodeOffers + engines — the mos-engines
+  deprecated-surfaced idiom; OfferLookup/EngineLookup ports injected by the composition
+  root); GigStore (`mos-gigs.json`) with §23 guard re-run at every persist boundary.
+- `packages/mos-commerce` (39 tests, 3 files): CommerceProduct registration store
+  (draft → active → retired state machine); PriceRecord append-only history
+  (`mos-commerce-prices.json`) — zero update API for amount/model/effective window
+  (§24: supersession = append new record + retire old with `superseded_by` pointer;
+  §24 guard at every persist), same-product+model active-window overlap → typed
+  PriceConflictError; MarketIntelligenceRecord store with §25 double gate
+  (intake schema `evidence_refs` min(1) + guard at persist) and opaque `subject_ref`
+  (zero PII), facts carried verbatim (zero inference).
+
+**Gate wiring:** architecture-policy.yaml (+2 modules), module-registry-v3.0.yaml (both
+flipped to contract-tested with dated notes), scripts/engineering-test-files.json
+(+10 files, 232 total — including the W3 gate wiring's omitted
+`packages/mos-contracts/test/week3-contract-schemas.test.ts`, backfilled here and
+flagged in the PR body), package.json typecheck chain (+@mos/commerce
++@mos/resource-network), pnpm-lock.yaml (2 new workspace importers).
+
+**Gate evidence (run on this tree, 2026-11-14):**
+
+- `pnpm typecheck` (root, full chain incl. both new packages): every step PASS —
+  session-control, all 18 MOS package typechecks (incl. @mos/commerce and
+  @mos/resource-network), main-tree `tsc -b` (19 tsconfigs), remote-main + zcode-cua.
+  Environment note (recorded for lineage honesty): this 4 GiB sandbox OOM-killed the
+  chain at the previously recorded `--max-old-space-size=3072` heap; the identical
+  chain passes end-to-end at `--max-old-space-size=2560` per process. Same
+  environment-only class as the recorded renderer-scale OOM (adequate-hardware record);
+  no repository file was modified for the heap adjustment.
+- `pnpm --filter @mos/contracts test`: 82 passed (6 files).
+- `pnpm --filter @mos/commerce test`: 39 passed (3 files).
+- `pnpm --filter @mos/resource-network test`: 60 passed (5 files).
+- `pnpm lint`: 0 errors / 538 warnings — identical to the Stage 0/W1–W4-milestone
+  baseline (3 new-code unused-import warnings found and fixed before the gate run).
+- `pnpm docs:stale-phrases:check`: PASS (2292 files). `pnpm db:schema:check`: PASS.
+- `pnpm test:architecture`: PASS (61/61, 0 fail).
+- `pnpm architecture:check -- --changed`: violations 0 / baseline 0 / new 0.
+- `pnpm test:engineering`: **first run failed 2 files** — the pre-existing
+  environment-sensitive miseToolchainEnv.test.ts (identical to all prior baselines)
+  PLUS packages/server/test/remoteOfficialPluginAssets.test.ts (fresh-clone build-state
+  gap: `@zcode/contracts` exports resolve to `dist/`, which no gate step builds; the
+  failure is not caused by this branch's code). Corrected run after
+  `pnpm --filter @zcode/contracts build` (recorded here per update rules, nothing
+  deleted): **1845 passed / 1 failed / 8 skipped (232 files)** — the single failure is
+  the pre-existing miseToolchainEnv.test.ts, not a regression. 135 new tests since the
+  composition-root milestone (1710 → 1845: +19 contracts, +17 W3-contracts backfill,
+  +39 commerce, +60 resource-network).
+
+**Honest limits (unchanged blockers + new notes):** Desktop visual mount + desktop E2E,
+cross-client visual regression (no docker/display — same hardware blocker as Weeks
+1–4-milestone); HubSpot live read (account owner's Google 2-Step Verification — nothing
+reset or bypassed); mos-studio production-surface reads (later studio milestone);
+marketplace copy-style plugin packaging. New notes: OfferLookup/EngineLookup composition
+root wiring (studio/service layer) belongs to a later milestone — this stage delivers
+the ports and the pure discovery functions over injected records; `@zcode/contracts`
+dist is not produced by any root gate step (pre-existing build-state gap surfaced by
+the fresh clone; flagged for a future gate-wiring decision, not fixed here to keep this
+branch additive-only).
+
+**Publication addendum:** see the publication note appended after the push.

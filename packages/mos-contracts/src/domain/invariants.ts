@@ -12,6 +12,11 @@ import type {
   ProductionGraph,
   ProductionJob,
 } from "../contract/production.js";
+import type {
+  Gig,
+  MarketIntelligenceRecord,
+  PriceRecord,
+} from "../contract/economy.js";
 
 /**
  * core-contracts-v3.0.yaml §invariants 的运行时守卫。
@@ -367,6 +372,128 @@ export function assertDistributionPreviewApproval(intent: DistributionIntent): v
     throw new InvariantViolation(
       "distribution-preview-approval",
       `意图 ${intent.id} 进入 ${intent.status} 前必须 approved`,
+    );
+  }
+}
+
+/**
+ * 不变量 §23（W4，architecture §8 + 决策锁 #14/#17）：绝不默认把任务派给真人。
+ * gig 已指派给 human 节点（assigned 及之后、未 rejected/cancelled）时必须持有路线比较：
+ * 覆盖 machine（agent_offer/engine）与 no_op_reuse 候选、无一 adequate（unknown 也不算）、
+ * 且比较带证据引用；§8 人工包字段（deadline/budget_reward/expected_value_of_waiting）齐全。
+ */
+export function assertGigHumanAssignmentJustified(gig: Gig): void {
+  if (gig.assigned_node_ref === null || gig.assigned_node_ref.kind !== "human") return;
+  if (gig.status === "rejected" || gig.status === "cancelled" || gig.status === "unknown") return;
+
+  const missing: string[] = [];
+  if (gig.deadline === null) missing.push("deadline");
+  if (gig.budget_reward === null) missing.push("budget_reward");
+  if (gig.expected_value_of_waiting === null) missing.push("expected_value_of_waiting");
+  if (gig.route_comparison === null) missing.push("route_comparison");
+  if (missing.length > 0) {
+    throw new InvariantViolation(
+      "gig-human-assignment-justified",
+      `gig ${gig.id} 指派给真人缺 §8 必需披露: ${missing.join(", ")}`,
+    );
+  }
+
+  const comparison = gig.route_comparison;
+  if (comparison === null) {
+    // 上一分支已拒绝 null 比较记录；此处保留显式 fail-closed（兼作类型收窄）。
+    throw new InvariantViolation(
+      "gig-human-assignment-justified",
+      `gig ${gig.id} 指派给真人缺 §8 必需披露: route_comparison`,
+    );
+  }
+
+  const compared = comparison.compared_options;
+  const hasMachine = compared.some(
+    (option) => option.kind === "agent_offer" || option.kind === "engine",
+  );
+  const hasReuse = compared.some((option) => option.kind === "no_op_reuse");
+  const hasHuman = compared.some((option) => option.kind === "human_offer");
+  const missingClasses: string[] = [];
+  if (!hasMachine) missingClasses.push("agent/engine");
+  if (!hasReuse) missingClasses.push("no-op/reuse");
+  if (!hasHuman) missingClasses.push("human_offer");
+  if (missingClasses.length > 0) {
+    throw new InvariantViolation(
+      "gig-human-assignment-justified",
+      `gig ${gig.id} 的路线比较未覆盖候选类别: ${missingClasses.join(", ")}`,
+    );
+  }
+
+  const adequate = compared.filter(
+    (option) =>
+      option.kind !== "human_offer" && option.adequacy === "adequate",
+  );
+  if (adequate.length > 0) {
+    throw new InvariantViolation(
+      "gig-human-assignment-justified",
+      `gig ${gig.id} 存在 adequate 的非人工路线 (${adequate
+        .map((option) => option.ref)
+        .join(", ")})，按 §8 不得默认指派真人`,
+    );
+  }
+
+  if (comparison.evidence_refs.length === 0) {
+    throw new InvariantViolation(
+      "gig-human-assignment-justified",
+      `gig ${gig.id} 的路线比较缺少证据引用`,
+    );
+  }
+}
+
+/**
+ * 不变量 §24（W4，architecture §9）：定价历史 append-only。
+ * 价格记录的 price/pricing_model/effective_from/effective_until/product_id 创建后不可变；
+ * 变更必须追加新记录（superseded_by 指向），而不是改写历史价格。
+ */
+export function assertPriceRecordImmutable(previous: PriceRecord, next: PriceRecord): void {
+  const changed: string[] = [];
+  if (previous.product_id !== next.product_id) changed.push("product_id");
+  if (previous.price.amount !== next.price.amount) changed.push("price.amount");
+  if (previous.price.currency !== next.price.currency) changed.push("price.currency");
+  if (previous.pricing_model !== next.pricing_model) changed.push("pricing_model");
+  if (previous.effective_from !== next.effective_from) changed.push("effective_from");
+  if (previous.effective_until !== next.effective_until) changed.push("effective_until");
+  if (changed.length > 0) {
+    throw new InvariantViolation(
+      "price-history-append-only",
+      `价格记录 ${next.id} 不可改写 (${changed.join(", ")})；定价变更必须追加新记录`,
+    );
+  }
+}
+
+/**
+ * 不变量 §25（W4）：客户/市场情报绝不携带无证据事实。
+ * evidence_refs 为空 = fail-closed（营销简报推不出缺失值）。
+ */
+export function assertMarketIntelligenceEvidenced(record: MarketIntelligenceRecord): void {
+  if (record.evidence_refs.length === 0) {
+    throw new InvariantViolation(
+      "market-intelligence-evidence",
+      `情报记录 ${record.id} 缺 evidence_refs；无证据的市场事实绝不允许落盘`,
+    );
+  }
+}
+
+/**
+ * 不变量 §26（W4）：发现绝不隐藏被排除的容量。
+ * 输入若是发现结果（matched/excluded 二分），excluded 必须带具名原因地原样返回。
+ * 本守卫校验排除项结构：reason 为空字符串 = 隐藏，fail-closed。
+ */
+export function assertDiscoverySurfacesExclusions(
+  excluded: ReadonlyArray<{ ref: string; reason: string }>,
+): void {
+  const hidden = excluded.filter(
+    (item) => typeof item.reason !== "string" || item.reason.trim().length === 0,
+  );
+  if (hidden.length > 0) {
+    throw new InvariantViolation(
+      "discovery-surfaces-exclusions",
+      `被排除候选缺具名原因（隐藏 = 违规）: ${hidden.map((item) => item.ref).join(", ")}`,
     );
   }
 }

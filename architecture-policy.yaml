@@ -2047,6 +2047,34 @@ modules:
       - packages/mos-studio/src/contract.ts
     layers: {contract: contract, domain: domain, app: application}
     owner: tl
+  # 商业层（W4 economy）：产品/定价（append-only 定价历史 §24）/客户市场情报（§25 证据门禁）。
+  # registry 的 mos-integrations 依赖经组合根解析（evidence_refs 只持不透明引用）。
+  - id: mos-commerce
+    roots:
+      - packages/mos-commerce/src
+      - packages/mos-commerce/vitest.config.ts
+    managed: true
+    requires: [mos-contracts]
+    publicEntrypoints:
+      - packages/mos-commerce/src/index.ts
+      - packages/mos-commerce/src/contract.ts
+    layers: {contract: contract, domain: domain, app: application}
+    owner: tl
+  # 网络容量层（W4 network capacity）：节点发现（§26 具名浮出）、§8 Human Production
+  # Task Package（gig）状态机（§8 发布门禁 + §23 人工指派路线比较门禁）、容量匹配。
+  # registry 的 mos-agent-organizations / mos-capabilities 依赖经 OfferLookup/EngineLookup
+  # 结构化端口在组合根解析（mos-lab 同一先例）。
+  - id: mos-resource-network
+    roots:
+      - packages/mos-resource-network/src
+      - packages/mos-resource-network/vitest.config.ts
+    managed: true
+    requires: [mos-contracts]
+    publicEntrypoints:
+      - packages/mos-resource-network/src/index.ts
+      - packages/mos-resource-network/src/contract.ts
+    layers: {contract: contract, domain: domain, app: application}
+    owner: tl
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。
