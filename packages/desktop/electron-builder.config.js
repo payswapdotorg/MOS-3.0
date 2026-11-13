@@ -62,6 +62,10 @@ const desktopProductIdentity = resolveDesktopProductIdentity({
   ...process.env,
   ZCODE_ENV: builtinProviderConfig.environment,
 });
+// MOS 发布身份：独立产品（org.payswap.mos）。品牌素材由 prepare:mos-brand 生成在
+// build/mos-brand/；发布更新不走上游 feed（publish 置 null，手动更新走 GitHub Releases）。
+const isMosDesktopProduct = desktopProductIdentity.flavor === "mos";
+const mosBrandAsset = (name) => `build/mos-brand/${name}`;
 const nativeSearchReleasePlan = resolveNativeSearchReleasePlan({
   platform: targetPlatform.os,
   arch: targetPlatform.arch,
@@ -608,11 +612,16 @@ export default {
   extraMetadata: {
     version: buildMetadata.appVersion,
     zcodeProductFlavor: desktopProductIdentity.flavor,
-    homepage: "https://zcode.z.ai",
-    author: {
-      name: "ZCode",
-      email: "dev@zcode.z.ai",
-    },
+    homepage: isMosDesktopProduct ? "https://github.com/payswapdotorg/MOS-3.0" : "https://zcode.z.ai",
+    author: isMosDesktopProduct
+      ? {
+          name: "PaySwap",
+          email: "mos@payswap.org",
+        }
+      : {
+          name: "ZCode",
+          email: "dev@zcode.z.ai",
+        },
   },
   // macOS 签名阶段会对 Electron Framework 下每个语言包逐个 codesign。
   // 默认全量语言会产生大量 locale.pak 签名调用，显著拉长打包时长。
@@ -819,21 +828,23 @@ export default {
     },
     {
       // 应用图标：打包后放入 resources 目录，主进程通过 process.resourcesPath 加载
-      from: "build/icon.png",
+      from: isMosDesktopProduct ? mosBrandAsset("mos-icon.png") : "build/icon.png",
       to: "icon.png",
     },
     ...(targetPlatform.os === "linux"
       ? [
           {
             // AppImage 用户级 hicolor 图标安装使用真实 512x512 资源，避免目录标称尺寸和 PNG IHDR 不一致。
-            from: "build/icons/512x512.png",
+            from: isMosDesktopProduct
+              ? mosBrandAsset("mos-icons/512x512.png")
+              : "build/icons/512x512.png",
             to: "icon_512x512.png",
           },
         ]
       : []),
     {
       // Windows 独立图标：开发态和打包态都统一走同一套任务栏/窗口图标资源。
-      from: "build/icon_windows.png",
+      from: isMosDesktopProduct ? mosBrandAsset("mos-icon_windows.png") : "build/icon_windows.png",
       to: "icon_windows.png",
     },
     ...(targetPlatform.os === "win32"
@@ -841,7 +852,7 @@ export default {
           {
             // Windows 托盘图标：Tray 在打包态只能稳定读取 resources 下的独立资源。
             // 这里不复用窗口 PNG，避免通知区域在高 DPI 下退化成模糊缩放图。
-            from: "build/icon.ico",
+            from: isMosDesktopProduct ? mosBrandAsset("mos-icon.ico") : "build/icon.ico",
             to: "tray_icon.ico",
           },
         ]
@@ -905,6 +916,8 @@ export default {
     target: ["dmg", "zip"],
     category: "public.app-category.developer-tools",
     artifactName: buildDesktopArtifactName("mac"),
+    // MOS 使用独立品牌图标（build/mos-brand/mos-icon.icns）；上游 ZCode 继续用 build/icon.icns。
+    icon: isMosDesktopProduct ? mosBrandAsset("mos-icon.icns") : "build/icon.icns",
     // macOS 语言包是 en.lproj / zh_CN.lproj，沿用顶层 "en-US" 会一个都匹配不上被全部删掉，
     // Chromium 自带文案随之丢失（视频控件菜单只剩图标、播放速度子菜单空白）。
     electronLanguages: MAC_ELECTRON_LANGUAGES,
@@ -946,6 +959,8 @@ export default {
   win: {
     target: ["nsis"],
     artifactName: buildDesktopArtifactName("win"),
+    // MOS 使用独立品牌图标；上游 ZCode 继续用 build/icon.ico（electron-builder 默认 buildResources）。
+    icon: isMosDesktopProduct ? mosBrandAsset("mos-icon.ico") : "build/icon.ico",
     verifyUpdateCodeSignature: true,
     signExts: [".node", ".dll"],
     // Bugfix: Windows CI 之前完全依赖 electron-builder 内置 signtool.exe，
@@ -969,7 +984,9 @@ export default {
     // 与 /usr/share/icons/hicolor/*/apps/zcode.png 保持一致。
     executableName: desktopProductIdentity.linuxExecutableName,
     category: "Development",
-    maintainer: "ZCode <dev@zcode.z.ai>",
+    // MOS 用独立品牌 hicolor 图标集（Icon=mos 由 512x512 png 派生）；上游 ZCode 继续用 build/icons。
+    icon: isMosDesktopProduct ? mosBrandAsset("mos-icons") : "build/icons",
+    maintainer: isMosDesktopProduct ? "PaySwap <mos@payswap.org>" : "ZCode <dev@zcode.z.ai>",
   },
   deb: {
     // 生产版与 Preview 必须是两个 dpkg package；只改可执行名仍会让安装器把另一版本当成升级替换。
@@ -1002,9 +1019,11 @@ export default {
     // 显式放大 DMG 容量，避免拷贝截断导致的“Framework 目录存在但核心文件缺失”。
     size: "3200m",
     // 使用自定义安装背景图。
-    background: "build/dmg_background.png",
+    background: isMosDesktopProduct ? mosBrandAsset("mos-dmg_background.png") : "build/dmg_background.png",
     // 安装盘图标统一使用安装专用素材，避免复用应用图标导致安装识别度不足。
-    icon: "build/icon_installer.icns",
+    icon: isMosDesktopProduct
+      ? mosBrandAsset("mos-icon_installer.icns")
+      : "build/icon_installer.icns",
     contents: [
       // dmg-builder@1.2.5 的 dmgbuild 会对每个 type:"file" 条目执行 ditto <path>，
       // path 被当作真实源文件解析。.background.tiff / .VolumeIcon.icns 是 dmgbuild
@@ -1019,19 +1038,39 @@ export default {
     oneClick: false,
     allowToChangeInstallationDirectory: true,
     // Windows 安装流程使用独立安装图标，和应用运行时图标解耦。
-    installerIcon: "build/icon_installer.ico",
-    uninstallerIcon: "build/icon_installer.ico",
-    installerHeaderIcon: "build/icon_installer.ico",
+    // MOS 用独立品牌安装器图标；上游 ZCode 继续用 build/icon_installer.ico。
+    ...(isMosDesktopProduct
+      ? {
+          installerIcon: mosBrandAsset("mos-icon_installer.ico"),
+          uninstallerIcon: mosBrandAsset("mos-icon_installer.ico"),
+          installerHeaderIcon: mosBrandAsset("mos-icon_installer.ico"),
+        }
+      : {
+          installerIcon: "build/icon_installer.ico",
+          uninstallerIcon: "build/icon_installer.ico",
+          installerHeaderIcon: "build/icon_installer.ico",
+        }),
   },
   detectUpdateChannel: false,
-  publish: {
-    provider: "generic",
-    // 当前 OSS/CDN 对多 Range 请求返回 206，但 Content-Type 仍是 application/x-msdownload，
-    // electron-updater 会因缺少 multipart/byteranges 直接回退整包下载。关闭 multiple range 后仍走差分，
-    // 只是按单 Range 顺序拉取差异块，避免 Windows 用户更新时从约 15MB 退化成 300MB+ 全量包。
-    useMultipleRangeRequest: false,
-    // 新客户端运行时使用服务端 manifest provider；这里仅保留 electron-builder 必需的
-    // generic publish 占位，避免打包产物继续携带可配置的旧 stable feed。
-    url: "http://localhost:8081",
-  },
+  //
+  // MOS 发布身份不接任何更新 feed：MOS 与上游 ZCode 是并排安装的两个产品，指向上游
+  // generic feed（占位 localhost）或上游 ZCode 的服务端 manifest 都违反隔离与供应链约束。
+  // 运行时 auto-updater 对非 production flavor 已整体禁用（initAutoUpdater 的
+  // ZCODE_PRODUCT_FLAVOR === "production" 门），MOS 的更新路径是 GitHub Releases 手动
+  // 下载安装（见 spec/backlog/release-engineering.md §5）。
+  //
+  ...(isMosDesktopProduct
+    ? { publish: null }
+    : {
+        publish: {
+          provider: "generic",
+          // 当前 OSS/CDN 对多 Range 请求返回 206，但 Content-Type 仍是 application/x-msdownload，
+          // electron-updater 会因缺少 multipart/byteranges 直接回退整包下载。关闭 multiple range 后仍走差分，
+          // 只是按单 Range 顺序拉取差异块，避免 Windows 用户更新时从约 15MB 退化成 300MB+ 全量包。
+          useMultipleRangeRequest: false,
+          // 新客户端运行时使用服务端 manifest provider；这里仅保留 electron-builder 必需的
+          // generic publish 占位，避免打包产物继续携带可配置的旧 stable feed。
+          url: "http://localhost:8081",
+        },
+      }),
 };

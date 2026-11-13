@@ -84,7 +84,13 @@ export function collectBuildMetadata() {
   const desktopPackageJson = readJson(resolve(desktopDir, "package.json"));
 
   return {
-    appVersion: normalizeVersion(rootPackageJson.version),
+    // MOS 发布版本经 ZCODE_DESKTOP_APP_VERSION 显式注入（如 3.0.0-rc.1），独立于导入的
+    // ZCode 上游基线（root package.json version）。未注入时沿用上游版本（ZCode 构建）。
+    // 上游基线另由 zcodeUpstreamBaseline 保留，release manifest 两个版本都记录。
+    appVersion: normalizeVersion(
+      process.env.ZCODE_DESKTOP_APP_VERSION?.trim() || rootPackageJson.version,
+    ),
+    zcodeUpstreamBaseline: normalizeVersion(rootPackageJson.version),
     minCompatibleVersion: normalizeVersion(
       rootPackageJson.zcodeCompatibility?.minCompatibleVersion ?? rootPackageJson.version,
     ),

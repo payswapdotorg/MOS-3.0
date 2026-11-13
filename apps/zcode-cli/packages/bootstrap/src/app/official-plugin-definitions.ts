@@ -59,6 +59,13 @@ export interface OfficialPluginDefinition {
   name: string;
   /** filesystem/SEA seed 缺少任一项时拒绝生成残缺的官方插件缓存。 */
   requiredSeedPaths?: readonly string[];
+  /**
+   * 定义对应源码包的仓库相对位置（相对 apps/zcode-cli/packages/）。内置插件默认按
+   * rootCandidates[0] 的 basename 在 apps/zcode-cli/packages/ 下解析；MOS 仓库携带的
+   * 插件（如 mos-studio，源码在仓库 packages/mos-studio）用该字段指向真实源码包，
+   * 供 bootstrap 单测做 componentTypes↔ui.surfaces 等机械对照。
+   */
+  sourceRoot?: string;
   rootCandidates: readonly string[];
   /** Extra top-level paths intentionally staged as plugin runtime assets. */
   runtimeTopLevelPaths?: readonly string[];
@@ -527,6 +534,50 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       "dist/ui/panel.html",
     ],
     version: "0.5.0",
+  },
+  {
+    // MOS Studio（packages/mos-studio）：MOS 3.0 桌面产品的组合根插件 —— SessionStart hook
+    // 观察标准任务创建，MCP server 提供 mission/capability/route 工具，ui.surfaces + slots
+    // 挂载侧栏面板。它只随 MOS 身份构建（MOS_PRODUCT_IDENTITY=1）stage 到
+    // glm/packages/mos-studio-plugin（packages/desktop/scripts/mos-plugin-bundle.mjs）；
+    // 上游 ZCode 构建/开发态不 stage，filesystem seed 在 rootCandidates 找不到根时按既有
+    // 语义跳过（bundled-plugins.ts resolveFilesystemPluginRoot → !rootPath → continue），
+    // 因此本定义对 ZCode 构建零影响。node_modules 原生闭包（@napi-rs/keyring + koffi，
+    // 目标平台预编译）由 staging 写入，runtimeTopLevelPaths 让 seed 原样携带进官方缓存
+    // （computer-use 插件 vendor sharp 的既有模式）。
+    componentTypes: ["ui"],
+    defaultEnabled: true,
+    listing: {
+      author: { name: "PaySwap", url: "https://payswap.org" },
+      category: "developer-tools",
+      displayName: "MOS Studio",
+      description_i18n: {
+        "zh-CN": "MOS 组合根：观察标准任务创建，解析已连接账户能力并经既有凭据库执行授权读。",
+      },
+      homepage: "https://github.com/payswapdotorg/MOS-3.0",
+    },
+    name: "mos-studio",
+    requiredSeedPaths: [
+      ".zcode-plugin/plugin.json",
+      "hooks/hooks.json",
+      "dist/server.mjs",
+      "dist/hook.mjs",
+      "dist/ui/panel.html",
+      // 原生闭包的跨平台稳定部分（平台绑定包由 staging 侧按目标校验）。
+      "node_modules/@napi-rs/keyring/package.json",
+      "node_modules/koffi/index.js",
+    ],
+    // 源码包在 MOS 仓库树 packages/mos-studio（不在 apps/zcode-cli/packages 下）。
+    // 路径相对 apps/zcode-cli/packages/（bootstrap 单测的 packagesRoot）解析。
+    sourceRoot: "../../../packages/mos-studio",
+    rootCandidates: [
+      "packages/mos-studio-plugin",
+      "../mos-studio-plugin",
+      "../../mos-studio-plugin",
+      "../../../mos-studio-plugin",
+    ],
+    runtimeTopLevelPaths: ["node_modules"],
+    version: "0.1.0",
   },
 ];
 

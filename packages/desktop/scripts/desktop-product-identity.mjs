@@ -5,6 +5,14 @@
  */
 export const ZCODE_PREVIEW_IDENTITY_ENV = "ZCODE_PREVIEW_IDENTITY";
 
+/**
+ * 构建期开关：为真时安装包使用 MOS 产品身份（PaySwap MOS，`org.payswap.mos` 命名空间）。
+ * MOS 是在 ZCode 应用原地扩展出来的独立产品：独立应用名/appId/可执行名/包名/数据目录，
+ * 与上游 ZCode 并排安装互不覆盖；更新策略走 GitHub Releases 手动更新（不接上游 feed）。
+ * 后端环境仍由 `ZCODE_ENV` 单独决定（发布构建用 `ZCODE_ENV=production MOS_PRODUCT_IDENTITY=1`）。
+ */
+export const MOS_PRODUCT_IDENTITY_ENV = "MOS_PRODUCT_IDENTITY";
+
 const PRODUCTION_IDENTITY = Object.freeze({
   flavor: "production",
   appId: "dev.zcode.app",
@@ -23,10 +31,38 @@ const PREVIEW_IDENTITY = Object.freeze({
   cuaHelperInstallVariant: "preview",
 });
 
+const MOS_IDENTITY = Object.freeze({
+  flavor: "mos",
+  appId: "org.payswap.mos",
+  productName: "MOS",
+  linuxExecutableName: "mos",
+  linuxPackageName: "mos",
+  cuaHelperInstallVariant: null,
+});
+
 export const desktopProductIdentities = Object.freeze({
   production: PRODUCTION_IDENTITY,
   preview: PREVIEW_IDENTITY,
+  mos: MOS_IDENTITY,
 });
+
+/**
+ * MOS 身份开关与 Preview 开关保持同一套严格拼写规则：只有 `1`（`0`/空 = 关闭），
+ * 其它拼写直接构建失败，避免 `true` 在 YAML 路由层漏匹配、却在脚本层被当成开启，
+ * 把 MOS 包当成 ZCode 包发布。
+ */
+export function isMosIdentityRequested(env = process.env) {
+  const value = env[MOS_PRODUCT_IDENTITY_ENV]?.trim() ?? "";
+  if (value === "1") {
+    return true;
+  }
+  if (value === "" || value === "0") {
+    return false;
+  }
+  throw new Error(
+    `invalid ${MOS_PRODUCT_IDENTITY_ENV}=${env[MOS_PRODUCT_IDENTITY_ENV]}; expected 1 or 0`,
+  );
+}
 
 function normalizeDesktopZCodeEnv(env) {
   return env.ZCODE_ENV?.trim().toLowerCase() === "production" ? "production" : "test";
@@ -53,10 +89,14 @@ export function isPreviewIdentityRequested(env = process.env) {
 /**
  * 产品身份（flavor）与后端环境（`ZCODE_ENV`）是两个轴：
  * - `ZCODE_ENV=test` 一律是 Preview，测试后端不能顶着正式 `ZCode` 身份覆盖用户的正式安装；
- * - `ZCODE_ENV=production` 默认是正式身份，显式 `ZCODE_PREVIEW_IDENTITY=1` 时改用 Preview 身份。
+ * - `ZCODE_ENV=production` 默认是正式身份，显式 `ZCODE_PREVIEW_IDENTITY=1` 时改用 Preview 身份；
+ * - 显式 `MOS_PRODUCT_IDENTITY=1` 时一律使用 MOS 身份（MOS 是独立产品而不是 ZCode 的一个渠道）。
  * 未知 `ZCODE_ENV` 继续按 test 处理，和共享层 normalizeZCodeEnv 的 fail-safe 默认值一致。
  */
 export function resolveDesktopProductFlavor(env = process.env) {
+  if (isMosIdentityRequested(env)) {
+    return "mos";
+  }
   if (isPreviewIdentityRequested(env)) {
     return "preview";
   }
@@ -80,13 +120,16 @@ export function resolveDesktopArtifactSuffix(env = process.env) {
  *
  * 打包态必须复用 electron-builder 的 appId，否则快捷方式里的 AUMID、开始菜单索引
  * 和运行中的 Electron 进程会被 Windows 视为三个不同的应用。开发态继续保留旧身份，
- * 避免本地调试快捷方式和正式/Preview 安装包互相污染。
+ * 避免本地调试快捷方式和正式/Preview/MOS 安装包互相污染。
  */
 export function resolveWindowsAppUserModelIdForFlavor(flavor, runtime = { isPackaged: true }) {
   if (runtime.isPackaged === false) {
     return "cn.aminer.zcode";
   }
-  return desktopProductIdentities[flavor === "preview" ? "preview" : "production"].appId;
+  const identity = desktopProductIdentities[flavor];
+  // 未知 flavor 一律落到 production 身份：Windows 不允许运行期动态改 AUMID，
+  // 宁可继续用正式包身份也不能给出一个 Windows 视为第三应用的空值。
+  return (identity ?? PRODUCTION_IDENTITY).appId;
 }
 
 export function resolveWindowsAppUserModelId(env = process.env, runtime = { isPackaged: true }) {

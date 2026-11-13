@@ -115,4 +115,56 @@ describe("desktop product identity", () => {
   it("开发态继续使用独立 AUMID，避免污染打包版 Shell 身份", () => {
     expect(resolveWindowsAppUserModelId({}, { isPackaged: false })).toBe("cn.aminer.zcode");
   });
+
+  it("MOS_PRODUCT_IDENTITY=1 使用独立 MOS 产品身份，与上游 ZCode 全维度隔离", () => {
+    for (const flag of ["1", " 1 "]) {
+      const env = { ZCODE_ENV: "production", MOS_PRODUCT_IDENTITY: flag };
+      expect(resolveDesktopProductFlavor(env)).toBe("mos");
+      expect(resolveDesktopProductIdentity(env)).toEqual({
+        flavor: "mos",
+        appId: "org.payswap.mos",
+        productName: "MOS",
+        linuxExecutableName: "mos",
+        linuxPackageName: "mos",
+        cuaHelperInstallVariant: null,
+      });
+    }
+    // MOS 优先于 Preview：两个开关同时开启时必须是独立产品身份，不允许落回 ZCode 渠道。
+    expect(
+      resolveDesktopProductFlavor({
+        ZCODE_ENV: "production",
+        ZCODE_PREVIEW_IDENTITY: "1",
+        MOS_PRODUCT_IDENTITY: "1",
+      }),
+    ).toBe("mos");
+    // 测试后端 + MOS：独立身份仍生效，产物后缀仍标记 _TEST。
+    expect(resolveDesktopProductFlavor({ ZCODE_ENV: "test", MOS_PRODUCT_IDENTITY: "1" })).toBe("mos");
+    expect(
+      resolveDesktopArtifactSuffix({ ZCODE_ENV: "test", MOS_PRODUCT_IDENTITY: "1" }),
+    ).toBe("_TEST");
+  });
+
+  it("MOS 开关同样只认 1/0：其它拼写在构建期直接失败", () => {
+    for (const flag of ["true", "yes", "on", "false", "no", "off", "2"]) {
+      expect(() =>
+        resolveDesktopProductFlavor({ ZCODE_ENV: "production", MOS_PRODUCT_IDENTITY: flag }),
+      ).toThrow(/expected 1 or 0/);
+    }
+  });
+
+  it("MOS 打包态 AUMID 使用 MOS appId；未知 flavor 回落 production 身份", () => {
+    expect(resolveWindowsAppUserModelIdForFlavor("mos")).toBe(
+      desktopProductIdentities.mos.appId,
+    );
+    // 未知 flavor（历史版本缓存/异常注入）回落 production appId，不产生第三个 Shell 身份。
+    expect(resolveWindowsAppUserModelIdForFlavor("unknown")).toBe(
+      desktopProductIdentities.production.appId,
+    );
+  });
+
+  it("未开启 MOS 开关时任何后端环境都不会产生 MOS 身份", () => {
+    for (const env of [{}, { ZCODE_ENV: "production" }, { ZCODE_ENV: "test" }, { ZCODE_ENV: "production", ZCODE_PREVIEW_IDENTITY: "1" }]) {
+      expect(resolveDesktopProductFlavor(env)).not.toBe("mos");
+    }
+  });
 });

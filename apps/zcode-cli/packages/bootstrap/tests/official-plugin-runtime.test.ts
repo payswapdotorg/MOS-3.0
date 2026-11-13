@@ -91,6 +91,99 @@ describe("official plugin runtime manifest", () => {
         }))(),
     ).rejects.toThrow("Official plugin manifest has invalid mcpServers.");
   });
+
+  it("rewrites node command hooks to the packaged runtime and leaves wrappers untouched", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-plugin-hook-rewrite-"));
+    cleanups.push(root);
+    await writeJson(join(root, ".zcode-plugin", "plugin.json"), {
+      name: "mos-studio",
+      mcpServers: { studio: { command: "node", args: ["${ZCODE_PLUGIN_ROOT}/dist/server.mjs"] } },
+    });
+    const designHook = '"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd" design-rules';
+    await writeJson(join(root, "hooks", "hooks.json"), {
+      hooks: {
+        SessionStart: [
+          {
+            hooks: [
+              {
+                command: 'node "${ZCODE_PLUGIN_ROOT}/dist/hook.mjs"',
+                onError: "allow",
+                timeoutMs: 5000,
+                type: "command",
+              },
+              { command: designHook, type: "command" },
+              { command: 'node "${ZCODE_PLUGIN_ROOT}/dist/hook.mjs" --extra-arg', type: "command" },
+            ],
+          },
+        ],
+      },
+    });
+    process.argv[1] = join(root, "zcode.cjs");
+
+    await writeOfficialPluginRuntimeManifest({
+      pluginName: "mos-studio",
+      rootPath: root,
+    });
+    const hooks = JSON.parse(await readFile(join(root, "hooks", "hooks.json"), "utf8"));
+    const [nodeHook, wrapperHook, argHook] = hooks.hooks.SessionStart[0].hooks;
+
+    // node + 单个插件根脚本 → 重写为打包运行时（Electron Node 模式），${ZCODE_PLUGIN_ROOT} 展开。
+    const expectedScript = join(root, "dist", "hook.mjs");
+    expect(nodeHook.command).toContain(expectedScript);
+    expect(nodeHook.command).toContain(process.execPath);
+    expect(nodeHook.command).toContain("ELECTRON_RUN_AS_NODE=1");
+    expect(nodeHook.onError).toBe("allow");
+    expect(nodeHook.timeoutMs).toBe(5000);
+    if (process.platform === "win32") {
+      expect(nodeHook.command.startsWith('set "ELECTRON_RUN_AS_NODE=1"&& ')).toBe(true);
+    } else {
+      expect(nodeHook.command.startsWith("ELECTRON_RUN_AS_NODE=1 ")).toBe(true);
+    }
+    // run-hook.cmd 包装形态保持原样（design/superpowers 插件）。
+    expect(wrapperHook.command).toBe(designHook);
+    // 携带额外参数的命令不匹配严格形态，保持原样（显式契约，不做启发式拆参）。
+    expect(argHook.command).toBe('node "${ZCODE_PLUGIN_ROOT}/dist/hook.mjs" --extra-arg');
+
+    // 幂等：重写后的命令不再匹配 node 形态，重复执行不改字节。
+    const firstContents = await readFile(join(root, "hooks", "hooks.json"), "utf8");
+    await writeOfficialPluginRuntimeManifest({ pluginName: "mos-studio", rootPath: root });
+    expect(await readFile(join(root, "hooks", "hooks.json"), "utf8")).toBe(firstContents);
+  });
+
+  it("leaves hook files untouched when the manifest rewrite is a no-op", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-plugin-hook-mtime-"));
+    cleanups.push(root);
+    await writeJson(join(root, ".zcode-plugin", "plugin.json"), {
+      name: "mos-studio",
+      mcpServers: { studio: { command: "node", args: ["${ZCODE_PLUGIN_ROOT}/dist/server.mjs"] } },
+    });
+    await writeJson(join(root, "hooks", "hooks.json"), {
+      hooks: {
+        SessionStart: [
+          {
+            hooks: [
+              {
+                command: 'node "${ZCODE_PLUGIN_ROOT}/dist/hook.mjs"',
+                type: "command",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    process.argv[1] = join(root, "zcode.cjs");
+    // 首次 rewrite 落盘 hooks。
+    await writeOfficialPluginRuntimeManifest({ pluginName: "mos-studio", rootPath: root });
+    const hooksPath = join(root, "hooks", "hooks.json");
+    const contents = await readFile(hooksPath, "utf8");
+    const firstStat = await stat(hooksPath);
+    await delay(30);
+    // 第二次：manifest 与 hooks 均无变化 → 两个文件都不能被触碰（mtime 稳定）。
+    await writeOfficialPluginRuntimeManifest({ pluginName: "mos-studio", rootPath: root });
+    const secondStat = await stat(hooksPath);
+    expect(await readFile(hooksPath, "utf8")).toBe(contents);
+    expect(secondStat.mtimeMs).toBe(firstStat.mtimeMs);
+  });
 });
 
 async function writeJson(path: string, value: unknown): Promise<void> {
