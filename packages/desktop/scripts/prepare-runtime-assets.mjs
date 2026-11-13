@@ -7,6 +7,7 @@ import { resolveNativeSearchReleasePlan } from "../../../scripts/native-search-t
 import { runCommand } from "../../../scripts/spawn-command.mjs";
 import { getTargetPlatform } from "./target-platform.mjs";
 import { isRealComputerUseProducerInstalled } from "./computer-use-producer.mjs";
+import { isMosIdentityRequested } from "./desktop-product-identity.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const desktopRoot = resolve(scriptDir, "..");
@@ -26,11 +27,16 @@ const shouldPrepareWindowsCuaHelper =
 // CUA 权限浮窗的吸附数据源。仅 macOS；缺 swiftc 时脚本内部自行降级为跳过（浮窗 fail-open
 // 到屏幕底部，仍可用），所以无条件挂在 darwin 上不会让构建变脆。
 const shouldPrepareMacosWindowBounds = target.os === "darwin";
+// MOS 发布身份（MOS_PRODUCT_IDENTITY=1，严格 1/0）：随包携带 MOS Studio 插件与 MOS 品牌素材。
+// prepare:mos-plugin 必须排在 prepare:agent-bundle 之后 —— agent bundle staging 会整目录重建
+// glm/，先 stage 会被清掉；它自身完成 @zcode/adapters dist → @mos/studio dist → 原生闭包 vendor。
+const shouldPrepareMosReleaseAssets = isMosIdentityRequested();
 
 // 本机桌面包不再内置 glm 原生二进制（prepare:glm），改为内置 agent 的 JS bundle（prepare:agent-bundle），
 // 运行时由 app 的 Electron Node runtime 执行。Source Server 资源由独立 stage:remote-assets 入口负责。
 const localRuntimeScripts = [
   "prepare:agent-bundle",
+  ...(shouldPrepareMosReleaseAssets ? ["prepare:mos-plugin", "prepare:mos-brand"] : []),
   ...(target.os === "win32" ? ["prepare:windows-runtime-host"] : []),
   ...(shouldPrepareWindowsCuaHelper ? ["prepare:windows-cua-helper"] : []),
   ...(nativeSearchReleasePlan.enabled ? ["prepare:native-search"] : []),

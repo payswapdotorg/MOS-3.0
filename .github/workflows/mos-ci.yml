@@ -1,0 +1,226 @@
+# MOS CI — PR 与 main 推送校验流水线（Worker A: Release automation）。
+#
+# 可见范围/决策（TL 已确认，均为显式决策而非隐藏跳过）：
+# 1. PR 校验只构建一个 linux-x64 canary 安装包；完整平台矩阵（mac arm64/x64、win x64、
+#    linux rpm/pkg 等）只在 mos-release.yml 中按 mos-v* 标签构建。理由：backlog §4 要求
+#    PR 任务不发布公开安装包；打包链路回归（runtime 依赖闭包、产物存在性、体积审计、
+#    NSIS 安装脚本）由 linux-x64 单目标即可暴露，多平台原生构建成本留给发布标签。
+# 2. Action 一律使用 tag 引用（actions/checkout@v5、actions/setup-node@v4、actions/cache@v4、
+#    actions/upload-artifact@v4）；SHA 锁定是独立的加固事项，由 TL 在加固 pass 统一完成，
+#    本文件不伪造未知 SHA。
+# 3. pnpm store 目录显式固定为 ~/.pnpm-store（pnpm config set store-dir），缓存键基于
+#    pnpm-lock.yaml；pnpm 本身用 corepack 激活仓库锁定的 10.33.2（不用第三方 pnpm action）。
+# 4. 已知基线事实：packages/desktop/test/miseToolchainEnv.test.ts 在 node 位于 /usr/bin 的
+#    宿主机上环境敏感（CI runner 的 node 在 toolcache 下，通常通过）；本流水线不做任何
+#    特判或掩盖，失败就是失败。
+# 5. pnpm install 不使用 --ignore-scripts：根 prepare 只跑 husky + 轻量 tsc（build:cua），
+#    原生依赖的构建批准由 pnpm-workspace.yaml 的 allowBuilds 显式管理。
+# 6. scripts/release/*.test.mjs 是 node:test 风格（与 scripts/zcode-distribution.test.mjs 同
+#    约定），不在 vitest 工程清单（scripts/engineering-test-files.json 是 vitest include），
+#    由本流水线的 gates job 显式运行；根 package.json 的脚本清单由 TL 维护。
+
+name: MOS CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  # 同一 ref 的旧运行取消，节省公共 runner 配额。
+  group: mos-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  # 默认最小权限：整条流水线只读，fork PR 拿不到更多权限。
+  contents: read
+
+env:
+  # 与 mise.toml 的 COREPACK_ENABLE_PROJECT_SPEC 保持一致：corepack 用显式激活的 pnpm
+  # 版本（与 root package.json packageManager 一致），不读项目 spec，消除两套来源的歧义。
+  COREPACK_ENABLE_PROJECT_SPEC: "0"
+
+jobs:
+  gates:
+    name: 仓库门禁（lint / 架构 / 类型 / 工程 / Studio 测试）
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: 检出仓库（fetch-depth 0：merge-base 与受影响测试选择依赖完整历史）
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: 安装 Node 24.14.0（mise.toml 锁定版本）
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+
+      - name: 安装 pnpm 10.33.2（corepack 显式激活，并断言版本一致）
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.2 --activate
+          pnpm --version
+          test "$(pnpm --version)" = "10.33.2"
+
+      - name: 固定 pnpm store 目录（显式确定缓存路径，跨 runner 一致）
+        shell: bash
+        run: pnpm config set store-dir "$HOME/.pnpm-store"
+
+      - name: 缓存 pnpm store（键 = OS + pnpm-lock.yaml）
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: pnpm-store-v1-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-v1-${{ runner.os }}-
+
+      - name: 安装依赖（frozen lockfile；对 runner 上的 pnpm 链接竞态重试一次）
+        run: |
+          pnpm install --frozen-lockfile || {
+            echo "[install] 第一次安装失败（常见于 runner 并发链接的 _tmp_ rename 竞态），清半成品后重试一次"
+            pnpm install --frozen-lockfile
+          }
+
+      - name: 解析对比基线（PR 用 origin/main；push 用推送前 tip）
+        id: diff-base
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="origin/main"
+          else
+            before="${{ github.event.before }}"
+            # 分支新建时 before 是全零 SHA，回退 origin/main（此时改动即全部新增）。
+            if [ -n "$before" ] && ! printf '%s' "$before" | grep -Eq '^0+$'; then
+              base="$before"
+            else
+              base="origin/main"
+            fi
+          fi
+          echo "ref=$base" >> "$GITHUB_OUTPUT"
+          echo "对比基线: $base"
+
+      - name: 仓库 lint 门禁
+        run: pnpm lint
+      - name: 文档陈旧短语检查
+        run: pnpm docs:stale-phrases:check
+      - name: SQLite schema 契约检查
+        run: pnpm db:schema:check
+      - name: 架构治理测试（node --test 清单）
+        run: pnpm test:architecture
+      - name: 架构策略增量检查（显式基线；resolveDiffBase 会取与 HEAD 的 merge-base）
+        run: pnpm architecture:check -- --changed --base "${{ steps.diff-base.outputs.ref }}"
+      - name: 发布工具单测（scripts/release，node:test，纯 Node 内置依赖）
+        run: node --test scripts/release/*.test.mjs
+
+      - name: 构建 @zcode/adapters 及其依赖（Studio 测试/typecheck:integration 的 dist 前置）
+        run: pnpm --filter @zcode/adapters... build
+      - name: MOS Studio 类型检查
+        run: pnpm --filter @mos/studio typecheck
+      - name: 构建 MOS Studio（单测断言 dist 产物；integration typecheck 同样需要）
+        run: pnpm --filter @mos/studio build
+      - name: MOS Studio 单元测试
+        run: pnpm --filter @mos/studio test
+      - name: MOS Studio 集成类型检查
+        run: pnpm --filter @mos/studio typecheck:integration
+
+      - name: 根 TypeScript 全链 typecheck（重型门禁，保留）
+        run: pnpm typecheck
+
+      # CI 安全路径：--scope push 依赖 pre-push stdin / upstream 解析，CI 中会退化到
+      # origin/staging（不存在则报错）。显式 --base 走 resolveScope 的非 push 分支，
+      # 直接把基线交给 Vitest 官方 changed 选择；全量选择时脚本自身跳过并成功退出。
+      - name: 受影响工程测试（显式基线）
+        run: pnpm test:engineering:affected --base "${{ steps.diff-base.outputs.ref }}"
+
+  build-canary:
+    name: 构建 canary 安装包（linux-x64 单目标，见文件头决策 1）
+    needs: gates
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      # MOS 构建身份三件套（契约见 desktop-product-identity.mjs）：
+      # - MOS_PRODUCT_IDENTITY=1 → MOS 产品身份（STRICT：仅接受 1/0/空，其它值构建失败）；
+      # - ZCODE_ENV=production → 生产后端（产物文件名无 _TEST 后缀）；
+      # - ZCODE_DESKTOP_APP_VERSION → 与上游 ZCode 版本独立的 MOS canary 版本。
+      ZCODE_ENV: production
+      MOS_PRODUCT_IDENTITY: "1"
+      ZCODE_DESKTOP_APP_VERSION: 0.0.0-ci.${{ github.run_number }}
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: 安装 Node 24.14.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+
+      - name: 安装 pnpm 10.33.2（corepack 显式激活，并断言版本一致）
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.2 --activate
+          pnpm --version
+          test "$(pnpm --version)" = "10.33.2"
+
+      - name: 固定 pnpm store 目录
+        shell: bash
+        run: pnpm config set store-dir "$HOME/.pnpm-store"
+
+      - name: 缓存 pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: pnpm-store-v1-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-v1-${{ runner.os }}-
+
+      - name: 安装依赖（frozen lockfile；对 runner 上的 pnpm 链接竞态重试一次）
+        run: |
+          pnpm install --frozen-lockfile || {
+            echo "[install] 第一次安装失败（常见于 runner 并发链接的 _tmp_ rename 竞态），清半成品后重试一次"
+            pnpm install --frozen-lockfile
+          }
+
+      # bundle.mjs 会依次执行 prepare:runtime-assets（MOS 身份下自动跑 prepare:mos-plugin
+      # 与 prepare:mos-brand）→ pnpm build → electron-builder → 运行时依赖闭包/产物存在性/
+      # 体积审计，因此这里不需要重复的构建步骤。
+      - name: 构建 MOS canary 安装包（显式 --os/--arch；bundle 默认是 mac/arm64）
+        run: pnpm --filter @zcode/desktop bundle -- --os linux --arch x64
+
+      - name: NSIS 安装脚本冒烟（test:installer-nsh-smoke）
+        run: pnpm --filter @zcode/desktop test:installer-nsh-smoke
+      # 说明：test-installer-nsh-smoke.mjs 当前是 win32-only（非 Windows 直接打印 skip 并
+      # 退出 0）。保留该步骤是让 windows-2022 之外的平台在未来支持该冒烟时自动纳入，
+      # 不把"linux 上跳过"伪装成"linux 上已验证"。
+
+      - name: 收集并机械校验 canary 产物（必选矩阵 + blockmap/latest*.yml 拒绝）
+        run: |
+          node scripts/release/collect-artifacts.mjs \
+            --dist-dir packages/desktop/dist \
+            --platform linux-x64 \
+            --out-dir release-out
+
+      - name: 上传 canary 安装包（仅检查用；PR 永不发布，保留 7 天）
+        uses: actions/upload-artifact@v4
+        with:
+          name: mos-canary-installer-linux-x64
+          path: packages/desktop/dist/*
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: 上传构建元数据/日志（允许缺失）
+        uses: actions/upload-artifact@v4
+        with:
+          name: mos-canary-build-logs
+          path: |
+            packages/desktop/out/metadata/**
+            packages/desktop/*.log
+          retention-days: 7
+          if-no-files-found: ignore

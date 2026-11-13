@@ -6,7 +6,7 @@
  * 导致 main/index.ts 导入 resolveWindowsAppUserModelIdForFlavor 时报 TS2724。
  * 改 .mjs 导出时必须同步本文件。
  */
-export type DesktopProductFlavor = "production" | "preview";
+export type DesktopProductFlavor = "production" | "preview" | "mos";
 
 export interface DesktopProductIdentity {
   readonly flavor: DesktopProductFlavor;
@@ -18,8 +18,10 @@ export interface DesktopProductIdentity {
 }
 
 export const ZCODE_PREVIEW_IDENTITY_ENV: "ZCODE_PREVIEW_IDENTITY";
+export const MOS_PRODUCT_IDENTITY_ENV: "MOS_PRODUCT_IDENTITY";
 
 export function isPreviewIdentityRequested(env?: Record<string, string | undefined>): boolean;
+export function isMosIdentityRequested(env?: Record<string, string | undefined>): boolean;
 export function resolveDesktopProductFlavor(
   env?: Record<string, string | undefined>,
 ): DesktopProductFlavor;
@@ -38,4 +40,5 @@ export function resolveWindowsAppUserModelId(
 export const desktopProductIdentities: Readonly<{
   production: DesktopProductIdentity;
   preview: DesktopProductIdentity;
+  mos: DesktopProductIdentity;
 }>;

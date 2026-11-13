@@ -31,6 +31,9 @@ export const DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS: ReadonlySet<string> = new Set(
   "plugin-creator@zcode-plugins-official",
   "zcode-guide@zcode-plugins-official",
   "zcode-site@zcode-plugins-official",
+  // MOS Studio：只随 MOS 身份构建 stage（ZCode 构建不携带该插件，定义缺失即跳过）；
+  // MOS 安装包里它必须默认可用 —— 未连接 Provider 时仅是面板可用而能力项为空，不产生副作用。
+  "mos-studio@zcode-plugins-official",
   // 电脑控制和交互视图默认关闭，故 computer-use、visualize 不在此名单内。
   // 该集合必须与 official-plugin-definitions.ts 里标了 defaultEnabled 的插件逐一对应，
   // bootstrap 的「Settings 默认启用集合与 CLI 的官方插件声明一致」单测机械对照两者。

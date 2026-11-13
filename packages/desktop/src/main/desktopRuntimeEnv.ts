@@ -30,6 +30,8 @@ import { resolvePlatformKeyForPackagedApp } from "../../scripts/target-platform.
 import {
   getAppConfigDir,
   getDataBaseDir,
+  getZCodeDataRootDir,
+  setDataBaseDir,
   ZCODE_CUA_BUNDLED_HELPER_APP_PATH_ENV,
   ZCODE_WINDOWS_APP_INSTALL_DIR_ENV,
 } from "@zcode/services/node";
@@ -50,6 +52,15 @@ export const desktopRuntimeEnv: ZCodeRuntimeEnv = isLocalDevelopmentRuntime
 export const isPreviewPackagedRuntime =
   !isLocalDevelopmentRuntime && ZCODE_PRODUCT_FLAVOR === "preview";
 
+// MOS 是独立产品身份（org.payswap.mos）：与上游 ZCode 并排安装，Electron userData 与
+// agent/services 数据根都必须隔离，更新策略为 GitHub Releases 手动更新（不接上游 feed）。
+export const isMosPackagedRuntime =
+  !isLocalDevelopmentRuntime && ZCODE_PRODUCT_FLAVOR === "mos";
+
+// MOS 默认数据基座：`~/.mos`（上游 ZCode 默认 `~`，其业务数据根为 `~/.zcode`）。
+// 显式 ZCODE_DATA_BASE_DIR（e2e/测试隔离用同一机制）优先，MOS 不覆盖。
+export const MOS_DEFAULT_DATA_BASE_DIR_NAME = ".mos";
+
 function readRuntimeEnvOverride(name: string): string | undefined {
   return process.env[name]?.trim() || undefined;
 }
@@ -64,7 +75,22 @@ function isTruthyRuntimeEnvOverride(name: string): boolean {
 // 这里允许测试显式隔离运行时身份，正常桌面/远控路径保持原来的默认值。
 export const runtimeApplicationName =
   readRuntimeEnvOverride("ZCODE_DESKTOP_APPLICATION_NAME") ??
-  (isLocalDevelopmentRuntime ? "ZCode Dev" : isPreviewPackagedRuntime ? "ZCode Preview" : "ZCode");
+  (isLocalDevelopmentRuntime
+    ? "ZCode Dev"
+    : isPreviewPackagedRuntime
+      ? "ZCode Preview"
+      : isMosPackagedRuntime
+        ? "MOS"
+        : "ZCode");
+
+// MOS 与上游 ZCode 并排安装：Electron userData 已由 runtimeApplicationName 隔离（appData/MOS），
+// agent/services 的业务数据根（默认 `~/.zcode`，含凭据/插件缓存/会话存储）也必须隔离，
+// 否则 MOS 会读写上游 ZCode 的可变用户数据目录，违反并排安装约束。
+// setDataBaseDir 优先级最高（> env ZCODE_DATA_BASE_DIR > homedir）；e2e 用同一机制隔离测试家目录，
+// 显式 ZCODE_DATA_BASE_DIR 继续优先生效，测试/调试可以显式指向其它目录。
+if (isMosPackagedRuntime && !readRuntimeEnvOverride("ZCODE_DATA_BASE_DIR")) {
+  setDataBaseDir(join(homedir(), MOS_DEFAULT_DATA_BASE_DIR_NAME));
+}
 // Electron 的 app.getPath("home") 不一定跟随测试进程里的 HOME 覆盖。
 // e2e 默认工作区依赖 home 路径，因此提供显式覆盖，避免测试写到开发者真实 ~/ZCodeProject。
 export const runtimeHomePath = readRuntimeEnvOverride("ZCODE_DESKTOP_HOME_DIR");
@@ -578,6 +604,12 @@ export function buildHostProcessEnv(hostProcessLocalEnv: Record<string, string>)
     // Preview 与生产版共享任务、配置和凭据，但不同版本的 Helper 不能互相覆盖或触发降级保护。
     // 只隔离 computer-use 下的运行组件，不改写 ZCODE_HOME / ZCODE_DATA_BASE_DIR 业务数据根。
     ...(isPreviewPackagedRuntime ? { ZCODE_CUA_HELPER_INSTALL_VARIANT: "preview" } : {}),
+    // MOS 与上游 ZCode 是并排安装的两个产品：CUA computer-use 目录、独立设备身份等以
+    // ZCODE_HOME（默认 `~/.zcode`）为根的写读全部改指 MOS 自己的数据根（`~/.mos/.zcode`）。
+    // 显式 ZCODE_HOME（继承 env / .env）优先，测试与特殊部署仍可覆盖。
+    ...(isMosPackagedRuntime && !inheritedEnv.ZCODE_HOME
+      ? { ZCODE_HOME: getZCodeDataRootDir() }
+      : {}),
     // Dynamic Workflow 灰度的本地覆盖：Main 决策后写入，production 包为空对象（继承值已在上面删除）。
     ...dynamicWorkflowModeHostEnv,
     // 模型请求默认 header 由 agent 进程构造，过去只继承 shell env 导致桌面启动时拿不到 app 版本。

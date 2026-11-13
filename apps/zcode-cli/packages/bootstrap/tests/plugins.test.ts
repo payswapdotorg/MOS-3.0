@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createConfig } from "@zcode/adapters/config";
 import { DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS } from "@zcode/shared";
@@ -236,7 +236,11 @@ describe("ZCode plugins", () => {
     const packagesRoot = fileURLToPath(new URL("../../", import.meta.url));
 
     for (const plugin of OFFICIAL_PLUGIN_DEFINITIONS) {
-      const packageRoot = join(packagesRoot, basename(plugin.rootCandidates[0] ?? ""));
+      // 本仓库携带的插件（如 mos-studio，源码在仓库 packages/ 而非 apps/zcode-cli/packages/）
+      // 声明 sourceRoot 指向真实源码包；默认按 rootCandidates[0] 的 basename 解析。
+      const packageRoot = plugin.sourceRoot
+        ? resolve(packagesRoot, plugin.sourceRoot)
+        : join(packagesRoot, basename(plugin.rootCandidates[0] ?? ""));
       const pluginManifest = JSON.parse(
         await readFile(join(packageRoot, ".zcode-plugin", "plugin.json"), "utf8"),
       ) as { ui?: { surfaces?: unknown[] } };

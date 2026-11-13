@@ -106,12 +106,103 @@ export async function writeOfficialPluginRuntimeManifest(
   manifest.mcpServers = mcpServers;
 
   const nextContents = `${JSON.stringify(manifest, null, 2)}\n`;
+  // MCP server 入口重写后，同一插件的 hooks/hooks.json 里的 `node "${ZCODE_PLUGIN_ROOT}/…"`
+  // 形态 command hook 也要改指打包运行时：安装包的机器没有系统 Node（Windows/macOS GUI 启动、
+  // 干净 Linux），保持 `node` 会让 SessionStart hook 静默失败。与 MCP 重写同源：
+  // process.execPath（打包态为 Electron）+ ELECTRON_RUN_AS_NODE=1；hook 是自包含进程，
+  // 不需要 zcode.cjs host 协议包装。严格只匹配「node + 单个插件根相对脚本」形态，
+  // run-hook.cmd 等既有包装命令不受影响；内容不变时不触碰文件（mtime 稳定性由既有
+  // test 断言保证）。hooks 修复必须在 plugin.json 的 early return 之前执行 ——
+  // manifest 未变化不代表 hooks.json 不需要修复。
+  await rewriteOfficialPluginHookCommands(input);
   // 启动时无条件 rename 同内容的 plugin.json 会放大 Windows 杀毒/索引器
   // 的短暂文件占用。字节完全一致时不触碰文件；真正有更新时仍保持原子的失败语义。
   if (nextContents === currentContents) return;
   await writeTextFileAtomicallyWithRetry(
     manifestPath,
     nextContents,
+    input.retryBudget ?? createOfficialPluginCacheRetryBudget(),
+  );
+}
+
+/** Node 形态 command hook 的严格形态：`node` +（可选引号包裹的）插件根相对脚本，无其它参数。 */
+const OFFICIAL_PLUGIN_NODE_HOOK_COMMAND_PATTERN =
+  /^node\s+"?\$\{ZCODE_PLUGIN_ROOT\}\/(?<script>[^"]+)"?\s*$/u;
+
+export function buildOfficialPluginHookCommand(options: {
+  execPath: string;
+  platform: NodeJS.Platform;
+  prefixArgs: readonly string[];
+  scriptPath: string;
+}): string {
+  const executable = `"${options.execPath}"`;
+  const script = `"${options.scriptPath}"`;
+  const args = [...options.prefixArgs, script].join(" ");
+  if (options.platform === "win32") {
+    // cmd 方言：`set "X=1"&&` 把赋值固定在 && 之前，避免尾随空格进入变量值。
+    return `set "ELECTRON_RUN_AS_NODE=1"&& ${executable} ${args}`;
+  }
+  // sh 方言：行内环境赋值只作用于本命令。
+  return `ELECTRON_RUN_AS_NODE=1 ${executable} ${args}`;
+}
+
+/** hook 进程不需要 MCP host 协议包装：Electron Node 模式直接执行脚本（无 zcode.cjs 前缀）。 */
+function officialPluginHookRunnerArgs(): string[] | undefined {
+  if (isSeaRuntime()) return [];
+  const entrypoint = process.argv[1];
+  if (!entrypoint) return undefined;
+  return [...process.execArgv];
+}
+
+async function rewriteOfficialPluginHookCommands(
+  input: OfficialRuntimeManifestInput,
+): Promise<void> {
+  const hooksPath = join(input.rootPath, "hooks", "hooks.json");
+  let currentContents: string;
+  try {
+    currentContents = await readFile(hooksPath, "utf8");
+  } catch {
+    // 无 hooks.json 的官方插件（绝大多数）直接跳过；hooks 文件形态由 plugin loader 自行诊断。
+    return;
+  }
+  const prefixArgs = officialPluginHookRunnerArgs();
+  if (!prefixArgs) return;
+
+  let document: unknown;
+  try {
+    document = JSON.parse(currentContents);
+  } catch {
+    // 与 plugin.json 的结构性 fail-fast 不同：hooks.json 损坏时不阻断 seed ——
+    // 既有插件生态里 hooks 文件由 loader 容错解析，这里保持同一语义。
+    return;
+  }
+  if (!isRecord(document) || !isRecord(document.hooks)) return;
+
+  let changed = false;
+  for (const eventEntries of Object.values(document.hooks)) {
+    if (!Array.isArray(eventEntries)) continue;
+    for (const eventEntry of eventEntries) {
+      if (!isRecord(eventEntry) || !Array.isArray(eventEntry.hooks)) continue;
+      for (const hook of eventEntry.hooks) {
+        if (!isRecord(hook) || hook.type !== "command" || typeof hook.command !== "string") continue;
+        const match = OFFICIAL_PLUGIN_NODE_HOOK_COMMAND_PATTERN.exec(hook.command);
+        if (!match?.groups?.script) continue;
+        const nextCommand = buildOfficialPluginHookCommand({
+          execPath: process.execPath,
+          platform: process.platform,
+          prefixArgs,
+          scriptPath: join(input.rootPath, match.groups.script.replaceAll("\\\\", "/")),
+        });
+        if (nextCommand === hook.command) continue;
+        hook.command = nextCommand;
+        changed = true;
+      }
+    }
+  }
+  if (!changed) return;
+  await writeTextFileAtomicallyWithRetry(
+    hooksPath,
+    `${JSON.stringify(document, null, 2)}\n`,
     input.retryBudget ?? createOfficialPluginCacheRetryBudget(),
   );
 }
