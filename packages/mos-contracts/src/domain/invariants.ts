@@ -6,6 +6,12 @@ import type { Mission } from "../contract/mission.js";
 import type { ProviderConnection } from "../contract/connection.js";
 import type { NodeOffer } from "../contract/agent-organization.js";
 import type { Hypothesis } from "../contract/lab.js";
+import type {
+  DistributionIntent,
+  Experiment,
+  ProductionGraph,
+  ProductionJob,
+} from "../contract/production.js";
 
 /**
  * core-contracts-v3.0.yaml §invariants 的运行时守卫。
@@ -249,6 +255,118 @@ export function assertTenantScope<T extends { tenant_id: string }>(
     throw new InvariantViolation(
       "tenant-scope",
       `${what} 属于其他租户，跨租户访问 fail closed`,
+    );
+  }
+}
+
+/**
+ * 不变量 §18（W3）：权利门禁永不猜测。
+ * 只有覆盖该 artifact 的 granted 且未过期的权利决定才能 cleared；
+ * missing/pending/expired/denied 全部拒绝（fail-closed，具名原因）。
+ * 调用方传入该 artifact 的适用 RightsRecord 集合与当前时间。
+ */
+export function assertRightsClearedForUse(input: {
+  artifactRef: string;
+  records: ReadonlyArray<import("../contract/production.js").RightsRecord>;
+  now: string;
+}): void {
+  const { artifactRef, records, now } = input;
+  const covering = records.filter(
+    (record) =>
+      (record.subject_artifact_ref === artifactRef || record.subject_artifact_ref === null) &&
+      record.kind !== "unknown",
+  );
+  if (covering.length === 0) {
+    throw new InvariantViolation(
+      "rights-gate-fail-closed",
+      `无覆盖 ${artifactRef} 的权利记录；缺记录 = 拒绝`,
+    );
+  }
+  const denied = covering.find((record) => record.decision === "denied");
+  if (denied) {
+    throw new InvariantViolation("rights-gate-fail-closed", `${artifactRef} 存在 denied 决定`);
+  }
+  const granted = covering.find(
+    (record) =>
+      record.decision === "granted" &&
+      record.decided_at !== null &&
+      (record.expires_at === null || record.expires_at > now),
+  );
+  if (!granted) {
+    throw new InvariantViolation(
+      "rights-gate-fail-closed",
+      `${artifactRef} 无有效（granted 且未过期）决定`,
+    );
+  }
+}
+
+/**
+ * 不变量 §19（W3，决策锁 #5）：MOS 无第二执行器。
+ * 状态越过 linked 的 job 必须持有外部 ZCode execution ref；
+ * 且 job 记录本身永不携带任何执行原语（契约无此字段——本守卫校验 ref 存在性）。
+ */
+export function assertJobNeverExecutes(job: ProductionJob): void {
+  const beyondLinked = job.status !== "pending" && job.status !== "linked" && job.status !== "unknown";
+  if (beyondLinked && (job.zcode_execution_ref === null || job.started_at === null)) {
+    throw new InvariantViolation(
+      "no-second-executor",
+      `job ${job.id} 状态 ${job.status} 必须持有外部 zcode_execution_ref 与 started_at（执行归 ZCode）`,
+    );
+  }
+}
+
+/**
+ * 不变量 §20（W3，决策锁 #9）：图里的 engine 节点只允许不透明引用。
+ * engine 节点 ref 为 null = 未解析（draft 可接受；validated 图不接受）。
+ */
+export function assertGraphEngineRefsOpaque(graph: ProductionGraph): void {
+  if (graph.status !== "validated") return;
+  const unresolved = graph.nodes.filter(
+    (node) => node.kind === "engine" && (node.ref === null || node.ref.length === 0),
+  );
+  if (unresolved.length > 0) {
+    throw new InvariantViolation(
+      "engine-refs-opaque",
+      `validated 图存在未解析 engine 节点: ${unresolved.map((node) => node.id).join(", ")}`,
+    );
+  }
+}
+
+/**
+ * 不变量 §21（W3，决策锁 #18）：实验结果只属于 Experiment authority 且必须证据支撑。
+ * outcome 非 null 时：status 必须 concluded、measurement_evidence_refs 非空。
+ */
+export function assertExperimentOutcomeEvidence(experiment: Experiment): void {
+  if (experiment.outcome === null) return;
+  if (experiment.status !== "concluded") {
+    throw new InvariantViolation(
+      "experiment-outcome-evidence",
+      `实验 ${experiment.id} 的 outcome 只能在 concluded 状态写入`,
+    );
+  }
+  if (experiment.measurement_evidence_refs.length === 0) {
+    throw new InvariantViolation(
+      "experiment-outcome-evidence",
+      `实验 ${experiment.id} 的 outcome 必须携带 measurement 证据引用`,
+    );
+  }
+}
+
+/**
+ * 不变量 §22（W3）：副作用型分发意图在 executing/succeeded 前必须绑定已批准预览。
+ */
+export function assertDistributionPreviewApproval(intent: DistributionIntent): void {
+  if (intent.status !== "executing" && intent.status !== "succeeded") return;
+  if (intent.preview_ref === null || intent.preview_hash === null) {
+    throw new InvariantViolation(
+      "distribution-preview-approval",
+      `意图 ${intent.id} 进入 ${intent.status} 前必须绑定预览（preview_ref + preview_hash）`,
+    );
+  }
+  if (intent.approval_state !== "approved") {
+    throw new InvariantViolation(
+      "distribution-preview-approval",
+      `意图 ${intent.id} 进入 ${intent.status} 前必须 approved`,
     );
   }
 }

@@ -21,6 +21,15 @@ enums:
   hypothesis_status: [proposed, superseded, withdrawn, adopted_by_experiment, unknown]
   organization_status: [active, inactive, unknown]
   agent_body_status: [active, inactive, unknown]
+  transform_status: [draft, active, retired, unknown]
+  engine_status: [registered, benchmarked, deprecated, unknown]
+  production_graph_status: [draft, validated, invalidated, unknown]
+  production_job_status: [pending, linked, executing, succeeded, failed, cancelled, unknown]
+  distribution_status: [intent, previewed, pending_approval, approved, rejected, executing, succeeded, failed, unknown]
+  rights_kind: [source_license, consent, platform_policy, review_decision, unknown]
+  rights_decision: [granted, denied, pending, expired, unknown]
+  experiment_status: [defined, assigned, measuring, analyzed, concluded, cancelled, unknown]
+  experiment_outcome: [succeeded, failed, inconclusive, unknown]
   artifact_kind: [source, draft, media, copy, campaign, evidence, report, transcript, caption, derivative, unknown]
 objects:
   TenantContext:
@@ -259,6 +268,132 @@ objects:
       experiment_ref: nullable-string
       created_at: timestamp
       updated_at: timestamp
+  # ===== Week 3 additive objects（transformations / artifact lineage / distribution / experiments / learning）=====
+  Transform:
+    required: [id, tenant_id, version, name, parameters_schema, side_effect, status, created_at]
+    fields:
+      id: string
+      tenant_id: string
+      version: integer
+      name: string
+      description: nullable-string
+      parameters_schema: object
+      required_capability_id: nullable-string
+      side_effect: enum
+      risk_level: enum
+      status: enum
+      created_at: timestamp
+      updated_at: timestamp
+  Engine:
+    required: [id, tenant_id, version, display_name, capability_ids, sandbox_policy, status, created_at]
+    fields:
+      id: string
+      tenant_id: string
+      version: integer
+      display_name: string
+      capability_ids: array
+      provider_id: nullable-string
+      sandbox_policy: object
+      benchmark_refs: array
+      license_terms: nullable-string
+      cost_model: nullable-object
+      status: enum
+      created_at: timestamp
+      updated_at: timestamp
+  ProductionGraph:
+    required: [id, tenant_id, version, name, nodes, edges, status, created_at]
+    fields:
+      id: string
+      tenant_id: string
+      mission_id: nullable-string
+      version: integer
+      name: string
+      nodes: array
+      edges: array
+      status: enum
+      validated_at: nullable-timestamp
+      validation_errors: array
+      created_at: timestamp
+      updated_at: timestamp
+  ProductionJob:
+    required: [id, tenant_id, graph_id, graph_version, status, created_at]
+    fields:
+      id: string
+      tenant_id: string
+      graph_id: string
+      graph_version: integer
+      status: enum
+      zcode_execution_ref: nullable-string
+      started_at: nullable-timestamp
+      completed_at: nullable-timestamp
+      output_artifact_refs: array
+      failure: nullable-string
+      created_at: timestamp
+      updated_at: timestamp
+  RightsRecord:
+    required: [id, tenant_id, kind, subject_ref, decision, created_at]
+    fields:
+      id: string
+      tenant_id: string
+      kind: enum
+      subject_ref: string
+      subject_artifact_ref: nullable-string
+      constraints: array
+      evidence_refs: array
+      decision: enum
+      decided_at: nullable-timestamp
+      expires_at: nullable-timestamp
+      created_at: timestamp
+      updated_at: timestamp
+  DistributionIntent:
+    required: [id, tenant_id, operation, connection_id, capability_instance_id, artifact_ref, status, created_at]
+    fields:
+      id: string
+      tenant_id: string
+      operation: enum
+      connection_id: string
+      capability_instance_id: string
+      artifact_ref: string
+      artifact_version: nullable-integer
+      target: object
+      preview_ref: nullable-string
+      preview_hash: nullable-string
+      approval_state: enum
+      idempotency_key: nullable-string
+      status: enum
+      execution_records: array
+      created_at: timestamp
+      updated_at: timestamp
+  Experiment:
+    required: [id, tenant_id, statement, status, created_at]
+    fields:
+      id: string
+      tenant_id: string
+      mission_id: nullable-string
+      hypothesis_id: nullable-string
+      statement: string
+      design: object
+      assignment: nullable-object
+      measurement_evidence_refs: array
+      status: enum
+      outcome: nullable-enum
+      outcome_note: nullable-string
+      started_at: nullable-timestamp
+      concluded_at: nullable-timestamp
+      created_at: timestamp
+      updated_at: timestamp
+  CalibrationRecord:
+    required: [id, tenant_id, experiment_ref, calibration, delayed_mode, created_at]
+    fields:
+      id: string
+      tenant_id: string
+      experiment_ref: string
+      calibration: object
+      recommendation: nullable-string
+      delayed_mode: boolean
+      evidence_refs: array
+      created_at: timestamp
+      updated_at: timestamp
 invariants:
   - A capability instance is never available unless a live connection/account check and required scope checks support that assertion.
   - Provider static profile is not evidence of a tenant's account capability.
@@ -271,6 +406,12 @@ invariants:
   - A hypothesis record never carries an experiment outcome; outcomes belong to the Experiment authority (decision lock 18).
   - A research finding never cites a simulation as a provider observation.
   - Node and offer records are tenant-scoped; cross-tenant reads and writes fail closed.
+  - A rights gate never guesses: an artifact is cleared for use only with a granted, unexpired rights decision covering it; missing, pending, expired and restricted all deny (fail-closed).
+  - MOS owns no second executor (decision lock 5): production jobs record durable business state and reference external ZCode execution ids; a job never executes anything itself.
+  - Domain code never imports concrete engines (decision lock 9): engine references in production graphs resolve through the engine registry by opaque id.
+  - An experiment outcome is written only by the Experiment authority and only with measurement evidence; hypothesis records never carry outcomes (decision lock 18).
+  - A side-effecting distribution intent is never executing/succeeded without an approved preview binding (preview + approval state).
+  - Calibration records cite only concluded experiments with evidence and are delayed-mode: they are recommendation records only and never mutate routes or production directly.
   - Provider secrets are represented only by opaque credential_ref.
   - No missing value is inferred from a marketing brief.
 compatibility:
