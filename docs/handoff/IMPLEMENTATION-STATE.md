@@ -1,6 +1,6 @@
 # MOS 3.0 implementation state
 
-**Last verified:** 2026-11-13 Week 2 (branch `w2/discovery-orchestration`; W1 merged to main at b0d9ac0e; Composio live verification closes the two open W1 ledger items — see Week 2 record)
+**Last verified:** 2026-11-13 Week 3 (branch `w3/transformations-artifacts`; W2 merged to main at 79437ab2 — see Week 3 record)
 **Repository:** payswapdotorg/MOS-3.0
 **Main bootstrap commit:** e3c0fa0e2f477988441d283428b259c6409180f6
 **ZCode v3.18.0 import merge commit:** 545910f3ecf4ebc149c690c3bb7b77124e1e747e (two-parent merge of MOS main base 3a1f50b + upstream pin b95ebaff)
@@ -19,6 +19,7 @@
 - [x] Existing/conditional/blocked/unknown route evaluation implemented and contract-tested (fail-closed; no silent fallback).
 - [ ] New Task preservation and cross-client regression verified.
 - [x] Week 2 discovery/orchestration modules implemented and contract-tested (mos-agent-organizations 56 tests, mos-lab 60 tests; see Week 2 record).
+- [x] Week 3 transformation/artifact-lineage modules implemented and contract-tested (7 packages, 274 new tests; mos-studio deferred — composition blocker; see Week 3 record).
 
 ## Evidence ledger
 
@@ -226,3 +227,79 @@ contract-tested + notes).
   (parents `bfec2aab` main + `b36f794e` branch head), merged via GitHub API (merge method:
   merge commit, consistent with PRs #1-#3) at 2026-11-13 ~01:15 UTC. Local main synced to
   `79437ab2`, worktree clean. Week 2 code is now the canonical main.
+
+## Week 3 record (branch w3/transformations-artifacts, 2026-11-13)
+
+**Stage:** Week 3 transformations and artifact lineage (architecture §12; backlog
+spec/backlog/week-3-transformations-artifacts.md, work packages spec/backlog/week-3-work-packages.yaml).
+Workstreams: W3-A (content-artifacts + rights-policy), W3-B (engines + production),
+W3-C (distribution + experiments), TL (contracts, learning, gates, publication).
+Worker report-backs hit infra timeouts; TL verified all work in-tree and fixed
+post-delivery defects (listed per package) before gating.
+
+**Deliverables (all additive; zero core ZCode files touched):**
+
+- `packages/mos-contracts` (TL): additive objects Transform, Engine, ProductionGraph,
+  ProductionJob, RightsRecord, DistributionIntent, Experiment, CalibrationRecord; enums
+  (transform/engine/production graph+job/distribution statuses, rights kind+decision,
+  experiment status+outcome += cancelled additive); invariant guards: rights gate
+  fail-closed, no-second-executor (decision lock 5), graph engine refs opaque (lock 9),
+  experiment outcome evidence (lock 18), distribution preview+approval, calibration
+  delayed-mode. 63 tests (+17).
+- `packages/mos-content-artifacts` (W3-A, 31 tests): immutable version chain (lineage
+  enforced via assertArtifactVersionLineage), opaque content_ref only, tenant-scoped
+  atomic store.
+- `packages/mos-rights-policy` (W3-A, 35 tests): fail-closed rights gate with named deny
+  reasons (no_covering_record/explicit_denial/decision_pending/expired), wildcard (null
+  artifact ref) coverage, append-only review decisions. TL fix: one test expectation
+  aligned with wildcard semantics (a null-artifact platform policy covers unknown
+  artifacts by design; the gate layer remains fail-closed).
+- `packages/mos-engines` (W3-B, 39 tests): registry, capability matching with deprecated
+  engines surfaced (never hidden), sandbox policy descriptors (fail-closed validation);
+  zero invocation code.
+- `packages/mos-production` (W3-B, 81 tests): transform registry, DAG graph validation
+  (cycles/orphans/unresolved refs/retired transforms/deprecated engines → named errors),
+  job state machine (external zcode_execution_ref only; zero executor). TL fix:
+  GraphNotFoundError import path.
+- `packages/mos-distribution` (W3-C, 39 tests): intent state machine — executing/succeeded
+  require approved preview binding (assertDistributionPreviewApproval), idempotency
+  conflicts, evidence-ref-only execution records; zero provider I/O.
+- `packages/mos-experiments` (W3-C, 35 tests): Experiment authority (decision lock 18) —
+  outcome writable only through conclude() with evidence; hypothesis adoption via
+  structural HypothesisUpdatePort (composition-root maps to @mos/lab saveHypothesis —
+  the write right W2 reserved for W3). TL fixes: experimentInputSchema import;
+  experiment_status += cancelled (additive, spec + zod); one test corrected to expect the
+  schema-layer error for the non-transition conclude path.
+- `packages/mos-learning` (TL, 14 tests): calibration records only from concluded
+  experiments with measurement evidence (structural ExperimentLookup port);
+  delayed_mode locked z.literal(true); zero route/production mutation APIs (surface
+  test asserts it).
+
+**Studio deferral (explicit):** mos-studio stays `planned` with a registry note — the
+human-facing surface depends on the composition-root ownership decision that has blocked
+UI mounting since Week 1; the domain seams it needs (production graph + artifact +
+rights reads) are delivered by this week's modules.
+
+**Gate wiring:** architecture-policy.yaml (+7 modules), scripts/engineering-test-files.json
+(+16 files, 215 total), package.json typecheck chain (+7 packages),
+module-registry-v3.0.yaml (7 contract-tested + notes; studio deferral note).
+
+**Gate evidence (run on this tree, 2026-11-13):**
+
+- `pnpm test:architecture`: PASS (0 fail)
+- `pnpm architecture:check -- --changed`: violations 0 / baseline 0 / new 0
+- `pnpm typecheck` (root, full chain incl. all 7 new packages): PASS
+  (NODE_OPTIONS=--max-old-space-size=3072, unchanged local constraint)
+- `pnpm lint`: 0 errors / 538 warnings — identical to the Stage 0/W1/W2 baseline
+  (6 new-code warnings found and fixed before the gate run)
+- `pnpm docs:stale-phrases:check` + `pnpm db:schema:check`: PASS
+- `pnpm test:engineering`: 1653 passed / 1 failed / 8 skipped (215 files) — the single
+  failure is the pre-existing environment-sensitive miseToolchainEnv.test.ts, identical to
+  all prior baselines — not a regression. All 16 newly listed W3 test files passed
+  (274 new MOS tests since W2: 1379 → 1653).
+- MOS package suites: contracts 63, identity-bridge 6, integrations 48, capabilities 43,
+  missions 30, routes 16, agent-organizations 56, lab 60, content-artifacts 31,
+  rights-policy 35, engines 39, production 81, distribution 39, experiments 35,
+  learning 14, ui mos-extension 40 — all green.
+
+**Publication record (2026-11-13):** see the publication addendum appended after the push.
