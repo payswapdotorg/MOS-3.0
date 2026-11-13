@@ -15,8 +15,6 @@ import {
   buildToolsListRequest,
   buildToolsCallRequest,
   encodeFrame,
-  jsonRpcNotification,
-  jsonRpcRequest,
   parseJsonRpcLine,
 } from "./lib/mcp-handshake.mjs";
 import {

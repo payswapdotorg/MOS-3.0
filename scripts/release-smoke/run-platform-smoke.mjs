@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+/* eslint-disable max-lines -- 单文件即流水线：步骤间共享 ctx（安装句柄/隔离家目录/seed 路径），
+   拆分会把验收顺序、失败粘滞与证据写出拆进多个文件，评审时无法线性读完一次安装验收。 */
 // run-platform-smoke —— 目标 OS CI runner 上的干净机安装/启动验收（release 冒烟第二段）。
 //
 // 用法（由发布工作流调用；工作流归 Worker A，本脚本不写工作流）：

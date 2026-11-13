@@ -142,7 +142,7 @@ export async function renderReleaseNotes({ manifest, evidenceDir }) {
   }
   lines.push("## Verify the download (SHA-256)");
   lines.push("");
-  lines.push("下载 \`SHA256SUMS\` 与安装包放在同一目录后：");
+  lines.push("下载 `SHA256SUMS` 与安装包放在同一目录后：");
   lines.push("");
   lines.push("```bash");
   lines.push("sha256sum -c SHA256SUMS        # Linux");
