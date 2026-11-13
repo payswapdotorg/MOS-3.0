@@ -116,12 +116,12 @@ jobs:
       - name: 发布工具单测（scripts/release，node:test，纯 Node 内置依赖）
         run: node --test scripts/release/*.test.mjs
 
+      - name: 构建 @zcode/adapters 及其依赖（Studio 测试/typecheck:integration 的 dist 前置）
+        run: pnpm --filter @zcode/adapters... build
       - name: MOS Studio 类型检查
         run: pnpm --filter @mos/studio typecheck
       - name: MOS Studio 单元测试
         run: pnpm --filter @mos/studio test
-      - name: 构建 @zcode/adapters 及其依赖（typecheck:integration 的 dist 前置）
-        run: pnpm --filter @zcode/adapters... build
       - name: 构建 MOS Studio（产物供 integration typecheck 使用）
         run: pnpm --filter @mos/studio build
       - name: MOS Studio 集成类型检查
