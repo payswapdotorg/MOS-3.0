@@ -44,7 +44,13 @@ import {
 } from "./lib/platforms.mjs";
 import { sha256File, sha256SumLine } from "./lib/artifact-facts.mjs";
 import { createEvidenceRecorder } from "./lib/evidence.mjs";
-import { parseDpkgInfo } from "./inspect-package.mjs";
+import {
+  debExpectedVersions,
+  findNsisPayloadEntry,
+  parseDpkgInfo,
+  parseSevenZipListing,
+  sevenZipListingHasEntries,
+} from "./inspect-package.mjs";
 
 test("parseDpkgInfo：真实 dpkg-deb -I 输出形态（控制字段带一个前导空格）", () => {
   // 实测样本（dpkg 1.22，构建机/runner 家族）：首部摘要行不带 Key: 形态，必须被忽略。
@@ -67,6 +73,104 @@ test("parseDpkgInfo：真实 dpkg-deb -I 输出形态（控制字段带一个前
   assert.equal(Object.keys(info).length, 4);
   // 历史回归：早期正则只匹配 0/2 个前导空格，1 空格形态全字段丢失（CI run 3 实测捕获）。
   assert.notEqual(parseDpkgInfo(" Package: mos").Package, undefined);
+});
+
+test("debExpectedVersions：semver 预发布连字符的 Debian ~ 规范化形态（CI run 4 实测捕获）", () => {
+  // fpm/electron-builder 打 deb 时把 `-` 规范化为 `~`（dpkg 报 3.0.0-rc.1 → 3.0.0~rc.1）；
+  // Debian 语义 `~` 排在发布前，与 semver 预发布一致，两种形态都接受。
+  assert.deepEqual(debExpectedVersions("3.0.0-rc.1"), ["3.0.0-rc.1", "3.0.0~rc.1"]);
+  assert.deepEqual(debExpectedVersions("3.0.0-rc.2-beta.3"), ["3.0.0-rc.2-beta.3", "3.0.0~rc.2~beta.3"]);
+  assert.deepEqual(debExpectedVersions("3.0.0"), ["3.0.0"]);
+});
+
+test("parseSevenZipListing：NSIS 顶层无日期/空 Compressed 列的行解析（7-Zip 24.09 实测）", () => {
+  // CI run 4 实测捕获：solid NSIS 头多数行无时间戳，旧解析只认带日期行 → listedCount=4。
+  const listing = [
+    "7-Zip (z) 24.09 (x64) : Copyright (c) 1999-2024 Igor Pavlov : 2024-11-28",
+    "",
+    "Listing archive: MOS-3.0.0-rc.1-win-x64.exe",
+    "--",
+    "Path = MOS-3.0.0-rc.1-win-x64.exe",
+    "Type = Nsis",
+    "SubType = NSIS-3 Unicode",
+    "",
+    "   Date      Time    Attr         Size   Compressed  Name",
+    "------------------- ----- ------------ ------------  ------------------------",
+    "                    .....                      6931  $PLUGINSDIR/System.dll",
+    "                    .....                      3299  $PLUGINSDIR/nsExec.dll",
+    "                    .....                      8018  $PLUGINSDIR/UAC.dll",
+    "                    .....                     45608  $PLUGINSDIR/StdUtils.dll",
+    "                    .....                      4684  $PLUGINSDIR/nsDialogs.dll",
+    "2019-06-17 19:21:30 .....                      1899  modern-wizard.bmp",
+    "2026-11-13 21:01:32 .....                      6127  uninstallerIcon.ico",
+    "2026-11-13 21:08:20 .....    166173711    166173711  $PLUGINSDIR/app-64.7z",
+    "                    .....                     242382  $PLUGINSDIR/nsis7z.dll",
+    "2026-11-13 21:08:24 .....                      143365  $R0/Uninstall MOS.exe",
+    "                    .....                      1080  $PLUGINSDIR/WinShell.dll",
+    "                             166173711    166637104  11 files",
+  ].join("\n");
+  const entries = parseSevenZipListing(listing);
+  assert.equal(entries.length, 11);
+  assert.ok(entries.includes("$PLUGINSDIR/app-64.7z"));
+  assert.ok(entries.includes("$PLUGINSDIR/System.dll"));
+  assert.ok(entries.includes("modern-wizard.bmp"));
+  assert.ok(entries.includes("$R0/Uninstall MOS.exe"));
+  // 汇总行无属性列，不得入条目。
+  assert.ok(!entries.some((e) => e.includes("11 files")));
+});
+
+test("parseSevenZipListing：solid 7z payload 视图（目录/文件行均无日期；Name 在行尾）", () => {
+  // CI run 4 内层 app-64.7z 实测形态：`....A    246302208               MOS.exe`。
+  const listing = [
+    "   Date      Time    Attr         Size   Compressed  Name",
+    "------------------- ----- ------------ ------------  ------------------------",
+    "                    D....            0            0  locales",
+    "                    D....            0            0  resources",
+    "                    ....A    246302208               MOS.exe",
+    "                    ....A    383410660               resources/app.asar",
+    "                    ....A      1912832               resources/app.asar.unpacked/node_modules/@napi-rs/keyring-win32-x64-msvc/keyring.win32-x64-msvc.node",
+    "                             834151942    166138502  2759 files, 802 folders",
+  ].join("\n");
+  const entries = parseSevenZipListing(listing);
+  assert.equal(entries.length, 5);
+  assert.ok(entries.includes("MOS.exe"));
+  assert.ok(entries.includes("resources/app.asar"));
+  assert.ok(entries.includes("locales"));
+  assert.ok(
+    entries.includes(
+      "resources/app.asar.unpacked/node_modules/@napi-rs/keyring-win32-x64-msvc/keyring.win32-x64-msvc.node",
+    ),
+  );
+  assert.ok(!entries.some((e) => e.includes("2759 files")));
+});
+
+test("findNsisPayloadEntry：electron-builder NSIS app payload 惯例定位", () => {
+  assert.equal(
+    findNsisPayloadEntry(["$PLUGINSDIR/System.dll", "$PLUGINSDIR/app-64.7z", "$R0/Uninstall MOS.exe"]),
+    "$PLUGINSDIR/app-64.7z",
+  );
+  assert.equal(findNsisPayloadEntry(["{app}/app-32.7z"]), "{app}/app-32.7z");
+  // 非惯例布局（如未来直接展开 NSIS 条目）→ null，由上层如实报缺失。
+  assert.equal(findNsisPayloadEntry(["MOS.exe", "resources/app.asar"]), null);
+  assert.equal(findNsisPayloadEntry(["$PLUGINSDIR/nsis7z.dll"]), null);
+});
+
+test("sevenZipListingHasEntries：无日期行视图的必需条目匹配（run 4 回归）", () => {
+  const listing = [
+    "                    ....A    246302208               MOS.exe",
+    "                    ....A    383410660               resources/app.asar",
+    "                    ....A      1912832               resources/glm/packages/mos-studio-plugin/.zcode-plugin/plugin.json",
+  ].join("\n");
+  assert.deepEqual(sevenZipListingHasEntries(listing, ["MOS.exe", "resources/app.asar"]).missing, []);
+  assert.equal(sevenZipListingHasEntries(listing, ["MOS.exe", "resources/app.asar"]).listedCount, 3);
+  assert.deepEqual(
+    sevenZipListingHasEntries(listing, ["MOS.exe", "resources/glm/missing.txt"]).missing,
+    ["resources/glm/missing.txt"],
+  );
+  // 反斜杠分隔的 Windows 列表形态归一化后匹配。
+  const backslashListing = "                    ....A    246302208               MOS.exe\r\n"
+    + "                    ....A    383410660               resources\\app.asar\r\n";
+  assert.deepEqual(sevenZipListingHasEntries(backslashListing, ["MOS.exe", "resources/app.asar"]).missing, []);
 });
 
 test("MCP 握手帧：initialize → initialized → tools/list → tools/call 与协议版本支持集", () => {
