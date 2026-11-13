@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@mos/studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MOS studio composition root (TL-owned): ZCode plugin (mos-studio) that observes standard task creation via the SessionStart hook, mounts the MOS context surface, resolves connected-account capability instances and route candidates, and executes authorized reads through the existing ZCode MCP client and encrypted credential store.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./contract": "./src/contract.ts"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck:integration": "tsc --noEmit -p tsconfig.integration.json",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@mos/adapters": "workspace:*",
+    "@mos/capabilities": "workspace:*",
+    "@mos/contracts": "workspace:*",
+    "@mos/identity-bridge": "workspace:*",
+    "@mos/integrations": "workspace:*",
+    "@mos/missions": "workspace:*",
+    "@mos/routes": "workspace:*",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/ext-apps": "2.0.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@zcode/adapters": "workspace:*",
+    "@zcode/contracts": "workspace:*",
+    "esbuild": "^0.25.0",
+    "lucide-react": "^1.17.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.5"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

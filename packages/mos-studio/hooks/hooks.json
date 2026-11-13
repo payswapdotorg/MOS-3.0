@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${ZCODE_PLUGIN_ROOT}/dist/hook.mjs\"",
+            "timeoutMs": 5000,
+            "onError": "allow"
+          }
+        ]
+      }
+    ]
+  }
+}

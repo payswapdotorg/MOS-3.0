@@ -2032,6 +2032,21 @@ modules:
       ui: components
     layerOrder: [domain, app, adapters, ui]
     owner: tl
+  # mos-studio 组合根（TL 拥有）：ZCode 插件形态（manifest ui.surfaces + slots + SessionStart hook）。
+  # 生产 src/runtime 经 @zcode/adapters 组合真实 ZCode MCP 客户端 + 真实共享加密凭据存储
+  # （组合根专属合法依赖；默认 typecheck 排除 src/runtime —— fresh-clone 不依赖 CLI dist，
+  # 与 zcode-mos-adapters 的 test/integration 同约定）。工程源码零其他 ZCode 导入。
+  - id: mos-studio
+    roots:
+      - packages/mos-studio/src
+      - packages/mos-studio/vitest.config.ts
+    managed: true
+    requires: [mos-contracts, mos-identity-bridge, mos-missions, mos-integrations, mos-capabilities, mos-routes, zcode-mos-adapters, zcode-cli]
+    publicEntrypoints:
+      - packages/mos-studio/src/index.ts
+      - packages/mos-studio/src/contract.ts
+    layers: {contract: contract, domain: domain, app: application}
+    owner: tl
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。

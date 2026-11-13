@@ -1,0 +1,118 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>MOS</title>
+    <style>
+      /* 颜色/字号/圆角只取宿主下发的 MCP Apps 标准变量（hostContext.styles.variables），
+         这里给兜底值；与 zcode-site 面板同约定。 */
+      :root {
+        color-scheme: light dark;
+        --fg: var(--color-text-primary, #404040);
+        --subtle: var(--color-text-secondary, #737373);
+        --bg: var(--color-background-primary, #fff);
+        --panel: var(--color-background-secondary, #f5f5f5);
+        --surface: var(--color-background-tertiary, #ededed);
+        --border: var(--color-border-primary, rgba(10, 10, 10, 0.1));
+        --danger: var(--color-text-danger, #dc2626);
+        --success: var(--color-text-success, #16a34a);
+        --warning: var(--color-text-warning, #ca8a04);
+        --text-sm: var(--font-text-sm-size, 12px);
+        --text-base: var(--font-text-md-size, 14px);
+        --text-lg: var(--font-text-lg-size, 16px);
+        --radius-md: var(--border-radius-md, 6px);
+        --radius-lg: var(--border-radius-lg, 8px);
+        --mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-size: var(--text-base);
+        line-height: 1.5;
+      }
+      main { padding: 14px 16px 28px; max-width: 720px; }
+      header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+      .chip {
+        font-size: var(--text-sm);
+        font-weight: 600;
+        padding: 2px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+      }
+      .chip[data-available="true"] { color: var(--success); border-color: var(--success); }
+      .chip[data-available="false"] { color: var(--subtle); }
+      .meta { color: var(--subtle); font-size: var(--text-sm); font-family: var(--mono); }
+      .muted { color: var(--subtle); font-size: var(--text-sm); }
+      section {
+        margin-top: 18px;
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--panel);
+      }
+      h2 { margin: 0 0 8px; font-size: var(--text-lg); }
+      .row { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0; }
+      .row input[type="password"], .row input:not([type]) { flex: 1; }
+      textarea {
+        width: 100%;
+        min-height: 64px;
+        font: inherit;
+      }
+      input, textarea, button {
+        font: inherit;
+        color: inherit;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--bg);
+        padding: 6px 10px;
+      }
+      button { cursor: pointer; background: var(--surface); }
+      button:disabled { opacity: 0.5; cursor: default; }
+      .error { color: var(--danger); font-size: var(--text-sm); }
+      .ok { color: var(--success); font-size: var(--text-sm); }
+      .warn { color: var(--warning); font-size: var(--text-sm); }
+      .pill {
+        display: inline-block;
+        margin: 0 6px;
+        padding: 0 8px;
+        border-radius: 999px;
+        font-size: var(--text-sm);
+        border: 1px solid var(--border);
+        background: var(--surface);
+      }
+      .pill.available, .pill.existing, .pill.active { color: var(--success); border-color: var(--success); }
+      .pill.unknown, .pill.unlinked { color: var(--subtle); }
+      .pill.blocked, .pill.error { color: var(--danger); border-color: var(--danger); }
+      .pill.conditional { color: var(--warning); border-color: var(--warning); }
+      .list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+      .list li {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: 8px 10px;
+        background: var(--bg);
+      }
+      .mission p { margin: 4px 0; }
+      .pre { margin: 6px 0 0; padding-left: 16px; color: var(--subtle); font-size: var(--text-sm); }
+      pre {
+        background: var(--surface);
+        border-radius: var(--radius-md);
+        padding: 8px 10px;
+        overflow-x: auto;
+        font-size: var(--text-sm);
+        font-family: var(--mono);
+      }
+      footer.busy { margin-top: 16px; color: var(--subtle); font-size: var(--text-sm); }
+      .loading { padding: 24px; color: var(--subtle); }
+    </style>
+  </head>
+  <body>
+    <div id="root" class="loading">MOS studio…</div>
+    <script>
+      /*__SCRIPT__*/
+    </script>
+  </body>
+</html>
