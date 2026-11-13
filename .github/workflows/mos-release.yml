@@ -189,9 +189,13 @@ jobs:
           restore-keys: |
             pnpm-store-v1-${{ runner.os }}-${{ matrix.target.arch }}-
 
-      - name: 安装依赖（frozen lockfile）
+      - name: 安装依赖（frozen lockfile；对 runner 上的 pnpm 链接竞态重试一次）
         shell: bash
-        run: pnpm install --frozen-lockfile
+        run: |
+          pnpm install --frozen-lockfile || {
+            echo "[install] 第一次安装失败（常见于 runner 并发链接的 _tmp_ rename 竞态），重试一次"
+            pnpm install --frozen-lockfile
+          }
 
       - name: 构建 MOS 安装包（显式 --os/--arch；bundle 自带产物存在性 + 体积审计）
         shell: bash

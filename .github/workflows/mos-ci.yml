@@ -78,8 +78,12 @@ jobs:
           restore-keys: |
             pnpm-store-v1-${{ runner.os }}-
 
-      - name: 安装依赖（frozen lockfile）
-        run: pnpm install --frozen-lockfile
+      - name: 安装依赖（frozen lockfile；对 runner 上的 pnpm 链接竞态重试一次）
+        run: |
+          pnpm install --frozen-lockfile || {
+            echo "[install] 第一次安装失败（常见于 runner 并发链接的 _tmp_ rename 竞态），清半成品后重试一次"
+            pnpm install --frozen-lockfile
+          }
 
       - name: 解析对比基线（PR 用 origin/main；push 用推送前 tip）
         id: diff-base
@@ -177,8 +181,12 @@ jobs:
           restore-keys: |
             pnpm-store-v1-${{ runner.os }}-
 
-      - name: 安装依赖（frozen lockfile）
-        run: pnpm install --frozen-lockfile
+      - name: 安装依赖（frozen lockfile；对 runner 上的 pnpm 链接竞态重试一次）
+        run: |
+          pnpm install --frozen-lockfile || {
+            echo "[install] 第一次安装失败（常见于 runner 并发链接的 _tmp_ rename 竞态），清半成品后重试一次"
+            pnpm install --frozen-lockfile
+          }
 
       # bundle.mjs 会依次执行 prepare:runtime-assets（MOS 身份下自动跑 prepare:mos-plugin
       # 与 prepare:mos-brand）→ pnpm build → electron-builder → 运行时依赖闭包/产物存在性/
