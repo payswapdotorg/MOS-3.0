@@ -303,6 +303,18 @@ function buildDesktopArtifactName(platformName, extension = "${ext}") {
   return `\${productName}-\${version}-${platformName}-\${arch}${desktopArtifactEnvSuffix}.${extension}`;
 }
 
+/**
+ * Linux 产物名：electron-builder 26 会按目标格式重映射 ${arch}（deb→amd64、
+ * AppImage/rpm→x86_64），与发布契约（release-engineering.md §3：文件名统一编码
+ * product/version/platform/architecture，例如 MOS-3.0.0-rc.1-linux-x64.deb）不一致。
+ * MOS 构建用配置已知的目标 arch 字面量拼名（本配置每次构建单目标，targetPlatform.arch 即
+ * 该构建唯一 arch），deb/rpm 的包内架构控制字段不受影响（仍为 amd64/x86_64）。
+ * 上游 ZCode 构建保留 ${arch} token 语义，命名行为不变。
+ */
+function buildLinuxDesktopArtifactName() {
+  return `\${productName}-\${version}-linux-${targetPlatform.arch}${desktopArtifactEnvSuffix}.\${ext}`;
+}
+
 function runAsarCommand(args) {
   runCommand(process.execPath, [asarCliPath, ...args], {
     cwd: import.meta.dirname,
@@ -982,7 +994,7 @@ export default {
     // backlog §3：无法构建与冒烟的目标从支持矩阵显式剔除（release manifest 的 omittedTargets
     // 记录）。MOS 只发布 AppImage+deb（必需）+rpm（best-effort）；上游 ZCode 构建保持原矩阵。
     target: isMosDesktopProduct ? ["AppImage", "deb", "rpm"] : ["AppImage", "deb", "rpm", "pacman"],
-    artifactName: buildDesktopArtifactName("linux"),
+    artifactName: isMosDesktopProduct ? buildLinuxDesktopArtifactName() : buildDesktopArtifactName("linux"),
     // desktop 包名是 scoped package（@zcode/desktop），electron-builder 默认会把
     // Linux executable/Icon 推成 @zcodedesktop。部分桌面环境无法按这个 icon name 命中
     // hicolor 图标，最终回退成系统齿轮。这里固定成稳定的小写名称，让 Icon=zcode
