@@ -132,13 +132,13 @@ modules:
     authority: commerce
     depends_on: [mos-contracts, mos-integrations]
     stage: week-4
-    status: planned
+    status: contract-tested  # W4 2026-11-14：实现+契约测试全绿；registry 级 mos-integrations 依赖经组合根解析（evidence_refs 只持不透明引用）
   - id: mos-resource-network
     responsibility: Human/agent/tool/engine/team node discovery, service offers, gigs and matching
     authority: resource-network
     depends_on: [mos-contracts, mos-agent-organizations, mos-capabilities]
     stage: week-4
-    status: planned
+    status: contract-tested  # W4 2026-11-14：实现+契约测试全绿；agent-organizations/capabilities 依赖经 OfferLookup/EngineLookup 结构化端口在组合根解析（mos-lab 同例）
   - id: zcode-substrate-adapters
     responsibility: Narrow adapters to existing ZCode session/runtime/workflow/tool/permission/plugin/model/extension services
     authority: adapters-only

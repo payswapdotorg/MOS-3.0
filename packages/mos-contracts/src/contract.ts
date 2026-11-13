@@ -68,3 +68,18 @@ export {
 export { NODE_OFFER_REQUIRED_DISCLOSURES } from "./contract/agent-organization.js";
 export { InvariantViolation } from "./domain/invariants.js";
 export { ContractValidationError } from "./application/validate.js";
+
+export type {
+  NetworkNode,
+  Gig,
+  ExecutionOption,
+  RouteComparison,
+  CommerceProduct,
+  PriceRecord,
+  MarketIntelligenceRecord,
+} from "./contract/economy.js";
+export type {
+  ExecutionOptionKind,
+  ExecutionOptionAdequacy,
+  ExecutionRecommendation,
+} from "./contract/enums.js";
