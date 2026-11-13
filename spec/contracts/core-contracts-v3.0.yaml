@@ -17,6 +17,10 @@ enums:
   side_effect: [none, read, create, update, publish, message, spend, delete, irreversible, unknown]
   evidence_kind: [provider_response, provider_webhook, user_confirmation, human_review, platform_insight, analytics_event, experiment_observation, simulation, inferred]
   actor_kind: [human, agent, engine, tool, provider, organization, team]
+  offer_status: [draft, published, withdrawn, expired, unknown]
+  hypothesis_status: [proposed, superseded, withdrawn, adopted_by_experiment, unknown]
+  organization_status: [active, inactive, unknown]
+  agent_body_status: [active, inactive, unknown]
   artifact_kind: [source, draft, media, copy, campaign, evidence, report, transcript, caption, derivative, unknown]
 objects:
   TenantContext:
@@ -182,6 +186,79 @@ objects:
       correlation_id: string
       causation_id: nullable-string
       payload: object
+  # ===== Week 2 additive objects（agent-organizations / lab；decision: additive-only）=====
+  AgentBody:
+    required: [id, tenant_id, kind, display_name, status, created_at]
+    fields:
+      id: string
+      tenant_id: string
+      kind: actor_kind-enum
+      display_name: string
+      organization_id: nullable-string
+      role: nullable-string
+      evidenced_capability_ids: array
+      status: enum
+      created_at: timestamp
+      updated_at: timestamp
+  Organization:
+    required: [id, tenant_id, name, status, created_at]
+    fields:
+      id: string
+      tenant_id: string
+      name: string
+      description: nullable-string
+      status: enum
+      created_at: timestamp
+      updated_at: timestamp
+  NodeOffer:
+    required: [id, tenant_id, node_ref, capability_id, deliverables, availability, geography, language, price_reward, deadline, sla, rights_constraints, acceptance_evaluator, evidence_refs, delivery_history, status]
+    fields:
+      id: string
+      tenant_id: string
+      node_ref: object
+      capability_id: string
+      inputs: array
+      deliverables: array
+      availability: object
+      geography: nullable-string
+      language: nullable-string
+      price_reward: nullable-money
+      deadline: nullable-timestamp
+      sla: nullable-string
+      rights_constraints: array
+      acceptance_evaluator: object
+      evidence_refs: array
+      delivery_history: array
+      status: enum
+      created_at: timestamp
+      updated_at: timestamp
+  ResearchNote:
+    required: [id, tenant_id, topic, findings, insight, created_at]
+    fields:
+      id: string
+      tenant_id: string
+      mission_id: nullable-string
+      topic: string
+      findings: array
+      insight: nullable-string
+      confidence: nullable-number
+      limitations: array
+      created_at: timestamp
+      updated_at: timestamp
+  Hypothesis:
+    required: [id, tenant_id, mission_id, statement, status, created_at]
+    fields:
+      id: string
+      tenant_id: string
+      mission_id: string
+      statement: string
+      rationale: nullable-string
+      evidence_refs: array
+      proposed_route_ids: array
+      status: enum
+      experiment_ref: nullable-string
+      created_at: timestamp
+      updated_at: timestamp
 invariants:
   - A capability instance is never available unless a live connection/account check and required scope checks support that assertion.
   - Provider static profile is not evidence of a tenant's account capability.
@@ -190,6 +267,10 @@ invariants:
   - Every external action has tenant, connection, target, operation, side-effect and idempotency/reconciliation information.
   - Every observed fact has source and observed_at; simulation cannot be stored as provider observation.
   - Artifact versions and their parent lineage are immutable.
+  - A node service offer is never published without every architecture §8 disclosure; missing or unknown disclosures keep the offer in draft with explicit missing fields.
+  - A hypothesis record never carries an experiment outcome; outcomes belong to the Experiment authority (decision lock 18).
+  - A research finding never cites a simulation as a provider observation.
+  - Node and offer records are tenant-scoped; cross-tenant reads and writes fail closed.
   - Provider secrets are represented only by opaque credential_ref.
   - No missing value is inferred from a marketing brief.
 compatibility:

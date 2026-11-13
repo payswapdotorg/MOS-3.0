@@ -40,5 +40,15 @@ export type {
 } from "./contract/capability.js";
 export type { Route, ExternalActionPreview } from "./contract/route.js";
 export type { Evidence, Artifact, DomainEvent } from "./contract/evidence.js";
+export type {
+  NodeRef,
+  AgentBody,
+  Organization,
+  OfferAvailability,
+  OfferAcceptanceEvaluator,
+  NodeOffer,
+} from "./contract/agent-organization.js";
+export type { ResearchFinding, ResearchNote, Hypothesis } from "./contract/lab.js";
+export { NODE_OFFER_REQUIRED_DISCLOSURES } from "./contract/agent-organization.js";
 export { InvariantViolation } from "./domain/invariants.js";
 export { ContractValidationError } from "./application/validate.js";

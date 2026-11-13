@@ -1,0 +1,112 @@
+schema_version: 1
+stage: week-2-discovery-orchestration
+parallel_workstreams_max: 3
+tech_lead:
+  owns:
+    - core_contract_additive_extension
+    - composio_live_verification
+    - gate_wiring_and_registry
+    - final_review_and_publication
+  must_not_delegate:
+    - main_branch_writes
+    - architecture_lock_changes
+    - shared_contract_approval
+    - composition_root_merge
+work_packages:
+  - id: W2-A
+    name: Agent Bodies, organizations and node service offers
+    owner: worker-a
+    paths:
+      - packages/mos-agent-organizations/**
+    forbidden_paths:
+      - spec/architecture/**
+      - spec/contracts/**
+      - packages/mos-contracts/**
+      - packages/mos-lab/**
+      - packages/zcode-mos-adapters/**
+      - packages/mos-integrations/**
+      - packages/ui/**
+    tasks:
+      - Implement against the shared contracts only (AgentBody, Organization, NodeOffer,
+        Hypothesis, ResearchNote schemas added by TL in @mos/contracts this stage).
+      - Durable tenant-scoped stores: agent-body store, organization store, node-offer store
+        (same JSON atomic-write pattern as W1 mos-missions mission-store).
+      - Fail-closed offer publish gate: an offer missing any §8-required disclosure
+        (capability, inputs, deliverables, availability, geography, language, price/reward,
+        deadline, SLA, rights/consent constraints, acceptance evaluator, evidence refs,
+        delivery history) is rejected; unknown values stay explicit, never guessed.
+      - Offer query by capability id (for downstream route/lab use); withdrawn/expired
+        offers never surface as available.
+      - Hypothesis handoff seam: agent organizations may evidence capability claims, never
+        experiment outcomes.
+    deliverables:
+      - package_source
+      - contract_tests
+      - module_registration_draft_note
+    acceptance:
+      - Zero core ZCode file changes; zero imports outside requires list.
+      - Publish gate rejects incomplete offers with typed errors; no silent defaults.
+      - All stores tenant-scoped with atomic writes; cross-tenant reads fail closed.
+      - Per-package suite green with `pnpm --filter <pkg> test`.
+  - id: W2-B
+    name: Lab research, hypotheses and program discovery
+    owner: worker-b
+    paths:
+      - packages/mos-lab/**
+    forbidden_paths:
+      - spec/architecture/**
+      - spec/contracts/**
+      - packages/mos-contracts/**
+      - packages/mos-agent-organizations/**
+      - packages/zcode-mos-adapters/**
+      - packages/ui/**
+    tasks:
+      - Implement against the shared contracts only (ResearchNote, Hypothesis schemas added
+        by TL in @mos/contracts this stage).
+      - Research note intake: findings must reference Evidence (source + observed_at already
+        enforced by the contract); simulation never stored as provider observation.
+      - Hypothesis proposal service: propose hypotheses linked to a mission with evidence
+        refs; status vocabulary carries NO outcome claims (decision lock #18).
+      - Program discovery: from mission + capability instances + route candidates, derive
+        lab program suggestions that reference (not copy) routes and offers; missing
+        prerequisites surface explicitly.
+      - Fail-closed: unknown capability/route/mission references reject with typed errors.
+    deliverables:
+      - package_source
+      - contract_tests
+      - module_registration_draft_note
+    acceptance:
+      - Zero core ZCode file changes; zero imports outside requires list.
+      - Hypothesis records can never express experiment outcomes.
+      - Program discovery only references existing route/offer records; no fabrication.
+      - Per-package suite green with `pnpm --filter <pkg> test`.
+  - id: TL-W2
+    name: Shared contracts, Composio live verification, gates and publication
+    owner: TL
+    paths:
+      - spec/contracts/core-contracts-v3.0.yaml
+      - spec/backlog/week-2-*
+      - packages/mos-contracts/**
+      - packages/zcode-mos-adapters/**
+      - packages/mos-integrations/**
+      - spec/integrations/provider-evidence/**
+      - architecture-policy.yaml
+      - scripts/engineering-test-files.json
+      - package.json
+      - spec/architecture/module-registry-v3.0.yaml
+      - docs/handoff/IMPLEMENTATION-STATE.md
+    tasks:
+      - Additive core contract extension: AgentBody, Organization, NodeOffer, Hypothesis,
+        ResearchNote (+ offer/hypothesis status enums) with invariants; schemas + tests in
+        mos-contracts.
+      - Composio live verification: provider descriptor, session MCP transport with
+        x-api-key header support in the ProviderPort http config (additive), live
+        integration test (env-gated, no key material in source), redacted provider
+        evidence record, live negative matrix.
+      - Gate wiring for W2-A/W2-B modules; full gate suite; ledger and registry update;
+        push and PR.
+    acceptance:
+      - Live read through the real ZCode MCP client + real Composio hosted MCP session
+        succeeds; invalid-key negative path classified fail-closed.
+      - HubSpot ledger rows stay blocked/visible; Composio rows carry evidence refs.
+      - All gates green; publication recorded with SHAs and observed times.
