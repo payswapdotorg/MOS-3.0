@@ -1,6 +1,6 @@
 # MOS 3.0 implementation state
 
-**Last verified:** 2026-11-13 Week 3 (branch `w3/transformations-artifacts`; W2 merged to main at 79437ab2 — see Week 3 record)
+**Last verified:** 2026-11-13 composition-root milestone (branch `w4/composition-root-journey`; W3 merged to main at 10c3c95f — see composition-root milestone record)
 **Repository:** payswapdotorg/MOS-3.0
 **Main bootstrap commit:** e3c0fa0e2f477988441d283428b259c6409180f6
 **ZCode v3.18.0 import merge commit:** 545910f3ecf4ebc149c690c3bb7b77124e1e747e (two-parent merge of MOS main base 3a1f50b + upstream pin b95ebaff)
@@ -15,11 +15,12 @@
 - [x] Week 1 capability/adapter code implemented. (branch w1/integration-foundation; 8 modules registered in architecture-policy.yaml; contract-tested per package suites)
 - [x] Real provider account connected. (2026-11-13: provider=composio, project API key + hosted session MCP; see Week 2 record)
 - [x] Real provider read operation verified. (2026-11-13: one real external-data read — HACKERNEWS_SEARCH_POSTS via COMPOSIO_MULTI_EXECUTE_TOOL over the real ZCode MCP client http transport + real encrypted credential store; evidence spec/integrations/provider-evidence/composio-connector-evidence.md)
-- [x] MOS mission sidecar linkage implemented and contract-tested (observeTaskCreated-based, graceful failure). In-app composition/mounting deferred; live New Task journey evidence pending (see blockers).
+- [x] MOS mission sidecar linkage implemented and contract-tested (observeTaskCreated-based, graceful failure). In-app composition delivered by the composition-root milestone (mos-studio ZCode plugin: SessionStart hook → mission sidecar; journey evidence in the milestone record below); Desktop visual mount + desktop E2E remain blocked on hardware.
 - [x] Existing/conditional/blocked/unknown route evaluation implemented and contract-tested (fail-closed; no silent fallback).
-- [ ] New Task preservation and cross-client regression verified.
+- [x] New Task preservation verified structurally (zero core file edits; upstream task path untouched; hook onError:allow + always exit 0) and journey-tested end-to-end at the plugin/CLI-runtime level (real SessionStart payload → mission; real-stack + live Composio evidence in the milestone record). Cross-client (Desktop/Web visual) regression remains hardware-blocked (no docker/display).
 - [x] Week 2 discovery/orchestration modules implemented and contract-tested (mos-agent-organizations 56 tests, mos-lab 60 tests; see Week 2 record).
 - [x] Week 3 transformation/artifact-lineage modules implemented and contract-tested (7 packages, 274 new tests; mos-studio deferred — composition blocker; see Week 3 record).
+- [x] Composition-root milestone delivered (mos-studio plugin: New Task → Mission → capabilities → routes → authorized read; see composition-root milestone record).
 
 ## Evidence ledger
 
@@ -36,7 +37,7 @@
 | Real-stack MCP/credential integration tests | contract-tested | packages/zcode-mos-adapters/test/integration/mcp-real-stack.test.ts: stand-in stdio MCP server over the REAL ZCode MCP client (createMcpAdapter) + REAL encrypted credential store (createSharedZCodeCredentialStore); requires `pnpm --filter @zcode/adapters... build` first; NOT in engineering list (dist dependency), matches repo precedent for apps/zcode-cli package-local tests |
 | HubSpot provider evidence | recorded + re-verified | spec/integrations/provider-evidence/hubspot-connector-evidence.md; live observations 2026-11-12 UTC: mcp.hubspot.com OAuth protected-resource + authorization-server discovery both HTTP 200; exact tool names/scope bindings UNVERIFIED (no provider account) — capability resolver fail-closed until verified |
 | Live provider read | blocked | No HubSpot account/OAuth client in this environment; live-verification plan recorded in the evidence record |
-| In-app composition + UI mounting | deferred | Requires composition-root path ownership; renderer build verification is no longer blocked (build:bootstrap PASS on adequate hardware 2026-11-12), so composition can proceed once ownership is decided |
+| In-app composition + UI mounting | delivered (composition-root milestone) | mos-studio ZCode plugin (`ui.surfaces` + top-level `slots` nav.primary/sidePane.launcher + SessionStart hook); inline plugin via `plugins.dirs` (defaultEnabled). Desktop renders the MCP Apps panel; Web/remote degrade to plain tool records (upstream fallback). Real discovery/loader validation + real-stack journey + live Composio read in the milestone record below; Desktop visual mount + desktop E2E remain blocked (no docker/display) |
 | Product behavior | preserved, not yet exercised | Import adds no ZCode behavior changes; only MOS docs, preserved upstream doc copies and import evidence were added |
 
 ## Update rules
@@ -325,3 +326,116 @@ module-registry-v3.0.yaml (7 contract-tested + notes; studio deferral note).
   learning 14, ui mos-extension 40 — all green.
 
 **Publication record (2026-11-13):** see the publication addendum appended after the push.
+
+## Composition-root milestone record (branch w4/composition-root-journey, 2026-11-13)
+
+**Stage:** the review-directed milestone before Week 4 (external review TL guidance:
+"Prioritize closing the composition-root and user-journey gap before starting Week 4";
+backlog spec/backlog/composition-root-milestone.md). Single TL workstream.
+
+**Scope decisions (backlog doc, in full):** composition-root ownership resolved to
+TL/mos-studio; mount form = the sanctioned ZCode plugin system (zero core edits); New Task
+observation = the SessionStart hook (`source=startup`); session identity = tools/call `_meta`;
+operator declaration instead of invented identity; authorized reads ride the existing ZCode
+MCP client + real encrypted credential store; studio production-surface reads stay planned.
+
+**Deliverable (all additive; zero core ZCode files touched; `git diff --name-only origin/main`
+= gate wiring + docs only):**
+
+- `packages/mos-studio` — the TL composition root as a ZCode plugin:
+  - `.zcode-plugin/plugin.json`: `mos-studio` 0.1.0; `mcpServers.studio` (stdio
+    `node ${ZCODE_PLUGIN_ROOT}/dist/server.mjs`); `ui.surfaces[0]` (`ui://mos-studio/panel.html`,
+    availability=session, server=studio); top-level `slots` (`nav.primary` +
+    `sidePane.launcher` → surface; Desktop-only, Web degrades to plain tool records).
+  - `hooks/hooks.json`: SessionStart → `node ${ZCODE_PLUGIN_ROOT}/dist/hook.mjs`
+    (timeoutMs 5000, onError allow; only `source=startup` counts as task creation).
+  - `src/contract/*` — zod mirrors: manifest (strict keys), hooks.json, SessionStart stdin
+    payload (camelCase + snake_case aliases), tools/call `_meta` session facts, operator record.
+  - `src/domain/*` — availability semantics mirroring packages/ui/src/mos-extension
+    (host → switch → session → mission gate order; mirror not import — deep-importing the
+    host ui package violates governance; host-tree mounting of mos-extension itself remains
+    deferred: it needs an upstream component edit) + pure journey projections (counts/shapes).
+  - `src/application/*` — StudioService (the composition heart: per-request tenant resolution
+    via IdentityBridgeService over `_meta` facts + operator declaration; mission intake
+    verbatim; ConnectionStore wiring; CapabilityCatalog with the W2-verified Composio
+    descriptor/implementation; RouteService evaluation; authorized-read composition), operator
+    store (atomic write, corrupt fail-closed), Composio session factory client (REST, the
+    documented schema/URL from @mos/integrations).
+  - `src/server/*` — the MCP stdio server (8 tools; app-only `_meta.ui.visibility` for
+    set-operator/connect/execute-read; business failures as structured isError results).
+  - `src/hook/*` — SessionStart hook: payload → TaskCreatedEvent → MissionSidecarService
+    (graceful failure; settlement poll; always exit 0) + `src/hook/main-hook.ts` entry.
+  - `src/runtime/*` — real-stack wiring (production-only `@zcode/adapters` imports:
+    createMcpAdapter + createSharedZCodeCredentialStore + the providerPortOverMcp bridge)
+    — EXCLUDED from the default typecheck (fresh-clone-safe; `typecheck:integration` covers
+    it with the documented `pnpm --filter @zcode/adapters... build` precondition, mirroring
+    the @mos/adapters test/integration convention from PR #3's lesson).
+  - `src/ui/*` — MCP Apps panel (model/panel.html/host/main; pure state machine in model.ts;
+    operator declaration, mission intake (verbatim), connections+capabilities, routes,
+    authorized read with counts-only evidence; api-key input cleared from panel state on
+    submit).
+  - `scripts/build.mjs` — esbuild three bundles (server.mjs bundles @zcode/* source except
+    the native module chain `@napi-rs/keyring`+`koffi` which stay external for the inline
+    plugin layout; hook.mjs self-contained; panel.html inlined). Install form: inline plugin
+    via `plugins.dirs` (defaultEnabled) — marketplace copy-style packaging (vendoring the
+    externals) is deliberately not done this milestone.
+  - Tests: 7 engineering files (57 tests) + 2 package-local integration suites + 1 stand-in
+    fixture (test/fixtures/standin-composio-session.mjs — the documented Composio session
+    factory + session MCP shapes, contract-only).
+
+**Gate wiring:** architecture-policy.yaml (+1 module `mos-studio`, requires the wired MOS
+modules + zcode-mos-adapters + zcode-cli), module-registry-v3.0.yaml (mos-studio:
+authority composition-root, stage composition-root-milestone, status contract-tested, full
+note), scripts/engineering-test-files.json (+7 files, 222 total), package.json typecheck
+chain (+@mos/studio), pnpm-lock.yaml (new workspace package), spec/backlog/composition-root-milestone.md,
+this record.
+
+**Gate evidence (run on this tree, 2026-11-13):**
+
+- `pnpm typecheck` (root, full chain incl. @mos/studio): PASS
+  (NODE_OPTIONS=--max-old-space-size=3072, unchanged local constraint)
+- `pnpm --filter @mos/studio typecheck` + `typecheck:integration`: PASS
+- `pnpm lint`: 0 errors / 538 warnings — identical to the Stage 0/W1/W2/W3 baseline
+  (5 new-code warnings found and fixed before the gate run)
+- `pnpm docs:stale-phrases:check` + `pnpm db:schema:check`: PASS
+- `pnpm test:architecture`: PASS (61/61, 0 fail)
+- `pnpm architecture:check -- --changed`: violations 0 / baseline 0 / new 0
+- `pnpm test:engineering`: 1710 passed / 1 failed / 8 skipped (222 files) — the single
+  failure is the pre-existing environment-sensitive miseToolchainEnv.test.ts (sandbox node
+  at /usr/bin), identical to all prior baselines — not a regression. All 7 newly listed
+  mos-studio test files passed (57 new tests since W3: 1653 → 1710)
+- `pnpm --filter @mos/studio test` (structural + real-stack integration): 62 passed /
+  3 skipped (live suite) — all green
+- `pnpm --filter @mos/studio build`: PASS (server.mjs, hook.mjs, ui/panel.html)
+
+**Real-stack journey evidence (test/integration, package-local, dist precondition):**
+
+1. Real plugin discovery (`discoverNodePlugins` over `plugins.dirs`): mos-studio parses,
+   enabled by default, 1 ui surface (`ui://mos-studio/panel.html`, runtime server
+   `plugin:mos-studio:studio`), SessionStart hook registered, zero plugin diagnostics.
+2. Built server.mjs over the REAL `createMcpAdapter` stdio transport with `_meta` injected
+   via the real per-request mechanism (trace.sessionId + workspaceKey): status → operator
+   declaration → real hook.mjs subprocess (real-shaped SessionStart payload on stdin) →
+   mission created + linked to the session → panel-style connect (key saved only to the
+   REAL shared credential store, isolated via ZCODE_DATA_BASE_DIR; connection record holds
+   only the opaque ref) → capability resolves `available` → routes evaluate `existing` →
+   authorized read over a local stand-in session factory + session MCP (http transport,
+   x-api-key injected): succeeded with counts-only evidence; stand-in record values
+   machine-checked absent from the result. Negative: read without connection → typed
+   error; resume-source hook → no mission; no `_meta` → honest session_context_unavailable.
+3. LIVE Composio journey (env COMPOSIO_API_KEY, real provider, 3/3 PASS): the same journey
+   against the REAL Composio REST session factory + REAL hosted session MCP:
+   `mos_execute_authorized_read` → COMPOSIO_MULTI_EXECUTE_TOOL → HACKERNEWS_SEARCH_POSTS →
+   succeeded; evidence carries the documented-shape counts (results_count/total_count ≥ 1),
+   never the key (machine-checked). Invalid key → 401 → failed (unauthorized), key absent
+   from all outputs. Credential store round-trip encrypted at rest (machine-checked).
+
+**Honest limits (unchanged blockers):** Desktop visual mount (the panel inside the real
+Desktop MCP Apps sandbox) and desktop E2E remain blocked — no docker/display on this sandbox
+(renderer-scale builds OOM; same blocker as Weeks 1–3). Web-side journey = the upstream
+plain-tool-record fallback (automatic; no MOS-side work) — cited from source, not visually
+verified. Cross-client visual regression therefore remains open with those blockers.
+HubSpot remains blocked at the account boundary (Google SSO 2-Step Verification requires
+the account owner's device; HubSpot-native password for payswaporg@gmail.com is not the
+Google password; nothing was reset or worked around) — its descriptor stays
+toolMappingVerified=false and the evidence record is unchanged.

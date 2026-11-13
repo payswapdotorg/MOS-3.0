@@ -1,0 +1,57 @@
+{
+  "name": "mos-studio",
+  "version": "0.1.0",
+  "description": "MOS studio composition root: observes standard task creation (SessionStart hook), keeps the New Task journey intact, resolves connected-account capabilities and routes, and executes authorized reads through the existing ZCode MCP client and encrypted credential store.",
+  "description_i18n": {
+    "en": "MOS studio composition root: observes standard task creation, resolves connected-account capabilities and routes, and executes authorized reads through the existing ZCode MCP client and encrypted credential store.",
+    "zh-CN": "MOS studio 组合根：观察标准任务创建，解析已连接账户的能力与路由，并经既有 ZCode MCP 客户端与加密凭据存储执行授权读。"
+  },
+  "author": {
+    "name": "PaySwap"
+  },
+  "license": "MIT",
+  "mcpServers": {
+    "studio": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${ZCODE_PLUGIN_ROOT}/dist/server.mjs"]
+    }
+  },
+  "ui": {
+    "surfaces": [
+      {
+        "id": "mos-studio",
+        "title": {
+          "en-US": "MOS",
+          "zh-CN": "MOS"
+        },
+        "icon": "globe",
+        "server": "studio",
+        "resourceUri": "ui://mos-studio/panel.html",
+        "availability": "session"
+      }
+    ]
+  },
+  "slots": {
+    "nav.primary": [
+      {
+        "id": "mos-studio",
+        "target": { "surface": "mos-studio" },
+        "title": {
+          "en-US": "MOS Studio",
+          "zh-CN": "MOS Studio"
+        }
+      }
+    ],
+    "sidePane.launcher": [
+      {
+        "id": "mos-studio",
+        "target": { "surface": "mos-studio" },
+        "title": {
+          "en-US": "MOS Studio",
+          "zh-CN": "MOS Studio"
+        }
+      }
+    ]
+  }
+}

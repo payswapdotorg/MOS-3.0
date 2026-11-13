@@ -95,13 +95,17 @@ modules:
     status: contract-tested  # W3 2026-11-13：实现+契约测试全绿；状态词汇见 AGENTS.md §7
     note: 零执行器（决策锁 #5）：job 只记录业务状态 + 外部 zcode_execution_ref。
   - id: mos-studio
-    responsibility: Human-facing production coordination and source-to-output creative workflow
-    authority: studio
-    # W3 2026-11-13：deferred——人面表面依赖组合根所有权决策（W1 起 UI 挂载 blocker 未决）；
-    # 其域缝（production graph + artifact + rights 读取）已由 W3 各模块交付。
-    depends_on: [mos-contracts, mos-production, mos-content-artifacts, mos-rights-policy]
-    stage: week-3
-    status: planned
+    responsibility: Central composition root (TL-owned) wiring the New Task → Mission → capabilities → routes → authorized-read journey as a ZCode plugin (surface panel + SessionStart sidecar); studio production-surface reads remain planned
+    authority: composition-root
+    # W4 里程碑（评审指示：先关闭 composition-root 挂载与用户旅程缺口，再开 Week 4）：
+    # 组合根所有权决议 = TL 拥有、落在 mos-studio 包（W1 起的 blocker 就此关闭）。
+    # 挂载形态 = ZCode 插件（.zcode-plugin/plugin.json ui.surfaces + slots nav.primary/sidePane.launcher
+    # + hooks SessionStart），零核心文件改动；Desktop 渲染面板，Web 按上游行为降级为普通工具记录。
+    # 生产域缝（production graph + artifact + rights 读取，W3 交付）的生产面接线仍 planned（后续 studio 里程碑）。
+    depends_on: [mos-contracts, mos-identity-bridge, mos-missions, mos-integrations, mos-capabilities, mos-routes, zcode-substrate-adapters, zcode-host]
+    stage: composition-root-milestone
+    status: contract-tested  # 工程套件 + 真实栈集成（test/integration：真实插件装载校验 + 真实 MCP 客户端 stdio + 真实加密凭据存储 + live Composio 旅程，包内运行）
+    note: 生产 src/runtime 经 @zcode/adapters 组合真实 ZCode MCP 客户端与真实共享加密凭据存储（组合根专属；默认 typecheck 排除，见 packages/mos-studio/src/CONTRACT.md）。Desktop 可视挂载与 desktop E2E 仍 blocked（无 docker/显示）。
   - id: mos-distribution
     responsibility: Provider publish/update/delete intents, previews, approval bindings and execution records
     authority: distribution
