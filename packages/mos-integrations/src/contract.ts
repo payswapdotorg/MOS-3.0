@@ -9,6 +9,19 @@ export type {
   ProviderCandidateTool,
 } from "./contract/hubspot-descriptor.js";
 export type {
+  ComposioSessionRequest,
+  ComposioSessionResponse,
+} from "./contract/composio-descriptor.js";
+export {
+  COMPOSIO_SESSION_FACTORY_URL,
+  COMPOSIO_MCP_URL_PATTERN,
+  COMPOSIO_SEARCH_TOOLS_TOOL,
+  COMPOSIO_GET_TOOL_SCHEMAS_TOOL,
+  COMPOSIO_MULTI_EXECUTE_TOOL,
+  HACKERNEWS_SEARCH_POSTS_TOOL,
+  composioProviderDescriptor,
+} from "./contract/composio-descriptor.js";
+export type {
   ContactsReadQuery,
   ContactsReadOutcome,
   ContactsReadSuccess,

@@ -93,3 +93,93 @@ export function exampleResolveHubSpotContacts() {
   // missing_preconditions=["tool_mapping_unverified"] —— live 验证后才会变 available。
   return instance;
 }
+
+/**
+ * Composio（W2）：第一条 toolMappingVerified=true 的能力描述符 ——
+ * 与 HubSpot 样例的差异只在数据：工具映射经 live session MCP 核实
+ * （tools/list 枚举 + 一次真实外部数据读，见 composio-connector-evidence.md §4/§6），
+ * 因此与真实 connected 连接（auth_method=api_key、无 scope 要求）解析出 available。
+ */
+export function exampleComposioDiscussionSearchDescriptor(): CapabilityDescriptorInput {
+  return {
+    id: "desc-composio-discussion-search",
+    version: 1,
+    domain: "research",
+    description: "Search public discussion posts (Hacker News) through the Composio hosted session MCP (read-only).",
+    capabilityId: "research.discussion.search",
+    providerId: "composio",
+    integrationId: "mos-composio-session-mcp",
+    inputSchema: {
+      type: "object",
+      properties: { query: { type: "string" }, size: { type: "integer" } },
+      required: ["query"],
+    },
+    outputSchema: { type: "object" },
+    sideEffect: "read",
+    riskLevel: "low",
+    requiredScopes: [],
+    requiredAccountTypes: [],
+    requiredAppReview: null,
+    permissionMode: "zcode_existing_permissions",
+    evidenceSource: {
+      documentationUrl: "https://docs.composio.dev/docs/sessions-via-mcp",
+      observedAt: "2026-11-13T00:00:00Z",
+    },
+    knownGaps: [],
+    supportStatus: "supported",
+    fallback: null,
+    toolMapping: {
+      toolName: "COMPOSIO_MULTI_EXECUTE_TOOL",
+      verified: true,
+      verifiedAt: "2026-11-13T00:00:00Z",
+    },
+  };
+}
+
+/** Composio 真实连接的样例（credential_ref 指向 ZCode 凭据存储的不透明引用）。 */
+export function exampleComposioConnection(): ProviderConnection {
+  return {
+    id: "conn-composio-demo",
+    tenant_id: "tenant-acme",
+    provider_id: "composio",
+    provider_account_id: null,
+    auth_method: "api_key",
+    credential_ref: "mcp:apikey:0a1b2c3d4e5f60718293a4b5",
+    granted_scopes: [],
+    account_type: null,
+    app_review_status: null,
+    status: "connected",
+    last_verified_at: "2026-11-13T00:00:00Z",
+  };
+}
+
+/** 目录注册 + 实例解析：核实映射 + 真实连接 + 证据齐备 → available（live 证据支撑）。 */
+export function exampleResolveComposioDiscussionSearch() {
+  const catalog = new CapabilityCatalog();
+  catalog.register(exampleComposioDiscussionSearchDescriptor());
+  const implementation = catalog.registerImplementation({
+    id: "impl-composio-discussion-search",
+    provider_id: "composio",
+    capability_id: "research.discussion.search",
+    version: 1,
+    operation_mapping: [
+      {
+        tool_name: "COMPOSIO_MULTI_EXECUTE_TOOL",
+        arguments: { tools: [{ tool_slug: "HACKERNEWS_SEARCH_POSTS", arguments: {} }] },
+      },
+    ],
+    status: "available",
+    evidence_refs: ["spec/integrations/provider-evidence/composio-connector-evidence.md"],
+  });
+
+  const resolver = new CapabilityInstanceResolverService({
+    catalog,
+    time: new SystemTimePort(),
+  });
+  return resolver.resolveForConnection({
+    tenantId: "tenant-acme",
+    connection: exampleComposioConnection(),
+    capabilityId: "research.discussion.search",
+    implementationId: implementation.id,
+  });
+}

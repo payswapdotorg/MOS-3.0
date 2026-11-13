@@ -2,6 +2,7 @@
  * mos-integrations 完整公共 API。
  */
 export * from "./contract/hubspot-descriptor.js";
+export * from "./contract/composio-descriptor.js";
 export * from "./contract/read-adapter.js";
 export * from "./connector/hubspot-connector-declaration.js";
 export * from "./domain/read-summary.js";

@@ -106,6 +106,9 @@ export const authMethodSchema = z.enum([
   "oauth_authorization_code",
   "oauth_client_credentials",
   "zcode_official_mcp",
+  // Week 2 additive：provider 文档化的 API-key header 授权（连接材料仍只存不透明
+  // credential_ref；header 值由组合根在运行时从凭据存储注入，永不落源码/日志）。
+  "api_key",
   "unknown",
 ]);
 export type AuthMethod = z.infer<typeof authMethodSchema>;

@@ -48,10 +48,12 @@ describe("hubspot provider descriptor", () => {
   });
 
   test("schema rejects unknown auth methods and missing provider identity", () => {
+    // 注：authMethod 枚举在 W2 additive 扩展了 "api_key"（Composio session MCP 的
+    // 文档化授权形态）；HubSpot 描述符数据不使用它。真正未知的授权形态仍然拒绝。
     expect(() =>
       providerDescriptorSchema.parse({
         ...hubspotProviderDescriptor,
-        authMethod: "api_key",
+        authMethod: "handrolled_bearer_token",
       }),
     ).toThrow();
     expect(() =>
