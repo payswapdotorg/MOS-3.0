@@ -324,19 +324,20 @@ jobs:
         run: |
           set -euo pipefail
           # BSD find（mac runner）没有 -printf：用 node 保证跨平台一致。
-          node scripts/release-smoke/workdir-listing.mjs mos-release-smoke-work > smoke-workdir-listing.txt || \
-            echo "(mos-release-smoke-work 不存在：冒烟未启动或工作区未创建)" > smoke-workdir-listing.txt
+          # 文件名带平台后缀：四个平台的清单在 release 汇总目录里不能互相覆盖。
+          node scripts/release-smoke/workdir-listing.mjs mos-release-smoke-work > "smoke-workdir-listing-${{ matrix.target.platform }}.txt" || \
+            echo "(mos-release-smoke-work 不存在：冒烟未启动或工作区未创建)" > "smoke-workdir-listing-${{ matrix.target.platform }}.txt"
 
       - name: 上传冒烟证据（失败也必须上传：证据是诊断与验收的第一手材料）
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: smoke-evidence-${{ matrix.target.platform }}
-          # 证据 JSON 本身很小；整包工作区（几百 MB 的安装目录/隔离家目录）不该上工件——
+          # 证据 JSON 本身很小；整包工作区（几百 MB 的安装目录/隔离家目录）不上工件——
           # run 5 实测每平台 250-490MB。工作区以清单（路径+大小）代替，内容可按 runbook 复现。
           path: |
             smoke-evidence-*.json
-            smoke-workdir-listing.txt
+            smoke-workdir-listing-*.txt
           retention-days: 30
           if-no-files-found: ignore
 
@@ -486,7 +487,10 @@ jobs:
             fi
             gh release upload "$TAG" "$file" --repo "$REPO"
           }
-          for file in release-staging/MOS-* release-staging/SHA256SUMS release-staging/release-manifest.json; do
+          # runbook §7：冒烟证据 JSON 与工作区清单也归档为 Release 资产（审核与验收的第一手材料；
+          # run 9 实测缺失——上传循环此前只覆盖安装包/校验和/清单）。
+          for file in release-staging/MOS-* release-staging/SHA256SUMS release-staging/release-manifest.json \
+                      smoke-evidence/smoke-evidence-*.json smoke-evidence/smoke-workdir-listing-*.txt; do
             upload_if_missing "$file"
           done
 
