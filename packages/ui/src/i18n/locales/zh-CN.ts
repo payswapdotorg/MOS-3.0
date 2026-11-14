@@ -4199,6 +4199,52 @@ const zhCN: Record<string, string> = {
   "settings.modelProvider.apiFormat.title.chatCompletions": "Chat Completions",
   "settings.modelProvider.apiFormat.title.responses": "Responses",
   "settings.modelProvider.apiFormat.title.anthropicMessages": "Anthropic Messages",
+  "settings.modelProvider.apiFormat.title.museSessionProtocol": "Muse serve（MSP）",
+  // Muse Code CLI 状态卡（Issue #24 §3）：连接走本机 CLI 登录态与订阅额度。
+  "settings.modelProvider.muse.statusCard.title": "Muse Code CLI",
+  "settings.modelProvider.muse.status.checking": "正在检测本机 Muse Code CLI…",
+  "settings.modelProvider.muse.status.installed": "已安装 · v{version}",
+  "settings.modelProvider.muse.status.installedNoVersion": "已安装（版本未知）",
+  "settings.modelProvider.muse.status.notInstalled": "未安装",
+  "settings.modelProvider.muse.status.notInstalledLong":
+    "本机尚未安装 Muse Code CLI。安装完成后请重新检测。",
+  "settings.modelProvider.muse.status.signedIn": "已登录",
+  "settings.modelProvider.muse.status.signedInLong":
+    "已通过本机 Muse Code CLI 登录。该供应商下的模型使用其订阅额度。",
+  "settings.modelProvider.muse.status.signedOut": "未登录",
+  "settings.modelProvider.muse.status.signedOutLong":
+    "Muse Code CLI 已安装但尚未登录。点击“连接”在浏览器中完成登录。",
+  "settings.modelProvider.muse.status.serviceUnavailable":
+    "当前连接无法探测本机 Muse Code CLI（需要本机桌面 Host）。",
+  "settings.modelProvider.muse.status.error": "Muse CLI 探测失败：{message}",
+  "settings.modelProvider.muse.status.unresolved":
+    "已安装，但登录状态未知。登录后请重新检测。",
+  "settings.modelProvider.muse.install.title": "安装 Muse Code CLI",
+  "settings.modelProvider.muse.install.macosLinuxLabel": "macOS / Linux",
+  "settings.modelProvider.muse.install.windowsLabel": "Windows（PowerShell）",
+  "settings.modelProvider.muse.usage.title": "套餐与额度",
+  "settings.modelProvider.muse.usage.empty": "已登录。CLI 未返回套餐或额度明细。",
+  "settings.modelProvider.muse.usage.moreFields": "还有 {count} 个字段",
+  "settings.modelProvider.muse.explainer.title": "该供应商的工作方式",
+  "settings.modelProvider.muse.explainer.localSignIn":
+    "使用本机 Muse Code CLI 的登录态与其订阅额度；MOS 不保存 API Key，也不经过 OpenRouter。",
+  "settings.modelProvider.muse.explainer.payAsYouGo":
+    "单独创建的 Meta API Key 是按量付费——请使用单独的“Meta Model API（按量付费 API Key）”模板接入。",
+  "settings.modelProvider.muse.explainer.toolApprovalPrefix":
+    "工具审批默认拒绝。设置环境变量",
+  "settings.modelProvider.muse.explainer.toolApprovalSuffix":
+    "后可允许受限的一次性审批。",
+  "settings.modelProvider.muse.action.recheck": "重新检测",
+  "settings.modelProvider.muse.action.connect": "连接",
+  "settings.modelProvider.muse.action.disconnect": "断开",
+  "settings.modelProvider.muse.connect.startedHint":
+    "已启动 muse login。请在浏览器中完成登录，然后重新检测。",
+  "settings.modelProvider.muse.connect.startFailed": "无法启动 muse login：{message}",
+  "settings.modelProvider.muse.disconnect.confirmTitle": "退出本机 Muse Code CLI 登录？",
+  "settings.modelProvider.muse.disconnect.confirmDescription":
+    "将在本机执行 muse logout；重新登录前，该供应商下的模型将不可用。",
+  "settings.modelProvider.muse.disconnect.confirm": "退出登录",
+  "settings.modelProvider.muse.disconnect.failed": "muse logout 失败：{message}",
   "settings.modelProvider.anthropicEndpoint": "Anthropic 接口地址",
   "settings.modelProvider.anthropicEndpointPlaceholder":
     "如：https://open.bigmodel.cn/api/anthropic",

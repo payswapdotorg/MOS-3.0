@@ -4495,6 +4495,53 @@ const enUS: Record<string, string> = {
   "settings.modelProvider.apiFormat.title.chatCompletions": "Chat completions",
   "settings.modelProvider.apiFormat.title.responses": "Responses",
   "settings.modelProvider.apiFormat.title.anthropicMessages": "Anthropic messages",
+  "settings.modelProvider.apiFormat.title.museSessionProtocol": "Muse serve (MSP)",
+  // Muse Code CLI 状态卡（Issue #24 §3）：连接走本机 CLI 登录态与订阅额度。
+  "settings.modelProvider.muse.statusCard.title": "Muse Code CLI",
+  "settings.modelProvider.muse.status.checking": "Checking the local Muse Code CLI…",
+  "settings.modelProvider.muse.status.installed": "Installed · v{version}",
+  "settings.modelProvider.muse.status.installedNoVersion": "Installed (version unknown)",
+  "settings.modelProvider.muse.status.notInstalled": "Not installed",
+  "settings.modelProvider.muse.status.notInstalledLong":
+    "The Muse Code CLI is not installed on this machine. Install it, then recheck.",
+  "settings.modelProvider.muse.status.signedIn": "Signed in",
+  "settings.modelProvider.muse.status.signedInLong":
+    "Signed in with the local Muse Code CLI. Models from this provider use its subscription allowance.",
+  "settings.modelProvider.muse.status.signedOut": "Not signed in",
+  "settings.modelProvider.muse.status.signedOutLong":
+    "The Muse Code CLI is installed but not signed in. Connect to sign in with your browser.",
+  "settings.modelProvider.muse.status.serviceUnavailable":
+    "Local Muse Code CLI detection is unavailable for this connection. It requires the desktop host on this machine.",
+  "settings.modelProvider.muse.status.error": "Muse CLI check failed: {message}",
+  "settings.modelProvider.muse.status.unresolved":
+    "Installed, but the sign-in state could not be determined. Recheck after signing in.",
+  "settings.modelProvider.muse.install.title": "Install the Muse Code CLI",
+  "settings.modelProvider.muse.install.macosLinuxLabel": "macOS / Linux",
+  "settings.modelProvider.muse.install.windowsLabel": "Windows (PowerShell)",
+  "settings.modelProvider.muse.usage.title": "Plan & allowance",
+  "settings.modelProvider.muse.usage.empty":
+    "Signed in. The CLI did not report any plan or allowance details.",
+  "settings.modelProvider.muse.usage.moreFields": "+{count} more fields",
+  "settings.modelProvider.muse.explainer.title": "How this provider works",
+  "settings.modelProvider.muse.explainer.localSignIn":
+    "Uses the local Muse Code CLI sign-in and its subscription allowance. No API key is stored, and this is not OpenRouter.",
+  "settings.modelProvider.muse.explainer.payAsYouGo":
+    "Meta API keys created separately are billed pay-as-you-go — use the separate “Meta Model API (pay-as-you-go)” provider template for those.",
+  "settings.modelProvider.muse.explainer.toolApprovalPrefix":
+    "Tool approvals are denied by default. Set the environment variable",
+  "settings.modelProvider.muse.explainer.toolApprovalSuffix":
+    "to permit bounded single-use approvals.",
+  "settings.modelProvider.muse.action.recheck": "Recheck",
+  "settings.modelProvider.muse.action.connect": "Connect",
+  "settings.modelProvider.muse.action.disconnect": "Disconnect",
+  "settings.modelProvider.muse.connect.startedHint":
+    "Muse login launched. Complete the sign-in in your browser, then recheck.",
+  "settings.modelProvider.muse.connect.startFailed": "Could not start Muse login: {message}",
+  "settings.modelProvider.muse.disconnect.confirmTitle": "Sign out of the local Muse Code CLI?",
+  "settings.modelProvider.muse.disconnect.confirmDescription":
+    "This runs muse logout on this machine. Models from this provider stop working until you sign in again.",
+  "settings.modelProvider.muse.disconnect.confirm": "Sign out",
+  "settings.modelProvider.muse.disconnect.failed": "muse logout failed: {message}",
   "settings.modelProvider.anthropicEndpoint": "Anthropic endpoint",
   "settings.modelProvider.anthropicEndpointPlaceholder": "e.g. https://api.anthropic.com",
   "settings.modelProvider.openaiEndpoint": "OpenAI endpoint",

@@ -23,6 +23,9 @@ import volcengineLogo from "@/assets/provider-icons/model-provider-volcengine.pn
 import stepfunLogo from "@/assets/provider-icons/model-provider-stepfun.png";
 import siliconflowLogo from "@/assets/provider-icons/model-provider-siliconflow.png";
 import tencentCloudLogo from "@/assets/provider-icons/model-provider-tencent-cloud.png";
+// Issue #24：Muse Code（本地 CLI）/ Meta Model API 中性单色记号（非商标），明暗主题共用。
+import museCodeLogo from "@/assets/provider-icons/model-provider-muse-code.svg";
+import metaModelLogo from "@/assets/provider-icons/model-provider-meta-model.svg";
 
 type ProviderLogoRef = NonNullable<ProviderConfigObject["logo"]>;
 
@@ -51,6 +54,8 @@ const BUILTIN_PROVIDER_LOGO_ASSETS: Readonly<Record<string, BuiltinProviderLogoA
   volcengine: { light: volcengineLogo },
   stepfun: { light: stepfunLogo },
   siliconflow: { light: siliconflowLogo },
+  "muse-code": { light: museCodeLogo },
+  "meta-model": { light: metaModelLogo },
 };
 
 export function resolveBuiltinProviderLogoAsset(

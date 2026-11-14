@@ -41,6 +41,7 @@ import {
   type PurchaseAudience,
 } from "./codingPlanEnterpriseTiers.js";
 import { resolveCodingPlanStatusPanelViewState } from "./codingPlanStatusPanelViewState.js";
+import { isMuseCliTemplateProvider, MuseCliStatusCard } from "./MuseCliStatusCard.js";
 import {
   formatCodingPlanAmount,
   pickProductPrice,
@@ -837,30 +838,36 @@ export function ModelProviderSectionDetail({
   const customApiKeyUrl = customProvider.templateId
     ? getProviderFormApiKeyManagementUrl(customProvider)
     : undefined;
+  // Issue #24 §3：Muse 内置模板供应商只在本机 Detail 视图渲染 CLI 状态卡
+  //（安装/登录/额度 + Connect/Disconnect）；其余自定义 Provider 不受影响。
+  const museCliStatusCardVisible = isMuseCliTemplateProvider(customProvider);
   return (
     // 仅展示预设模板声明的入口，不根据地址猜测自定义 Provider 的 Key 控制台。
-    <InlineEditableProviderCard
-      provider={customProvider}
-      onSave={onSave}
-      {...modelEditingProps}
-      onDelete={() => onDelete(customProvider)}
-      onReorderModelIds={
-        onReorderProviderModels
-          ? (modelIds) => onReorderProviderModels(customProvider.providerId, modelIds)
-          : undefined
-      }
-      onTestModel={onTestModel}
-      presetApiKeyUrl={customApiKeyUrl}
-      readOnlyEndpoints={false}
-      nameEditable
-      onOpenPresetApiKey={
-        customApiKeyUrl
-          ? () => {
-              onOpenApiKeyUrl(customApiKeyUrl);
-            }
-          : undefined
-      }
-    />
+    <div className="space-y-3">
+      {museCliStatusCardVisible ? <MuseCliStatusCard /> : null}
+      <InlineEditableProviderCard
+        provider={customProvider}
+        onSave={onSave}
+        {...modelEditingProps}
+        onDelete={() => onDelete(customProvider)}
+        onReorderModelIds={
+          onReorderProviderModels
+            ? (modelIds) => onReorderProviderModels(customProvider.providerId, modelIds)
+            : undefined
+        }
+        onTestModel={onTestModel}
+        presetApiKeyUrl={customApiKeyUrl}
+        readOnlyEndpoints={false}
+        nameEditable
+        onOpenPresetApiKey={
+          customApiKeyUrl
+            ? () => {
+                onOpenApiKeyUrl(customApiKeyUrl);
+              }
+            : undefined
+        }
+      />
+    </div>
   );
 }
 

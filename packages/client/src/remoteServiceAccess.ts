@@ -25,6 +25,7 @@ import {
   IOAuthService,
   IModelSelectionService,
   IProviderSettingsService,
+  IMuseCliDetectionService,
   IProviderProvisioningTargetService,
   ISourceServerWorkspaceService,
   ISourceServerManagementService,
@@ -101,6 +102,8 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly fileWatcherService: IFileWatcherService;
   readonly oauthService: IOAuthService;
   readonly providerSettingsService: IProviderSettingsService;
+  /** 仅桌面本机 Host 提供的 Muse CLI 探测（Issue #24）；远端 / Web / 手机缺省。 */
+  readonly museCliDetectionService?: IMuseCliDetectionService;
   readonly modelSelectionService: IModelSelectionService;
   /** Host-only target proxy；不属于 IServiceAccessor，避免向 Renderer 暴露 Secret 写入接口。 */
   readonly providerProvisioningTargetService!: IProviderProvisioningTargetService;
@@ -244,6 +247,13 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.providerSettingsService = ProxyChannel.toService<IProviderSettingsService>(
       channelClient.getChannel(IProviderSettingsService.channelName),
     );
+    // Muse CLI 探测只触达本机 Host 的 documented CLI 命令（与语音输入同一开关）：
+    // 只在桌面 base 连接打开，Web / 手机远控 / 远程 workspace 连接不创建代理。
+    this.museCliDetectionService = options.deviceSyncStateService
+      ? ProxyChannel.toService<IMuseCliDetectionService>(
+          channelClient.getChannel(IMuseCliDetectionService.channelName),
+        )
+      : undefined;
     this.modelSelectionService = ProxyChannel.toService<IModelSelectionService>(
       channelClient.getChannel(IModelSelectionService.channelName),
     );

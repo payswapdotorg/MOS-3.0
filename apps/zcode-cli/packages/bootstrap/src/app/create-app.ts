@@ -59,6 +59,7 @@ import {
 } from "@zcode/shared/zcode-protocol-v4";
 
 import { createModelAdapter } from "../model-factory.js";
+import { MuseSessionModelAdapter } from "@zcode/adapters/model";
 import { StartupTimer, startupNow } from "../startup-logging.js";
 import { scheduleStartupLogRetentionCleanup } from "../log-retention.js";
 import type {
@@ -247,6 +248,9 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
   let nodeReplBrowserBroker: NodeReplBrowserBroker | undefined;
   let ownedNodeReplBrowserBroker: NodeReplBrowserBroker | undefined;
   let providerModelRuntime: ApiProviderModelRuntime | undefined;
+  // Muse Code 本地执行后端（ACR-0002）：与 providerModelRuntime 同生命周期声明，
+  // 构造点在下方模型装配块内，关闭点在会话关闭与启动失败两处。
+  let museSessionModelAdapter: MuseSessionModelAdapter | undefined;
   let standaloneSessionControl: CliSessionControlRuntime | undefined;
   try {
     const storageRoot = resolvePath(configResult.config.storage.dir);
@@ -778,6 +782,14 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     if (options.modelAdapter && modelTelemetry.statusSink) {
       modelAdapter.addStatusSink(modelTelemetry.statusSink);
     }
+    // Muse Code 本地执行后端（ACR-0002）：懒启动，仅在选中 muse-session-protocol
+    // Provider 时才会 spawn `muse serve`；workspaceRoot 与 Agent 运行的工作区一致。
+    museSessionModelAdapter = new MuseSessionModelAdapter({
+      workspaceRoot: workingDirectory,
+      appVersion,
+      env: options.env,
+      logger: modelLogger,
+    });
     // 进程级并发治理器：run service 拿它的窄端口给
     // driver（每个 actor runtime 一个请求级准入端口）；主 runtime 挂它的 observer（下面 deps）——
     // 不排队、不看冷却，但计入在飞并喂信号。进程级单例——配额本就在账号上，不按会话分。
@@ -787,6 +799,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     providerModelRuntime = new ApiProviderModelRuntime({
       registry: options.providerRegistry,
       modelAdapter,
+      museModelAdapter: museSessionModelAdapter,
     });
     providerModelRuntime.start();
     // model factory 提前到三条 workflow child 装配线之前构造：script workflow bridge、dwf actor
@@ -1476,6 +1489,8 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
         } finally {
           try {
             providerModelRuntime?.dispose();
+            // muse serve 子进程按 EOF 语义自退；这里发出 SDK 关闭并容忍失败。
+            void museSessionModelAdapter?.dispose().catch(() => undefined);
           } finally {
             try {
               await modelTelemetry.shutdown();
@@ -1660,6 +1675,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
   } catch (error) {
     await standaloneSessionControl?.close();
     providerModelRuntime?.dispose();
+    void museSessionModelAdapter?.dispose().catch(() => undefined);
     void modelTelemetry.shutdown().catch(() => undefined);
     void ownedNodeReplBrowserBroker?.close();
     startupTimer.fail("ZCode app startup failed", error, {

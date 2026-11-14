@@ -1,0 +1,7 @@
+<svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Issue #24：Meta Model API（按量付费）内置 Logo —— 中性单色 API/端点记号（非商标），
+       固定中性灰在明暗两主题下均可读。 -->
+  <circle cx="40" cy="40" r="28" stroke="#737373" stroke-width="5"/>
+  <circle cx="40" cy="40" r="11" fill="#737373"/>
+  <path d="M40 4v9M40 67v9M4 40h9M67 40h9" stroke="#737373" stroke-width="5" stroke-linecap="round"/>
+</svg>

@@ -17,6 +17,8 @@ export {
   type AccountRequestAuthResolver,
 } from "./model-provider/accountRequestAuthService.js";
 export { IProviderProvisioningTargetService } from "./model-provider/providerProvisioning.js";
+// Muse CLI 探测服务（Issue #24）：IMuseCliDetectionService 同时是类型（interface）与运行时描述符（descriptor）。
+export { IMuseCliDetectionService, type MuseCliStatus } from "./model-provider/museCliDetection.js";
 export {
   collectServiceMemoryDiagnostics,
   memoryDiagnosticsRegistry,

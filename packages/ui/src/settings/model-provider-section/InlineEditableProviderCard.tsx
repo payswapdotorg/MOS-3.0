@@ -25,6 +25,7 @@ import {
   ProviderModelsSection,
 } from "./ProviderCardSections.js";
 import { resolveModelProviderDisplayName } from "./constants.js";
+import { isMuseCliTemplateProvider } from "./MuseCliStatusCard.js";
 import { useProviderDetailFeedback } from "./ProviderDetailFeedback.js";
 import { MODEL_PROVIDER_TEXT_IDLE_TRIGGER_MS, useIdleTrigger } from "./useIdleTrigger.js";
 import { useOptimisticReorder } from "./useOptimisticReorder.js";
@@ -748,6 +749,10 @@ export function InlineEditableProviderCard({
   const headerProviderName = providerDisplayName;
   const isAccountProvider = provider.config.access?.type === "zhipu-account";
   const isApiKeyProvider = isApiKeyAccess(provider.config.access);
+  // Issue #24：Muse 本地供应商没有 HTTP 端点（muse serve，无 baseUrl / API Key），
+  // 连接语义由 MuseCliStatusCard 承载；沿用 zhipu-account 先例隐藏连接区，
+  // 避免 baseUrl 输入框与不含 MSP 选项的 API 格式下拉框渲染成残缺表单。
+  const isMuseLocalProvider = isMuseCliTemplateProvider(provider);
   const effectiveHeaderVisible = headerVisible && statusSection === undefined;
 
   return (
@@ -808,7 +813,7 @@ export function InlineEditableProviderCard({
       {statusSection}
 
       <div className="space-y-3">
-        {isAccountProvider ? null : (
+        {isAccountProvider || isMuseLocalProvider ? null : (
           <ProviderConnectionSection
             provider={provider}
             readOnly={readOnlyEndpoints}

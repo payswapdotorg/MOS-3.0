@@ -1,10 +1,22 @@
 import { z } from "zod";
 import { sparseShape } from "@zcode/shared/config-schema";
 
+export const httpProviderApiTypeDataSchema = z.enum([
+  "anthropic-messages",
+  "openai-chat-completions",
+  "openai-responses",
+]);
+/**
+ * Muse Code 本地执行后端：通过本机 `muse serve`（Muse Session Protocol, MSP）
+ * 驱动已登录的 Muse Code CLI。不是 HTTP 端点，因此该类型的完整配置不携带
+ * baseUrl，也不需要 API Key——凭证由 CLI 自己的登录会话持有。
+ */
+export const museSessionProtocolApiTypeDataSchema = z.literal("muse-session-protocol");
 export const providerApiTypeDataSchema = z.enum([
   "anthropic-messages",
   "openai-chat-completions",
   "openai-responses",
+  "muse-session-protocol",
 ]);
 export const providerGroupDataSchema = z.enum([
   "standard-personal",
@@ -54,26 +66,47 @@ export const zhipuAccountAccessDataSchema = z
     type: completeZhipuAccountAccessDataSchema.shape.type,
   })
   .strict();
+/**
+ * Muse Code CLI 本地接入：MOS 不保存任何凭证，运行时借用本机已登录的
+ * Muse Code CLI 会话（订阅额度）。字段有意保持为空——新增字段需同步
+ * MuseLocalAccessConfig 与序列化分支。
+ */
+export const museLocalAccessDataSchema = z.object({ type: z.literal("muse-cli-local") }).strict();
+export const completeMuseLocalAccessDataSchema = museLocalAccessDataSchema;
 export const providerAccessDataSchema = z.discriminatedUnion("type", [
   apiKeyAccessDataSchema,
   zhipuAccountAccessDataSchema,
+  museLocalAccessDataSchema,
 ]);
 export const completeProviderAccessDataSchema = z.discriminatedUnion("type", [
   completeApiKeyAccessDataSchema,
   completeZhipuAccountAccessDataSchema,
+  completeMuseLocalAccessDataSchema,
 ]);
 
-export const completeProviderApiDataSchema = z
+const completeHttpProviderApiDataSchema = z
   .object({
-    type: providerApiTypeDataSchema,
+    type: httpProviderApiTypeDataSchema,
     baseUrl: nonBlankRequiredString.pipe(z.string().url()),
     headers: z.record(z.string(), z.string()).readonly().nullable().optional(),
   })
   .strict();
+const completeMuseProviderApiDataSchema = z
+  .object({
+    type: museSessionProtocolApiTypeDataSchema,
+  })
+  .strict();
+export const completeProviderApiDataSchema = z.discriminatedUnion("type", [
+  completeHttpProviderApiDataSchema,
+  completeMuseProviderApiDataSchema,
+]);
+// 稀疏形态保持单一对象：编辑中的 api 允许缺 type/baseUrl（sparseShape 语义不变），
+// 完整性由 complete 联合按 type 分支校验（muse 分支拒绝多余字段，fail-closed）。
 export const providerApiDataSchema = z
   .object({
-    ...sparseShape(completeProviderApiDataSchema.shape),
+    type: providerApiTypeDataSchema.optional(),
     baseUrl: z.string().url().nullable().optional(),
+    headers: z.record(z.string(), z.string()).readonly().nullable().optional(),
   })
   .strict();
 // Personal 允许暂存编辑中的 endpoint；完整 schema 仍拒绝，且只影响该 Provider 的准入。

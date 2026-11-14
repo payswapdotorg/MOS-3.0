@@ -283,6 +283,8 @@ export {
 } from "./model-provider/providerFacadeServices.js";
 export { createAccountRequestAuthService } from "./model-provider/accountRequestAuthService.js";
 export type { IAccountRequestAuthService } from "./model-provider/accountRequestAuthService.js";
+// Muse CLI 探测服务（Issue #24）：Host 侧 implementation，经 ProxyChannel 供 renderer 使用。
+export { createMuseCliDetectionService } from "./model-provider/museCliDetectionService.js";
 export { createAccountProviderRequestAuthService } from "./model-provider/accountProviderRequestAuthService.js";
 export {
   resolveAccountTeamPlanRuntimeApiKey,
@@ -444,6 +446,8 @@ import { IOAuthService } from "./oauth/oauth.js";
 import { ISourceServerWorkspaceService } from "./source-server-workspace/sourceServerWorkspace.js";
 import { IUsageStatsService } from "./usage-stats/usageStats.js";
 import { ICodingPlanSubscriptionService } from "./coding-plan-subscription/codingPlanSubscription.js";
+import { IMuseCliDetectionService } from "./model-provider/museCliDetection.js";
+import { createMuseCliDetectionService } from "./model-provider/museCliDetectionService.js";
 import { IClientScenesService } from "./client-scenes/clientScenes.js";
 import { ISkillsService } from "./skills/skills.js";
 import { ISkillSyncService } from "./skill-sync/skillSync.js";
@@ -3050,6 +3054,9 @@ export function createLocalServices(options: {
       }),
     )
     .register(ICodingPlanSubscriptionService, codingPlanSubscriptionService)
+    // Muse CLI 探测（Issue #24）：documented CLI 命令探测本机 muse 安装/登录/额度，
+    // 不读写 MOS 凭据；所有走本装配的 Host 均注册，renderer 侧按可选能力消费。
+    .register(IMuseCliDetectionService, createMuseCliDetectionService())
     .register(
       IClientConfigService,
       createClientConfigService({

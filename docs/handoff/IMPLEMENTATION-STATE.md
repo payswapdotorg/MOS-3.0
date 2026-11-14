@@ -23,6 +23,7 @@
 - [x] Composition-root milestone delivered (mos-studio plugin: New Task → Mission → capabilities → routes → authorized read; see composition-root milestone record).
 - [x] Week 4 economy/capacity modules implemented and contract-tested (mos-commerce + mos-resource-network, architecture §8 invariants §23–§26; see Week 4 record).
 - [x] Distributable desktop release published (mos-v3.0.0-rc.1: GitHub Actions full pipeline green — 4/4 builds, 4/4 clean-machine smokes, checksums/manifest/attestation verified; TL review + publish record below).
+- [x] Muse Code (local CLI) delegated execution backend delivered (ACR-0002: contract-tested + integrated; Windows end-to-end verification pending user machine — record below)
 - [x] Product-scoped Start Plan client delivered (ACR-0001: build-injected product identity, X-ZCode-Product-Id on all endpoint + model-plane requests, fail-closed product ownership for preview/claim/balance, product-dimension caches; 19 contract tests; **backend handoff delivered, provider implementation pending** — record below).
 
 ## Evidence ledger
@@ -912,3 +913,78 @@ exe: MATCH (`961ba3eb…8cda54ae`). Consumer contract after publish:
 `/releases/latest` correctly does not serve the RC (API 404, HTML redirect →
 `/releases`); tag endpoint resolves. Issue #23 remains open (workstream A + real
 acceptance evidence pending).
+
+## Muse Code (local CLI) delegated execution backend record (branch tl/issue-24-muse-code-cli-backend, 2026-11-14)
+
+Delivers Issue #24's engineering half: MOS can select **Meta Muse Code (local CLI,
+subscription)** in Model Settings and run it in the ordinary New Task / Composer flow,
+using the user's already-authenticated Muse Code CLI (subscription allowance incl.
+Contributor-mode models) — **no OpenRouter, no pay-as-you-go API key**. Decision record:
+`spec/decisions/ACR-0002-muse-code-cli-delegated-backend.md`. Runbook + Windows
+verification checklist: `docs/model-provider-muse-cli.md`.
+
+**Verified Meta boundary first (feasibility spike, 2026-11-14):** Muse Code CLI 1.4.20,
+`muse serve` (MSP over stdio), official `@muse-code/sdk` 1.4.20 (npm, lockstep-versioned),
+`muse usage --json` / `muse login` / `muse logout` documented command surface — all
+confirmed by direct probe from this environment (unauthenticated `muse serve` completes
+the MSP handshake and `model/list` returns an empty catalog; `muse usage` reports
+"not logged in" cleanly). Subscription allowance applies only to the CLI's own
+credential; separately created API keys are pay-as-you-go (dev.meta.ai/docs). The
+integration therefore binds to the CLI, not to the Model API.
+
+**Implementation (ACR-0002, all within existing authority boundaries):**
+
+- Provider schema: additive `api.type=muse-session-protocol` (no baseUrl; complete
+  validation is a type-discriminated union, muse branch rejects extra fields) and
+  `access.type=muse-cli-local` (no credentials; MOS stores none). Registry
+  serialization branches per type; existing types byte-identical.
+- Execution: `ApiProviderModelRuntime.#createRegistryModel` branches to
+  `MuseSessionModelAdapter` (`apps/zcode-cli/packages/adapters/src/model/muse/`,
+  the only place `@muse-code/sdk` is imported; pinned 1.4.20) **before** the AI SDK
+  factory. One fresh MSP session per model request (stateless turns; transcript
+  rendering; ZCode system prompt deliberately not forwarded), process-shared lazy
+  `muse serve` host with death-reconnect. Tool activity maps to provider-executed
+  projections only — no MOS-side tool loop runs for this backend. Approvals are the
+  single control point: default deny; opt-in `ZCODE_MUSE_TOOL_APPROVAL=allow-once`
+  permits only scope=once approvals for known subject kinds (never protected writes,
+  never session/persistent grants); every decision leaves a visible evidence row.
+  Abort = `turn.interrupt()` + immediate stream error (abort is a pump race lane —
+  regression-tested against the hang).
+- Catalog revision 45: template `muse-code-cli` (7 models incl.
+  `muse-spark-1.3-contributor`; 8-tier reasoning vocabulary from the CLI; scoped by
+  `apiTypeMatch` so the opencode-zen `muse-spark-1.2-contributor-free` member is
+  untouched) + clearly-labeled pay-as-you-go template `meta-model-api`.
+- Settings UX (W1): `MuseCliDetection` host service (documented CLI commands only, no
+  SDK, no credential access) + status card (version / sign-in / allowance /
+  subscription-not-api-key explainer / Recheck-Connect-Disconnect) + provider logos +
+  i18n (en/zh) + save-path no-key handling.
+
+**Gates (this environment; Node 24.22.3, pnpm 10.33.2):**
+
+- Scoped typecheck PASS: `@zcode/provider`, `@zcode/adapters`, `@zcode/bootstrap`,
+  `@zcode/services`, `@zcode/ui`, `@zcode/client`, `@zcode/shared` (+ downstream
+  server/web/desktop renderer graphs via tsc -b).
+- Contract tests: `apps/zcode-cli/packages/adapters/tests/muse/` 4 files / 39 tests
+  PASS (event reduction incl. real conformance-transcript literals; approval-policy
+  boundaries incl. no-reject-offered and unknown-kind deny; request rendering; executor
+  turn/abort/failure semantics). Engineering suite (ui+services incl. new
+  `museCliStatus.test.ts`) 8 files / 81 tests PASS.
+- Registry simulation (tsx, real parser/resolver): template → personal instance →
+  7/7 models executable+selectable; serialization `{"type":"muse-session-protocol"}` /
+  `{"type":"muse-cli-local"}`; pre-existing account-provider issues unchanged.
+- Full adapters suite: 178/181 files PASS. 3 files fail (`credential-recovery-fence`,
+  `mcp`, 1 more) — **verified pre-existing**: identical failure signature on a stashed
+  pristine `main` tree in this same environment (recorded: environment-sensitive
+  file-lock/OAuth-pending tests; zero diff overlap with this branch).
+- architecture:check: the 7 new `muse/` files registered under exception
+  `muse-code-cli-delegated-backend-new-module`; the two `packages/provider` "new file"
+  hits are shallow-clone merge-base artifacts (files exist on main; edits, not new
+  files — re-verified post-push from a full clone).
+
+**Honest status:** **contract-tested + integrated** (real adapter wired through the
+standard task path; no real model turn executed from this environment — no Meta
+session here, by design). **Verified** requires the Issue #24 §5 Windows x64 run
+(8-step checklist in `docs/model-provider-muse-cli.md`) on the user's machine with
+their logged-in CLI; until then the issue stays open and no "verified" language is
+used. Known follow-ups recorded in ACR-0002 (per-MOS-session MSP session pinning,
+interactive approval UI bridge, `muse sessions` governance panel).

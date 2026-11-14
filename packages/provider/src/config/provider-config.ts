@@ -3,9 +3,11 @@ import { ConfigOverlay, type ConfigValidationIssue } from "../config-overlay.js"
 import type { z } from "zod";
 import {
   completeApiKeyAccessDataSchema,
+  completeMuseLocalAccessDataSchema,
   completeZhipuAccountAccessDataSchema,
   completeProviderApiDataSchema,
   completeProviderConfigDataSchema,
+  museLocalAccessDataSchema,
   type providerApiTypeDataSchema,
   type providerGroupDataSchema,
   type zhipuAccountModeDataSchema,
@@ -26,6 +28,16 @@ import type { ProviderConfigRuleData } from "./rule-data-schema.js";
 export type ProviderApiType = z.infer<typeof providerApiTypeDataSchema>;
 export type ProviderGroup = z.infer<typeof providerGroupDataSchema>;
 export type ZhipuAccountMode = z.infer<typeof zhipuAccountModeDataSchema>;
+
+/** Muse Code 本地执行后端的 api.type 值（MSP over 本机 `muse serve`）。 */
+export const MUSE_SESSION_PROTOCOL_API_TYPE = "muse-session-protocol" as const;
+
+/** 判定一个 Provider 配置是否走 Muse Code 本地执行后端（含稀疏编辑态）。 */
+export function isMuseSessionProtocolApi(
+  api: { readonly type?: string } | null | undefined,
+): boolean {
+  return api?.type === MUSE_SESSION_PROTOCOL_API_TYPE;
+}
 
 export type ApiKeyAccessConfigInput = Omit<ApiKeyAccessConfigObject, "type"> & {
   readonly type?: ApiKeyAccessConfigObject["type"];
@@ -111,7 +123,37 @@ export class ZhipuAccountAccessConfig extends ConfigOverlay<ZhipuAccountAccessCo
   }
 }
 
-export type ProviderAccessConfig = ApiKeyAccessConfig | ZhipuAccountAccessConfig;
+export type ProviderAccessConfig =
+  | ApiKeyAccessConfig
+  | ZhipuAccountAccessConfig
+  | MuseLocalAccessConfig;
+
+export type MuseLocalAccessConfigObject = Readonly<z.infer<typeof museLocalAccessDataSchema>>;
+
+/**
+ * Muse Code CLI 本地接入的 Access：MOS 不保存任何凭证。运行时借用本机
+ * 已登录的 Muse Code CLI（订阅额度），检测与登录由 documented CLI 命令完成。
+ */
+export class MuseLocalAccessConfig extends ConfigOverlay<MuseLocalAccessConfig> {
+  readonly type = "muse-cli-local" as const;
+
+  constructor(_input: MuseLocalAccessConfigObject = { type: "muse-cli-local" }) {
+    super();
+    Object.freeze(this);
+  }
+
+  overlay(_next: MuseLocalAccessConfig): MuseLocalAccessConfig {
+    return new MuseLocalAccessConfig();
+  }
+
+  validateComplete(path: readonly string[] = []): readonly ConfigValidationIssue[] {
+    return validateConfigSchema(completeMuseLocalAccessDataSchema, this.toJSON(), path);
+  }
+
+  toJSON(): MuseLocalAccessConfigObject {
+    return { type: this.type };
+  }
+}
 
 export type ProviderAccessConfigObject = Readonly<z.infer<typeof providerAccessDataSchema>>;
 
@@ -505,6 +547,8 @@ function overlayProviderAccess(
       return current.overlay(next as ApiKeyAccessConfig);
     case "zhipu-account":
       return current.overlay(next as ZhipuAccountAccessConfig);
+    case "muse-cli-local":
+      return current.overlay(next as MuseLocalAccessConfig);
   }
 }
 

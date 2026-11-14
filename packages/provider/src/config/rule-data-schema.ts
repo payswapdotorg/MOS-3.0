@@ -4,6 +4,7 @@ import { manualModelConfigSchema } from "./manual-model-config.js";
 export { manualModelConfigSchema, type ManualModelConfig } from "./manual-model-config.js";
 import {
   apiKeyAccessDataSchema,
+  museLocalAccessDataSchema,
   personalProviderApiDataSchema,
   providerConfigDataSchema,
   providerGroupDataSchema,
@@ -97,7 +98,11 @@ export const providerTemplateConfigRuleSchema = providerTemplateDataSchema.exten
   config: providerConfigDataSchema
     .pick({ logo: true, access: true, api: true, builtinModelIds: true })
     .extend({
-      access: apiKeyAccessDataSchema.omit({ apiKey: true }).nullable().optional(),
+      // 模板 Access 永不携带密钥；muse-cli-local 是无凭证的本地接入声明。
+      access: z
+        .union([apiKeyAccessDataSchema.omit({ apiKey: true }), museLocalAccessDataSchema])
+        .nullable()
+        .optional(),
     }),
 });
 export const builtinProviderConfigRuleSchema = providerConfigRuleSchema.extend({

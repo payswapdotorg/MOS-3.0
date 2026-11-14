@@ -1,7 +1,8 @@
-import type { AiSdkModelAdapter } from "@zcode/adapters/model";
+import type { AiSdkModelAdapter, MuseSessionModelAdapter } from "@zcode/adapters/model";
 import type { Model } from "@zcode/contracts";
 import type { AgentRuntimeDeps } from "@zcode/core";
 import {
+  isMuseSessionProtocolApi,
   type ModelSelection,
   type ModelSelectionValidation,
   type Provider,
@@ -22,9 +23,13 @@ export interface ProviderRegistryModelSource {
 
 type ApiProviderModelAdapter = Pick<AiSdkModelAdapter, "createModel">;
 
+type MuseModelAdapter = Pick<MuseSessionModelAdapter, "createModel">;
+
 interface ApiProviderModelRuntimeOptions {
   readonly registry: ProviderRegistryModelSource;
   readonly modelAdapter: ApiProviderModelAdapter;
+  /** Muse Code 本地执行后端（ACR-0002）；muse-session-protocol Provider 在此分流。 */
+  readonly museModelAdapter?: MuseModelAdapter;
 }
 
 /**
@@ -33,11 +38,13 @@ interface ApiProviderModelRuntimeOptions {
 export class ApiProviderModelRuntime {
   readonly #registry: ProviderRegistryModelSource;
   readonly #modelAdapter: ApiProviderModelAdapter;
+  readonly #museModelAdapter: MuseModelAdapter | undefined;
   #started = false;
 
   constructor(options: ApiProviderModelRuntimeOptions) {
     this.#registry = options.registry;
     this.#modelAdapter = options.modelAdapter;
+    this.#museModelAdapter = options.museModelAdapter;
   }
 
   readonly modelFactory: RuntimeModelFactory = (target): Model => {
@@ -71,6 +78,24 @@ export class ApiProviderModelRuntime {
     // 输出预算属于单次请求，由 Agent 执行链显式决定，不能在 ModelFactory 中静默绑定。
     // Selection 已在上面的 Registry 边界完成校验，Factory 不再承担任何缺省修复。
     const normalReasoningLevel = target.selection.options!.reasoningLevel!;
+    // Muse Code 本地执行后端（ACR-0002）：不是 HTTP 端点，绕过 AI SDK 工厂，
+    // 交给 MuseSessionModelAdapter（MSP over 本机 `muse serve`）。未配置时 fail-closed。
+    if (isMuseSessionProtocolApi(provider.config.api)) {
+      if (this.#museModelAdapter === undefined) {
+        throw new Error(
+          "muse-session-protocol provider selected but MuseSessionModelAdapter is not configured",
+        );
+      }
+      return this.#museModelAdapter.createModel({
+        providerId: provider.providerId,
+        modelId: registryModel.modelId,
+        providerConfig: provider.config,
+        modelConfig: config,
+        options: {
+          reasoningLevel: normalReasoningLevel,
+        },
+      });
+    }
     return this.#modelAdapter.createModel({
       providerId: provider.providerId,
       modelId: registryModel.modelId,

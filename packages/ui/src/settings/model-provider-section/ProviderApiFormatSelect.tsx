@@ -19,16 +19,20 @@ export const PROVIDER_CONNECTION_API_FORMATS: readonly ProviderApiType[] = [
   "openai-responses",
 ];
 
+// muse-session-protocol 只属于内置 Muse 模板（本机 `muse serve`，无 baseUrl / API Key），
+// 不进入 PROVIDER_CONNECTION_API_FORMATS：自定义 Provider 不应主动提供该格式。
 const PROVIDER_CONNECTION_API_FORMAT_PATHS: Record<ProviderApiType, string> = {
   "anthropic-messages": "/v1/messages",
   "openai-chat-completions": "/chat/completions",
   "openai-responses": "/responses",
+  "muse-session-protocol": "muse serve (MSP)",
 };
 
 const PROVIDER_CONNECTION_API_FORMAT_TITLE_IDS: Record<ProviderApiType, string> = {
   "anthropic-messages": "settings.modelProvider.apiFormat.title.anthropicMessages",
   "openai-chat-completions": "settings.modelProvider.apiFormat.title.chatCompletions",
   "openai-responses": "settings.modelProvider.apiFormat.title.responses",
+  "muse-session-protocol": "settings.modelProvider.apiFormat.title.museSessionProtocol",
 };
 
 export function resolveProviderConnectionApiFormatOptions(): ProviderApiType[] {

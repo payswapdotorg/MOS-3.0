@@ -2090,6 +2090,27 @@ global:
   acceptedUpstreamSnapshot: scripts/architecture/upstream-snapshot.json
 
 exceptions:
+  - id: muse-code-cli-delegated-backend-new-module
+    rule: unmanaged-new-file
+    paths:
+      - apps/zcode-cli/packages/adapters/src/model/muse/index.ts
+      - apps/zcode-cli/packages/adapters/src/model/muse/muse-host.ts
+      - apps/zcode-cli/packages/adapters/src/model/muse/muse-request-mapper.ts
+      - apps/zcode-cli/packages/adapters/src/model/muse/muse-event-mapper.ts
+      - apps/zcode-cli/packages/adapters/src/model/muse/muse-approval-policy.ts
+      - apps/zcode-cli/packages/adapters/src/model/muse/muse-session-model.ts
+      - apps/zcode-cli/packages/adapters/src/model/muse/muse-detection.ts
+    reason: Muse Code 本地执行后端（ACR-0002，Issue #24）：通过官方 @muse-code/sdk 驱动本机 `muse serve` 的 Model 适配器新目录，MSP 细节不越出该目录；不在本次接管整个未受管的 adapters 包。
+  - id: muse-code-cli-settings-and-schema-edit
+    rule: unmanaged-new-file
+    paths:
+      - packages/provider/src/config/provider-data-schema.ts
+      - packages/provider/src/config/rule-data-schema.ts
+      - packages/services/src/model-provider/museCliDetection.ts
+      - packages/services/src/model-provider/museCliDetectionService.ts
+      - packages/ui/src/settings/model-provider-section/MuseCliStatusCard.tsx
+      - packages/ui/src/settings/model-provider-section/useMuseCliStatus.ts
+    reason: Muse Code 本地执行后端（ACR-0002，Issue #24）触及的 schema 分支与 Settings 状态卡/探测服务：provider schema 只做加法枚举与联合分支，服务只用 documented CLI 命令探测；接管整个 provider/services/ui 未受管模块不在本次范围内。
   - id: region-copy-suggested-prompts-edit
     rule: unmanaged-new-file
     paths: [packages/ui/src/v4/featureSuggestedPrompts.ts]

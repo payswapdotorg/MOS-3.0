@@ -31,6 +31,7 @@ import type {
   IModelSelectionService,
   IProviderSettingsService,
 } from "./model-provider/providerFacadeServices.js";
+import type { IMuseCliDetectionService } from "./model-provider/museCliDetection.js";
 import type { IUsageStatsService } from "./usage-stats/usageStats.js";
 import type { ICodingPlanSubscriptionService } from "./coding-plan-subscription/codingPlanSubscription.js";
 import type { IClientConfigService } from "./client-config/clientConfig.js";
@@ -97,6 +98,8 @@ export interface IServiceAccessor {
   readonly oauthService: IOAuthService;
   /** 当前 Environment 的 Provider 配置与设置视图。 */
   readonly providerSettingsService: IProviderSettingsService;
+  /** Muse CLI 探测（Issue #24）：只在能触达本机 Host 的装配提供；旧 Host / 远端缺省。 */
+  readonly museCliDetectionService?: IMuseCliDetectionService;
   /** 当前 Environment Registry 发布的唯一模型选择 View。 */
   readonly modelSelectionService: IModelSelectionService;
   /** Source Server 端 workspace 身份解析；本地 Host 也注册一份以保持合同一致。 */

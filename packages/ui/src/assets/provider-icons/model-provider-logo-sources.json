@@ -155,6 +155,22 @@
       "sourcePage": "https://github.com/siliconflow",
       "sourceOwner": "siliconflow",
       "normalization": "Official 80x80 GitHub organization avatar. PNG unchanged. Retrieved 2026-10-15; shared by both themes."
+    },
+    {
+      "brand": "Meta Muse Code (local CLI)",
+      "file": "model-provider-muse-code.svg",
+      "providerIds": ["muse-code-cli"],
+      "sourceUrl": "repository:packages/ui/src/assets/provider-icons/model-provider-muse-code.svg",
+      "sourceOwner": "ZCode",
+      "normalization": "In-repo designed neutral monochrome terminal-prompt mark (not trademark-accurate) for the Muse Code builtin template logo key \"muse-code\" (Issue #24). Fixed neutral gray #737373 shared by both themes. Added 2026-10-20."
+    },
+    {
+      "brand": "Meta Model API",
+      "file": "model-provider-meta-model.svg",
+      "providerIds": ["meta-model-api"],
+      "sourceUrl": "repository:packages/ui/src/assets/provider-icons/model-provider-meta-model.svg",
+      "sourceOwner": "ZCode",
+      "normalization": "In-repo designed neutral monochrome endpoint mark (not trademark-accurate) for the Meta Model API builtin template logo key \"meta-model\" (Issue #24). Fixed neutral gray #737373 shared by both themes. Added 2026-10-20."
     }
   ]
 }

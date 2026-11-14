@@ -20,7 +20,7 @@ import {
   type ModelRequestAuth,
   type ProviderEndpointRoutingPort,
 } from "@zcode/contracts";
-import type { RegistryProviderConfig } from "@zcode/provider";
+import { isApiKeyAccess, type RegistryProviderConfig } from "@zcode/provider";
 import { withOpenRouterAttributionHeaders } from "@zcode/shared";
 import { createAnthropicCompatFetch } from "./anthropic-stream-compat.js";
 import { createModelRequestSecurityState } from "./request-security-edition/index.js";
@@ -402,8 +402,13 @@ function toAiSdkProviderConfig(
   providerId: string,
   config: RegistryProviderConfig,
 ): AiSdkProviderConfig {
+  // muse-session-protocol 在 #createRegistryModel 分流到 MuseSessionModelAdapter，
+  // 永远不应到达这里；保留防御性拒绝（在 original 上 narrow，保证后续 baseUrl 为 string）。
+  if (config.api.type === "muse-session-protocol") {
+    throw new Error("muse-session-protocol providers must not reach the AI SDK factory");
+  }
   const common = {
-    ...(config.access.type !== "zhipu-account" && config.access.apiKey
+    ...(isApiKeyAccess(config.access) && config.access.apiKey
       ? { apiKey: config.access.apiKey }
       : {}),
     baseURL: config.api.baseUrl,
@@ -419,7 +424,7 @@ function toAiSdkProviderConfig(
     case "openai-chat-completions":
       return { kind: "openai-compatible", name: providerId, ...common };
   }
-  throw new Error(`Unsupported Provider API type: ${String(config.api.type)}`);
+  throw new Error("Unsupported Provider API type");
 }
 
 function applyModelRequestAuth(

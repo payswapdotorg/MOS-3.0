@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": 44,
+  "revision": 45,
   "config": {
     "providerConfigRules": {
       "templateRules": [
@@ -1045,6 +1045,64 @@
             "logo": {
               "type": "builtin",
               "key": "opencode"
+            }
+          }
+        },
+        {
+          "templateId": "muse-code-cli",
+          "templateNameMap": {
+            "zh-CN": "Meta Muse Code（本地 CLI，订阅额度）",
+            "en-US": "Meta Muse Code (local CLI, subscription)"
+          },
+          "config": {
+            "access": {
+              "type": "muse-cli-local"
+            },
+            "api": {
+              "type": "muse-session-protocol"
+            },
+            "builtinModelIds": [
+              "muse-spark-1.3-contributor",
+              "muse-spark-1.2-contributor",
+              "muse-spark-1.3",
+              "muse-spark-1.2",
+              "muse-spark-1.1",
+              "muse-wonder-1.0",
+              "muse-ember-1.0"
+            ],
+            "logo": {
+              "type": "builtin",
+              "key": "muse-code"
+            }
+          }
+        },
+        {
+          "templateId": "meta-model-api",
+          "templateNameMap": {
+            "zh-CN": "Meta Model API（按量付费 API Key）",
+            "en-US": "Meta Model API (pay-as-you-go API key)"
+          },
+          "config": {
+            "access": {
+              "type": "api-key",
+              "apiKeyManagementUrl": "https://dev.meta.ai/"
+            },
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://api.meta.ai/v1"
+            },
+            "builtinModelIds": [
+              "muse-spark-1.3-contributor",
+              "muse-spark-1.2-contributor",
+              "muse-spark-1.3",
+              "muse-spark-1.2",
+              "muse-spark-1.1",
+              "muse-wonder-1.0",
+              "muse-ember-1.0"
+            ],
+            "logo": {
+              "type": "builtin",
+              "key": "meta-model"
             }
           }
         }
@@ -3637,6 +3695,22 @@
             "optionSpecs": {
               "reasoningLevel": {
                 "map": "{\n  \"reasoning\": {\n    \"effort\": reasoningLevel\n  }\n}"
+              }
+            }
+          }
+        },
+        {
+          "modelMatch": "muse-.*",
+          "apiTypeMatch": "muse-session-protocol",
+          "config": {
+            "optionSpecs": {
+              "maxOutputTokens": {
+                "max": 64000,
+                "map": "{}"
+              },
+              "reasoningLevel": {
+                "values": ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+                "map": "{}"
               }
             }
           }
@@ -8276,6 +8350,104 @@
                 "map": "{\"max_tokens\": maxOutputTokens}"
               }
             }
+          }
+        },
+        {
+          "templateId": "muse-code-cli",
+          "modelId": "muse-spark-1.3-contributor",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "muse-code-cli",
+          "modelId": "muse-spark-1.2-contributor",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "muse-code-cli",
+          "modelId": "muse-spark-1.3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "muse-code-cli",
+          "modelId": "muse-spark-1.2",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "muse-code-cli",
+          "modelId": "muse-spark-1.1",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "muse-code-cli",
+          "modelId": "muse-wonder-1.0",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "muse-code-cli",
+          "modelId": "muse-ember-1.0",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "meta-model-api",
+          "modelId": "muse-spark-1.3-contributor",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "meta-model-api",
+          "modelId": "muse-spark-1.2-contributor",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "meta-model-api",
+          "modelId": "muse-spark-1.3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "meta-model-api",
+          "modelId": "muse-spark-1.2",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "meta-model-api",
+          "modelId": "muse-spark-1.1",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "meta-model-api",
+          "modelId": "muse-wonder-1.0",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "meta-model-api",
+          "modelId": "muse-ember-1.0",
+          "config": {
+            "enabled": true
           }
         }
       ],

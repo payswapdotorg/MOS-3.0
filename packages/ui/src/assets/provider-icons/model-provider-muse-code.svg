@@ -1,0 +1,7 @@
+<svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Issue #24：Muse Code（本地 CLI）内置 Logo —— 中性单色终端提示符记号（非商标），
+       固定中性灰在明暗两主题下均可读。 -->
+  <rect x="9" y="9" width="62" height="62" rx="14" stroke="#737373" stroke-width="5"/>
+  <path d="M26 30l10 10-10 10" stroke="#737373" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M44 50h12" stroke="#737373" stroke-width="6" stroke-linecap="round"/>
+</svg>
