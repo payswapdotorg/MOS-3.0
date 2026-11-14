@@ -15,7 +15,8 @@
 # 5. actions/attest-build-provenance 为 best-effort（continue-on-error）：失败不阻断发布，
 #    但 manifest.signature.attestationStatus 如实记录 failed，绝不虚报 attestation。
 # 6. Action 一律使用 tag 引用；SHA 锁定推迟到 TL 的加固 pass（同 mos-ci.yml）。
-# 7. 权限最小化：只有 release job 拿 contents: write + id-token: write + actions: read；
+# 7. 权限最小化：只有 release job 拿 contents: write + id-token: write + actions: read
+#    + attestations: write（attest 持久化必需，run 7 实测缺它 → Resource not accessible）；
 #    本工作流没有 pull_request 触发器，fork PR 无法触达任何发布权限。
 # 8. workflow_dispatch（输入 mos_version）是刻意的草稿/RC 路径：标签尚不存在时由
 #    gh release create 在 release-gate 校验过的 source commit 上创建标签。
@@ -347,6 +348,8 @@ jobs:
       contents: write
       id-token: write
       actions: read
+      # attest 持久化必需（run 7 实测缺它 → Resource not accessible by integration）。
+      attestations: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TAG: mos-v${{ needs.release-gate.outputs.mos_version }}
@@ -430,14 +433,22 @@ jobs:
           TITLE="MOS $MOS_VERSION (release candidate)"
           # 远端标签已存在时必须指向本次构建提交；不存在时（manual dispatch）由
           # release create 在 source commit 上创建标签（刻意的草稿/RC 路径）。
+          # gh api 失败形态会把 JSON 错误体写进变量（run 7 实测：轻量标签查
+          # /git/tags/<sha> 注解对象端点得 404），只接受 40 位 SHA；轻量标签的
+          # ref.object.sha 即提交本身，无需也无法再剥注解对象。
           REMOTE_REF="$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.sha' 2>/dev/null || true)"
-          if [ -n "$REMOTE_REF" ]; then
-            PEELLED="$(gh api "repos/${REPO}/git/tags/${REMOTE_REF}" --jq '.object.sha' 2>/dev/null || true)"
-            RESOLVED="${PEELLED:-$REMOTE_REF}"
+          if [[ "$REMOTE_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            PEELED="$(gh api "repos/${REPO}/git/tags/${REMOTE_REF}" --jq '.object.sha' 2>/dev/null || true)"
+            if [[ "$PEELED" =~ ^[0-9a-fA-F]{40}$ ]]; then
+              RESOLVED="${PEELED}"
+            else
+              RESOLVED="${REMOTE_REF}"
+            fi
             if [ "$RESOLVED" != "$SOURCE_COMMIT" ]; then
               echo "::error::远端标签 ${TAG}（${RESOLVED}）与构建提交（${SOURCE_COMMIT}）不一致，拒绝发布" >&2
               exit 1
             fi
+          fi
           fi
 
           CREATE_ARGS=(--draft --target "$SOURCE_COMMIT" --title "$TITLE" --notes-file release-notes.md)
