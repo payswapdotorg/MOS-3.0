@@ -784,3 +784,18 @@ allocation). The full acceptance matrix is specced in the backend handoff; the
 local-agent route (primary + interim fallback with its caveats) is documented in
 `docs/release/FREE-MODEL-SETUP.md`. Windows x64 release candidate `mos-v3.0.0-rc.2`
 follows this merge.
+
+### mos-v3.0.0-rc.2 published (2026-11-14, TL record)
+
+Release `mos-v3.0.0-rc.2` published (prerelease) from main `0a6fc843` (PR #21):
+https://github.com/payswapdotorg/MOS-3.0/releases/tag/mos-v3.0.0-rc.2 — 18 assets
+(8 installers incl. **win-x64 NSIS exe**, SHA256SUMS, release-manifest.json, smoke
+evidence ×4, workdir listings ×4). Pipeline run 43589281887 all-green (gate → 4/4
+builds → 4/4 clean-machine smokes, `ok=true`, upgrade honestly skipped again — clean
+runners have no prior RC installed, so in-place upgrade verification remains deferred).
+TL independent re-verify: manifest ↔ SHA256SUMS bidirectional match 8/8;
+sourceCommit 0a6fc843; zcodeBaseline 3.18.0; attestation generated; unsigned declared.
+`/releases/latest` correctly does not serve the RC (prerelease flag); tag endpoint
+resolves. This is the RC the local agent should use for the product-scoped Start Plan
+acceptance per `docs/release/FREE-MODEL-SETUP.md` (Route A activates once the provider
+backend ships; Route B interim fallback available now with its caveats).
