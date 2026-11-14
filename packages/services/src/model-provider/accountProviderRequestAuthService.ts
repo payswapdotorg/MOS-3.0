@@ -2,10 +2,13 @@ import type { RequestVerificationReason } from "@zcode/shared";
 import { createHash } from "node:crypto";
 import {
   BIGMODEL_PROVIDER_ID,
+  ZCODE_PRODUCT_ID,
+  ZCODE_PRODUCT_ID_HTTP_HEADER,
   type OAuthProviderId,
   type ProviderFamilyDomain,
   type ProjectAccessTokenMaterial,
   type ZCodeAccountAccess,
+  type ZCodeProductId,
   type ZCodeProviderAccountAccess,
   ZAI_PROVIDER_ID,
 } from "@zcode/shared";
@@ -37,6 +40,20 @@ export class AccountRequestCredentialUnavailableError extends Error {
     super(`Account request credential is unavailable: ${providerId}`);
     this.name = "AccountRequestCredentialUnavailableError";
   }
+}
+
+/**
+ * ACR-0001 P2 —— Start Plan 模型面请求材料：zcode-plan 网关按产品维度计费，
+ * 请求头携带产品范围（X-ZCode-Product-Id）让服务端 debits 命中正确的产品配额。
+ */
+export function buildStartPlanAccountRequestAuthMaterial(
+  zcodeJwtToken: string,
+  productId: ZCodeProductId = ZCODE_PRODUCT_ID,
+): Pick<AccountRequestAuthMaterial, "apiKey" | "headers"> {
+  return {
+    apiKey: zcodeJwtToken,
+    headers: { [ZCODE_PRODUCT_ID_HTTP_HEADER]: productId },
+  };
 }
 
 export interface AccountRequestAuthResolver {
@@ -85,7 +102,10 @@ class AccountProviderRequestAuthService implements AccountRequestAuthResolver {
 
     if (access.planKind === "start-plan") {
       const tokenSet = await this.#options.loadOAuthTokenSet(resolveOAuthProviderId(access.family));
-      return { apiKey: requireApiKey(tokenSet?.zcodeJwtToken, providerId) };
+      // 产品范围随每次模型请求刷新（ACR-0001 P2）：模型面用量必须记入当前产品的分配。
+      return buildStartPlanAccountRequestAuthMaterial(
+        requireApiKey(tokenSet?.zcodeJwtToken, providerId),
+      );
     }
 
     const scoped = input.reason !== "usage" || input.expectedAccountScope !== undefined;

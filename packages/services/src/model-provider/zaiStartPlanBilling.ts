@@ -1,7 +1,10 @@
 import type { ApiClient } from "@zcode/shared";
 import {
   buildRuntimeZCodeEndpointUrls,
+  isStartPlanRecordOwnedByCurrentProduct,
   normalizeOfficialGlmModelId,
+  ZCODE_PRODUCT_ID,
+  type ZCodeProductId,
   ZCODE_VERSION,
 } from "@zcode/shared";
 import { readApiJson } from "../providers/api/apiJson.js";
@@ -15,6 +18,8 @@ export interface ZaiStartPlanPlan {
   // user_plan_id 标识用户套餐实例；额度提醒用它关联同一实例的 entitlement 周期类型。
   user_plan_id?: string;
   plan_id?: string;
+  // ACR-0001 P3：归属产品（服务端 product_id）；缺省 = 旧后端共享配置，仅 zcode 产品可消费。
+  product_id?: string | null;
   name?: string;
   status?: string;
   starts_at?: number | string | null;
@@ -68,14 +73,28 @@ export function buildZaiStartPlanBalanceUrl(): string {
   return url.toString();
 }
 
+/** fetchZaiStartPlanBalanceEnvelope 的产品范围选项（ACR-0001 P4）。 */
+export interface FetchZaiStartPlanBalanceOptions {
+  /**
+   * 当前 API 产品身份；缺省为构建期派生的 ZCODE_PRODUCT_ID。仅供可信 composition /
+   * 工程测试注入 —— 决定响应过滤与缓存键，不得来自用户偏好或渲染层输入。
+   */
+  productId?: ZCodeProductId;
+}
+
 export async function fetchZaiStartPlanBalanceEnvelope(
   apiClient: ApiClient,
   authorization: string,
   invalidateCache = false,
+  options: FetchZaiStartPlanBalanceOptions = {},
 ): Promise<ZaiStartPlanBalanceEnvelope> {
+  // ACR-0001 P4：balance 缓存键包含产品范围 —— 同一账号同一 URL 下 zcode 与 mos 的
+  // 余额响应不同，缓存不得跨产品复用。
+  const productId = options.productId ?? ZCODE_PRODUCT_ID;
   const requestKey = JSON.stringify({
     authorization: authorization.trim(),
     url: buildZaiStartPlanBalanceUrl(),
+    productId,
   });
 
   let requests = inflightBalanceRequests.get(apiClient);
@@ -108,7 +127,10 @@ export async function fetchZaiStartPlanBalanceEnvelope(
       Authorization: authorization,
     },
   })
-    .then((payload) => normalizeStartPlanExpiry(payload, responseTime))
+    .then((payload) =>
+      normalizeStartPlanExpiry(payload, responseTime),
+    )
+    .then((payload) => filterStartPlanEnvelopeByProduct(payload, productId))
     .finally(() => {
       // 账号校验先完成，用量查询随后到达：保留同一响应至发起后 1 秒。
       // 失败同样保留，避免 429 之后立刻重复请求；旧请求不得删除失效后创建的新记录。
@@ -183,6 +205,40 @@ function normalizeStartPlanExpiry(
     );
     // 无归属桶继续由既有诊断处理，不能误删同商品另一个有效实例的余额。
     return !owners.length || owners.some((plan) => plan.status?.trim().toLowerCase() !== "expired");
+  });
+  return { ...payload, data: { ...payload.data, plans, balances } };
+}
+
+/**
+ * ACR-0001 P3 —— 按当前产品过滤 balance envelope（单一裁决点，availability / quota / UI
+ * 的所有消费方都只看到本产品拥有的记录）：
+ *
+ * - plan 声明了归属产品且与当前产品不符（含未知 id）→ 丢弃；
+ * - plan 未声明归属（旧后端共享配置）→ 仅默认产品 zcode 保留；mos 等衍生产产品一律丢弃，
+ *   上层因此判 coding_plan_not_entitled / no_plan —— 不制造权益，也不消费 zcode 的分配；
+ * - 余额桶随其所属 plan 一并丢弃；无归属桶沿用既有“无归属桶”诊断语义，不误删。
+ */
+function filterStartPlanEnvelopeByProduct(
+  payload: ZaiStartPlanBalanceEnvelope,
+  productId: ZCodeProductId,
+): ZaiStartPlanBalanceEnvelope {
+  if (!payload.data) return payload;
+  const plans = (payload.data.plans ?? []).filter((plan) =>
+    isStartPlanRecordOwnedByCurrentProduct(plan.product_id, productId),
+  );
+  if (plans.length === (payload.data.plans ?? []).length) {
+    return payload;
+  }
+  const allPlans = payload.data.plans ?? [];
+  const balances = payload.data.balances?.filter((balance) => {
+    const isAttachedTo = (plan: ZaiStartPlanPlan) =>
+      balance.user_plan_id && plan.user_plan_id
+        ? plan.user_plan_id === balance.user_plan_id
+        : plan.plan_id === balance.plan_id;
+    // 依附于保留 plan 的桶保留；从未归属任何 plan 的桶沿用“无归属桶”诊断语义保留；
+    // 只依附于被产品过滤掉的 plan 的桶随该 plan 一并丢弃。
+    if (plans.some(isAttachedTo)) return true;
+    return !allPlans.some(isAttachedTo);
   });
   return { ...payload, data: { ...payload.data, plans, balances } };
 }

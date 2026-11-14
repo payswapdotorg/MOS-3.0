@@ -23,6 +23,7 @@
 - [x] Composition-root milestone delivered (mos-studio plugin: New Task → Mission → capabilities → routes → authorized read; see composition-root milestone record).
 - [x] Week 4 economy/capacity modules implemented and contract-tested (mos-commerce + mos-resource-network, architecture §8 invariants §23–§26; see Week 4 record).
 - [x] Distributable desktop release published (mos-v3.0.0-rc.1: GitHub Actions full pipeline green — 4/4 builds, 4/4 clean-machine smokes, checksums/manifest/attestation verified; TL review + publish record below).
+- [x] Product-scoped Start Plan client delivered (ACR-0001: build-injected product identity, X-ZCode-Product-Id on all endpoint + model-plane requests, fail-closed product ownership for preview/claim/balance, product-dimension caches; 19 contract tests; **backend handoff delivered, provider implementation pending** — record below).
 
 ## Evidence ledger
 
@@ -705,3 +706,81 @@ Release workflow run 9 (43556399832) — the first fully green end-to-end pipeli
 - Manual acceptance items from `docs/release/ACCEPTANCE-RC.md` that need a human desktop:
   visual icon on a real desktop, full-machine reboot re-launch, disable-plugin degradation
   journey, native-feature regression pass (reviewer's machine).
+
+## Product-scoped Start Plan record (branch tl/mos-product-scoped-start-plan, 2026-11-14)
+
+Delivers the architect P0 handoff
+`docs/handoff/TL-HANDOFF-PRODUCT-SCOPED-START-PLAN.md` (backlog
+`spec/backlog/product-scoped-start-plan.md`; decisions
+`spec/decisions/ACR-0001-product-scoped-start-plan.md`): MOS gets its own legitimate
+free model allowance, separate from ZCode, per authenticated user per registered
+product.
+
+**Ownership verdict first (deliverable 1)** —
+`docs/handoff/START-PLAN-SOURCE-AUDIT.md`: every Start Plan billing/entitlement
+endpoint (`client/configs`, `billing/preview`, `billing/claim`, `billing/balance`,
+model-plane gateways) is a client call to the external provider origin
+`https://zcode.z.ai`. **Zero server-side handlers exist in this repository or any
+payswapdotorg repository we control.** Grant records, one-per-user-per-product
+enforcement and product-scoped debits are provider-owned. Per handoff W5 the paired
+backend implementation handoff is delivered
+(`docs/handoff/START-PLAN-PRODUCT-SCOPE-BACKEND-HANDOFF.md`) and **W2/W3/W5 must not
+be claimed complete on client evidence alone** — the honest state is "client ready,
+backend pending provider".
+
+**Client implementation (W1/W2-client/W3-client/W4)** —
+`docs/start-plan-product-scope.md` documents the contract:
+
+- W1 stable product identity: `ZCodeProductId` (`zcode` default, `mos` for MOS
+  builds) derived exclusively from the build-injected product flavor define — not
+  selectable by renderer forms, user preferences or runtime env; distinct from the
+  desktop App ID and from `X-Device-Mid` (three identity axes).
+- W2/W4 on the wire: `X-ZCode-Product-Id` on every ZCode endpoint request (shared
+  source-header builder → NodeApiClient injection) and on Start Plan model-plane
+  request material (usage debits scoped per product); claim bodies carry
+  `product_id` only for non-default products (`zcode` stays byte-identical to
+  today — zero regression for existing ZCode users).
+- W3/W4 fail-closed response ownership (`isStartPlanRecordOwnedByCurrentProduct`,
+  single adjudicator): records declaring a foreign/unknown product are rejected for
+  every product; unscoped (legacy backend) records are consumable only by the
+  default `zcode` product — therefore on the current production backend MOS shows
+  the Start Plan as unavailable and consumes nothing of ZCode's allocation, by
+  design. Client never persists grants (entitlements re-derived from
+  `billing/balance`), so reinstalling MOS cannot mint a new trial.
+- W4 cache identity: client-configs snapshot key, balance in-flight key, renderer
+  localStorage entitlement keys and the Start Plan preview cache (per service +
+  product; also fixes the pre-existing global-cache cross-account staleness) all
+  carry the product dimension — cross-product reads impossible.
+
+**Evidence (client-provable set; decision-lock §15 — mocks prove contracts only):**
+
+- Engineering contract tests: `packages/services/test/codingPlanProductScope.test.ts`
+  (16 tests; real local product-aware HTTP backend + real NodeApiClient — product
+  matrix both directions, zcode byte-compatible claim body, mos claim body/headers,
+  balance plan/bucket filtering incl. unattributed-bucket semantics, cache-key
+  separation for both cache layers, foreign/unknown product rejection, claim
+  scope-mismatch fail-closed, start-plan request-auth material headers) and
+  `packages/ui/test/usageEntitlementProductScope.test.ts` (3 tests; product-scoped
+  localStorage keys, cross-product isolation). Both registered in
+  `scripts/engineering-test-files.json`.
+- Gates: lint clean on changed files, `pnpm lint` (0 errors), docs stale-phrase
+  clean (2301 files), architecture changed-mode 0 violations, db schema check pass,
+  typecheck of shared/provider/provider-node/rpc/services/ui/desktop-main/
+  renderer-services/web all pass, full engineering suite locally: 1867 tests —
+  everything green after this change except the pre-existing
+  environment-sensitive `miseToolchainEnv` local failure (node-in-/usr/bin sandbox
+  layout; documented pre-existing baseline, CI unaffected) and fresh-clone dist
+  gaps (`@zcode/e2e-report`, `@zcode/contracts`) resolved by building those
+  packages (same known gap the release-engineering record flagged).
+- Regression fix found by the full-suite run (pre-existing on main, CI's
+  affected-runner skip hid it): `ZCODE_DESKTOP_APP_VERSION` was read by
+  build-metadata.mjs but missing from the E2E build-cache fingerprint env list —
+  fixed in `packages/desktop/scripts/ensure-e2e-desktop-build.mjs`.
+
+**Not claimable yet (blocked on provider backend; recorded honestly):** real
+two-allocation proof on one account (ZCode + MOS grants, cross-isolated quotas,
+concurrent claims, reinstall/restart, real model execution on the MOS free
+allocation). The full acceptance matrix is specced in the backend handoff; the
+local-agent route (primary + interim fallback with its caveats) is documented in
+`docs/release/FREE-MODEL-SETUP.md`. Windows x64 release candidate `mos-v3.0.0-rc.2`
+follows this merge.

@@ -91,6 +91,8 @@ export const E2E_DESKTOP_BUILD_ENV_NAMES = [
   "ZCODE_BASE_URL",
   "ZCODE_COMMIT",
   "ZCODE_CUA_HELPER_BUILD_ID",
+  // MOS 发布版本显式注入（见 build-metadata.mjs）；版本变化必须使 E2E 构建缓存失效。
+  "ZCODE_DESKTOP_APP_VERSION",
   "ZCODE_ENDPOINT_ORIGIN",
   "ZCODE_ENV",
   "ZCODE_E2E_COVERAGE",
