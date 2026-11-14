@@ -64,7 +64,13 @@ export interface ICodingPlanSubscriptionService {
   batchPreview(request?: CodingPlanBatchPreviewRequest): Promise<CodingPlanBatchPreviewResponse>;
   getStaticProducts(): Promise<CodingPlanStaticProductsConfig>;
   getStaticTeamProducts(): Promise<CodingPlanStaticTeamProductsConfig>;
-  getStartPlanPreview(): Promise<StartPlanPreviewConfig | null>;
+  /**
+   * Start Plan 预览（client/configs.startPlanPreview）。
+   * Issue #23：provider 侧启用本产品的免费计划后，正在运行的客户端必须能立即看到；
+   * forceRefresh 绕过 1h client/configs 平台快照重拉（与其它 configs 消费者同义）。
+   * 返回 null 表示该产品当前没有配置可展示的免费计划预览（非错误、非未知）。
+   */
+  getStartPlanPreview(options?: { forceRefresh?: boolean }): Promise<StartPlanPreviewConfig | null>;
   getManualClaimPlanPreviews(): Promise<ManualClaimPlanPreviewSnapshot>;
   claimManualPlan(request: ManualClaimPlanClaimRequest): Promise<ManualClaimPlanClaimResult>;
   /** 闲时任务灰度配置（D31）：forceRefresh 供入口打开时补拉（绕过 1h 快照缓存）。 */

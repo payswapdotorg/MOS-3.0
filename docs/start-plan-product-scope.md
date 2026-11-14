@@ -45,6 +45,26 @@ MOS 是从 ZCode 代码库衍生的独立分发产品（独立 app id `org.paysw
 - 权益裁决不变：客户端不落地 grant 记录，权益始终由 `billing/balance` 重新推导 ——
   重装 MOS 自然找回既有 grant，不会也不可能在本地“续命”出新试用。
 
+## 负向预览的时效与显式刷新（Issue #23）
+
+后端上线 MOS 免费计划之前，`client/configs` 对本产品返回空的
+`startPlanPreview`（负向结果）。客户端不得把这个负向结果长期缓存，否则 provider 上线后
+正在运行的应用会继续显示“无可用计划”长达数小时。规则：
+
+- **负向（null）预览的渲染层缓存 TTL 为 5 分钟**（`useStartPlanPreview`）；正向预览保持
+  24 小时（低频变化的营销配置）。
+- **显式刷新路径**：Start Plan 未领取/不可用状态下设置页提供 Refresh 按钮，一次点击同时
+  刷新两条链路 —— 预览（`getStartPlanPreview({ forceRefresh: true })` 清 service 侧 1h
+  client/configs 平台快照 + 绕过渲染层缓存）与权益/账号面板（购买完成同款全量刷新）。
+  provider 上线后，运行中的客户端点一次刷新（或最长 5 分钟后自动）即可看到计划卡，
+  无需重装或重启。
+- **领取成功后主动失效预览缓存**（`invalidateStartPlanPreviewCache`，与权益/余额缓存
+  一起），避免设置页残留领取前的预览状态。
+- **状态区分**：`notPurchased`（服务端已确认本账号无此计划）且预览解析成功为 null 且
+  无错误 ⇒ 显示“计费服务尚未为本产品开通 Start Plan”（`status.notConfigured`），
+  不得暗示用户已用完/放弃试用；预览加载中或读取失败时保持既有文案 ——
+  **后端不可用绝不渲染成确定的权益缺失**（fail-closed 语义延伸到展示层）。
+
 ## 覆盖范围
 
 请求头覆盖所有走 `NodeApiClient` 的 ZCode endpoint 请求与 Start Plan 模型面请求。
@@ -57,6 +77,8 @@ MOS 是从 ZCode 代码库衍生的独立分发产品（独立 app id `org.paysw
 
 - 合同测试：`packages/services/test/codingPlanProductScope.test.ts`（真实本地
   product-aware mock 后端 + 真实 `NodeApiClient`：产品矩阵、claim 体/头、balance 过滤、
-  缓存隔离、fail-closed）与 `packages/ui/test/usageEntitlementProductScope.test.ts`。
+  缓存隔离、fail-closed、forceRefresh 绕过 1h 快照）与
+  `packages/ui/test/usageEntitlementProductScope.test.ts`、
+  `packages/ui/test/startPlanPreviewCache.test.ts`（负向 TTL、force 合同、领取后失效）。
 - 决策记录：`spec/decisions/ACR-0001-product-scoped-start-plan.md`；客户端/服务端所有权
   审计：`docs/handoff/START-PLAN-SOURCE-AUDIT.md`。

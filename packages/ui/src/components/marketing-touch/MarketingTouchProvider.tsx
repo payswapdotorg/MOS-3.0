@@ -4,6 +4,7 @@ import {
 } from "@/request-security-edition/claim.js";
 import { requestVerificationClaimFailureMessageId } from "@/request-security-edition/errors.js";
 import { useStartPlanEntitlement } from "@/hooks/useStartPlanEntitlement.js";
+import { invalidateStartPlanPreviewCache } from "@/settings/model-provider-section/useStartPlanPreview.js";
 import { createContext, useContext, useEffect, useCallback, useState, useRef } from "react";
 import type { ReactNode } from "react";
 import { useStore } from "zustand";
@@ -278,6 +279,9 @@ export function MarketingTouchProvider({
                 : intl.formatMessage({ id: "manualClaimPlan.claim.failure.generic" }),
             };
           // 成功已由 claim 确定，后置刷新失败只影响本地权益投影，不能逆转领取结果。
+          // Issue #23：领取成功后同时失效 Start Plan 预览缓存（与权益/余额缓存一起），
+          // 避免设置页继续展示领取前的预览状态。
+          invalidateStartPlanPreviewCache(services.codingPlanSubscriptionService);
           void Promise.allSettled([
             refreshStartEntitlementRef.current({ force: true, silent: true, reason: "purchase" }),
             // Provider 迁移后旧服务已不存在；统一刷新权威设置视图，不重建第二条凭据刷新链路。

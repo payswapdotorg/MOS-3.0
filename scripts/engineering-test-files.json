@@ -226,6 +226,7 @@
   "packages/ui/test/mos-extension/presentation.test.ts",
   "packages/ui/test/mos-extension/registration.test.ts",
   "packages/ui/test/mos-extension/store.test.ts",
+  "packages/ui/test/startPlanPreviewCache.test.ts",
   "packages/ui/test/usageEntitlementProductScope.test.ts",
   "packages/web/test/viteConfigLoad.test.ts",
   "packages/zcode-mos-adapters/test/adapters-domain.test.ts",

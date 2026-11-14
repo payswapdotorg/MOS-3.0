@@ -4264,6 +4264,8 @@ const ruRU: Record<string, string> = {
     "Войдите, чтобы посмотреть и использовать Start Plan",
   "settings.modelProvider.startPlan.status.expired": "Срок Start Plan истёк",
   "settings.modelProvider.startPlan.status.noPlan": "Нет доступного Start Plan",
+  "settings.modelProvider.startPlan.status.notConfigured": "Провайдер биллинга ещё не включил Start Plan для этого продукта. Когда он будет включён, он появится здесь — бесплатная квота не потрачена",
+  "settings.modelProvider.startPlan.refresh": "Обновить",
   "settings.modelProvider.startPlan.status.loginExpired": "Срок входа истёк. Войдите снова.",
   "settings.modelProvider.startPlan.title": "{provider} - Coding Plan",
   "settings.modelProvider.startPlan.meta.today": "Сегодня",

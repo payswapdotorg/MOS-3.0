@@ -47,7 +47,7 @@ export function createCodingPlanSubscriptionService(
     batchPreview: (request) => bigmodelProvider.batchPreview(request),
     getStaticProducts: () => bigmodelProvider.getStaticProducts(),
     getStaticTeamProducts: () => bigmodelProvider.getStaticTeamProducts(),
-    getStartPlanPreview: () => bigmodelProvider.getStartPlanPreview(),
+    getStartPlanPreview: (options) => bigmodelProvider.getStartPlanPreview(options),
     getManualClaimPlanPreviews: () => bigmodelProvider.getManualClaimPlanPreviews(),
     claimManualPlan: (request) => bigmodelProvider.claimManualPlan(request),
     getOffPeakClientConfig: (options) => bigmodelProvider.getOffPeakClientConfig(options),

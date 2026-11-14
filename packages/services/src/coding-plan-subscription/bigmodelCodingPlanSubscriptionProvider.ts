@@ -292,7 +292,15 @@ export class BigModelCodingPlanSubscriptionProvider {
     return unwrapClientConfigTeamProducts(payload);
   }
 
-  async getStartPlanPreview(): Promise<StartPlanPreviewConfig | null> {
+  async getStartPlanPreview(options?: {
+    forceRefresh?: boolean;
+  }): Promise<StartPlanPreviewConfig | null> {
+    // Issue #23：负向预览不能让运行中的客户端最长 1h 看不到 provider 侧的启用。
+    // forceRefresh 与其它 client/configs 消费者同义：清掉平台快照后重拉。
+    if (options?.forceRefresh) {
+      this.clientConfigSnapshot = null;
+      this.clientConfigSnapshotExpiresAt = 0;
+    }
     const payload = await this.getClientConfigs();
     return unwrapClientConfigStartPlanPreview(payload, this.currentProductId());
   }
