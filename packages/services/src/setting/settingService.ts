@@ -54,8 +54,14 @@ const debugLog = (...args: unknown[]) => {
 function resolveUserHomeDir() {
   // 独立桌面 Dev 实例已设置自己的 home，设置服务却仍写真实 HOME，
   // 导致启动迁移和外观操作污染其他实例。与 Electron 的显式 home 覆盖保持一致。
+  // ZCODE_DATA_BASE_DIR（MOS 打包态/e2e 的数据基座重定向，与 provider 配置、
+  // telemetry 的 resolveCliTelemetryStateFile 同一语义）优先于真实 HOME：
+  // MOS 把数据根固定在 ~/.mos，设置文件必须随之落在 ~/.mos/.zcode/v2 ——
+  // 上游 `~/.zcode/v2` 属于并排安装的上游产品（release run 6 冒烟 decoy 实测：
+  // 首启默认写把上游目录写花）。上游产品流不设置该变量，行为不变。
   const envHome =
     process.env.ZCODE_DESKTOP_HOME_DIR?.trim() ||
+    process.env.ZCODE_DATA_BASE_DIR?.trim() ||
     process.env.HOME?.trim() ||
     process.env.USERPROFILE?.trim();
   return envHome && envHome.length > 0 ? envHome : homedir();

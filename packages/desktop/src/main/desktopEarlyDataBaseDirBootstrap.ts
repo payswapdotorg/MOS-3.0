@@ -1,5 +1,6 @@
 import { app } from "electron";
 import {
+  isMosPackagedRuntime,
   runtimeApplicationName,
   runtimeHomePath,
   runtimeSessionDataPath,
@@ -38,4 +39,9 @@ if (!shouldUseElectronDefaultUserDataPath) {
   app.setPath("sessionData", runtimeSessionDataPath);
 }
 
-applyEarlyDataBaseDirBootstrap();
+// MOS 的数据基座由产品身份固定（~/.mos，desktopRuntimeEnv 注入），不走上游的
+// `~/.zcode/v2/setting.json` 数据目录迁移机制——那是并排安装的上游 ZCode 的配置面：
+// MOS 读取会继承上游的自定义数据目录（并排安装读写双向隔离，run 6 冒烟后收紧）。
+if (!isMosPackagedRuntime) {
+  applyEarlyDataBaseDirBootstrap();
+}

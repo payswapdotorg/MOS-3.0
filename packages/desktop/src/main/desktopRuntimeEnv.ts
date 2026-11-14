@@ -89,7 +89,12 @@ export const runtimeApplicationName =
 // setDataBaseDir 优先级最高（> env ZCODE_DATA_BASE_DIR > homedir）；e2e 用同一机制隔离测试家目录，
 // 显式 ZCODE_DATA_BASE_DIR 继续优先生效，测试/调试可以显式指向其它目录。
 if (isMosPackagedRuntime && !readRuntimeEnvOverride("ZCODE_DATA_BASE_DIR")) {
-  setDataBaseDir(join(homedir(), MOS_DEFAULT_DATA_BASE_DIR_NAME));
+  const mosDataBaseDir = join(homedir(), MOS_DEFAULT_DATA_BASE_DIR_NAME);
+  setDataBaseDir(mosDataBaseDir);
+  // 进程内同步数据基座环境变量：settingService 等经 env 链解析 `~/.zcode/v2/setting.json`
+  // 的组件（子进程由 buildHostProcessEnv 注入同一变量）必须指向 MOS 数据根，否则桌面
+  // 主进程会把设置写进上游 `~/.zcode`（release run 6 冒烟 decoy 实测）。
+  process.env.ZCODE_DATA_BASE_DIR = mosDataBaseDir;
 }
 // Electron 的 app.getPath("home") 不一定跟随测试进程里的 HOME 覆盖。
 // e2e 默认工作区依赖 home 路径，因此提供显式覆盖，避免测试写到开发者真实 ~/ZCodeProject。

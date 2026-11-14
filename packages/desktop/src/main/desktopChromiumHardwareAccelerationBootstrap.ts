@@ -6,8 +6,22 @@ interface ChromiumHardwareAccelerationApp {
   disableHardwareAcceleration(): void;
 }
 
+/**
+ * 与 settingService 的 resolveUserHomeDir / locale bootstrap 保持同一优先级：
+ * ZCODE_DESKTOP_HOME_DIR > ZCODE_DATA_BASE_DIR（MOS/e2e 数据基座重定向——MOS 的
+ * 设置写在 ~/.mos/.zcode/v2，早期读必须与写在同一处）> HOME > USERPROFILE。
+ */
+function resolveBootstrapHomeDir(): string {
+  const envHome =
+    process.env.ZCODE_DESKTOP_HOME_DIR?.trim() ||
+    process.env.ZCODE_DATA_BASE_DIR?.trim() ||
+    process.env.HOME?.trim() ||
+    process.env.USERPROFILE?.trim();
+  return envHome && envHome.length > 0 ? envHome : homedir();
+}
+
 export function resolveChromiumHardwareAccelerationSettingsFile(
-  homePath: string = homedir(),
+  homePath: string = resolveBootstrapHomeDir(),
 ): string {
   return join(homePath, ".zcode", "v2", "setting.json");
 }
