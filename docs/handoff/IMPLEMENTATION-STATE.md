@@ -1054,3 +1054,57 @@ live wire is certified up to the designed auth_timeout mile plus the fail-closed
 surface. When an account holder runs the attended cycle on an acceptance machine after
 workstream A ships, exit 0 testifies a server-issued active grant — and only that. No
 mock, relabeling, or grant fabrication was performed or will be (Issue #23 hard rules).
+## Muse Code delegated backend record (branch tl/muse-code-delegated-backend, 2026-11-14)
+
+Issue #24 (P0) — integrate the user's existing, signed-in Muse Code CLI subscription into
+MOS New Task without OpenRouter and without a separately billed Meta Model API key.
+
+Delivered (TL-owned vertical slice, ACR-0002 `spec/decisions/ACR-0002-delegated-muse-execution-backend.md`;
+work package `spec/backlog/muse-code-backend-work-packages.yaml`):
+
+- **Decision (ACR-0002)**: Muse Code is a **delegated execution backend** (`executionBackend:
+  "muse-code"`, additive v4 envelope field, default absent = unchanged model path), NOT a
+  provider. It never enters the Provider Registry (HTTP-only fail-closed schema preserved;
+  upstream's removal of third-party CLI providers respected). Delegated turns reuse the
+  ordinary turn lifecycle (TurnStarted/TurnComplete, session persistence, cold resume,
+  foreground execution + Stop, SessionStart-hook mission sidecar) and never run MOS's own
+  tool loop on top of the CLI's (tool activity is read-only telemetry projected as standard
+  session events).
+- **Shared**: `packages/shared/src/muse-code/muse-code-backend.ts` (status/settings schemas,
+  backend id), envelope `executionBackend` field, runtime capability
+  `executionBackendMuseCode`, `ServiceChannels.MuseCode`, settings-file path conventions in
+  `shared/node`.
+- **Core (zcode-cli)**: `contracts/src/interfaces/muse-execution.port.ts` (MuseExecutionPort
+  + normalized stream events); `core/src/runtime/methods/delegated-muse-turn.ts` (event
+  projection via ModelStreaming + ToolCallStarted/Result, assistant message/text-part
+  persistence with honest attribution `muse-code`/`muse-exec`, cancellation/timeout/exit
+  settlement); `executeTurnCommand` branch with shared completion block (compact/rewind-style
+  early path; title generation + Memory extraction skipped; usage from events).
+- **Bootstrap (zcode-cli)**: `src/muse-code/muse-exec-process.ts` (child process port: cwd =
+  session workspace, explicit argv, no shell, POSIX process-group / Windows taskkill /T tree
+  termination, 30-min default timeout, stderr + line caps, prompt via documented
+  `--prompt-file`), `muse-exec-jsonl.ts` (versioned tolerant JSONL mapping; unknown lines
+  counted, never guessed), runtime capability advertising, create-app port injection, and
+  fail-closed v4 admission (busy/queue/guide/choice delegated inputs are rejected before ACK
+  — no silent rerouting through queue promotion which drops the backend field).
+- **Host services**: `IMuseCodeService` (channel `muse-code`): version probe, optional
+  user-configured documented status-probe (JSON/text tolerant parse; unknown stays unknown),
+  private settings persistence, login-command launch (guided, never guessed), capability
+  query via zcodeAgentService; registered in `node.ts`, accessor + client wired.
+- **UI**: desktop-only Settings section "Meta Muse Code (local CLI)" (status badges, Recheck,
+  Connect, backend toggle, advanced command slices, honest billing copy), Composer indicator
+  that syncs the session capability gate, envelope stamping double-gated (user intent +
+  per-session CLI capability) in `commandFactory`; en-US + zh-CN strings.
+- Tests (mock, contract-only): bootstrap JSONL 6/6, bootstrap process 10/10 (mock CLI
+  fixture), core delegated turn 5/5, services 6/6, ui stamping 3/3 — registered in
+  `scripts/engineering-test-files.json` where applicable. Regression: core turn/admission
+  63/63, bootstrap v4 commands 81/81, architecture governance 61/61; tsc clean
+  (shared/services/client/ui; core+bootstrap builds). Architecture check: zero new
+  violations vs `main` (10 pre-existing `missing-module-artifact` violations identical on
+  `main`). Evidence: `spec/integrations/provider-evidence/muse-code-connector-evidence.md`.
+
+Status (AGENTS.md §7): backend integration **contract-tested** (mock CLI). Real CLI
+execution is **planned**: Issue #24 §5 on-machine verification (Windows, real signed-in CLI)
+must run and append sanitized evidence before this record or the evidence file may claim
+`integrated`/`verified`. The JSONL mapping is a versioned candidate pending on-machine
+reconciliation. Issue #24 stays open until then.

@@ -3,7 +3,46 @@
  *
  * This subpath must not be imported by renderer/browser bundles.
  */
-import { userInfo } from "node:os";
+import { homedir, userInfo } from "node:os";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
+/** 测试/企业环境覆盖 Muse Code 后端设置文件路径的环境变量（Host 服务与 CLI 端口共用同名约定）。 */
+export const MUSE_CODE_SETTINGS_FILE_ENV = "ZCODE_MUSE_CODE_SETTINGS_FILE";
+
+/** 与 personal provider_config.json 同目录（<homedir>/.zcode/v2/；Issue #24 / ACR-0002）。 */
+export function defaultMuseCodeSettingsFilePath(home: string = homedir()): string {
+  return join(home, ".zcode", "v2", "muse-code-backend.json");
+}
+
+export function resolveMuseCodeSettingsFilePath(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env[MUSE_CODE_SETTINGS_FILE_ENV]?.trim();
+  return override && override.length > 0 ? override : defaultMuseCodeSettingsFilePath();
+}
+
+/**
+ * Windows PATH 解析：只返回可直接 spawn 的可执行文件（.exe/.com）。
+ * .cmd/.bat npm shim 需要经 cmd.exe 解析，MOS 不为其打开 shell（Issue #24 / ACR-0002；
+ * Host 探测与 CLI 执行端口共用同一判定，找不到返回 null）。
+ */
+export function resolveWindowsExecutableOnPath(
+  command: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  if (command.includes("/") || command.includes("\\")) return null;
+  const pathDirs = (env.PATH ?? "").split(";").filter((dir) => dir.length > 0);
+  for (const dir of pathDirs) {
+    for (const candidate of [`${command}.exe`, `${command}.com`]) {
+      const fullPath = dir.endsWith("\\") ? `${dir}${candidate}` : `${dir}\\${candidate}`;
+      try {
+        if (existsSync(fullPath)) return fullPath;
+      } catch {
+        continue;
+      }
+    }
+  }
+  return null;
+}
 
 /** Server 展示系统用户；容器的数字 UID 无需在 passwd 中有名称条目。 */
 export function resolveServerOsUser(): string {

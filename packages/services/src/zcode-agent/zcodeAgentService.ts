@@ -1691,6 +1691,8 @@ export function createZCodeAgentService(
   const extensionInputSourceClients = new WeakSet<ZCodeProtocolClient>();
   /** 在 runtime/capabilities 中声明 conversationQuoteComment 的 CLI 连接（选区批注）。 */
   const conversationQuoteCommentClients = new WeakSet<ZCodeProtocolClient>();
+  /** 在 runtime/capabilities 中声明 executionBackendMuseCode 的 CLI 连接（Issue #24 / ACR-0002）。 */
+  const executionBackendMuseCodeClients = new WeakSet<ZCodeProtocolClient>();
   function cancelWaitingWorkspaceStartup(workspaceKey: string): void {
     const waiting = waitingWorkspaceStartups.get(workspaceKey);
     if (waiting) {
@@ -4069,6 +4071,11 @@ export function createZCodeAgentService(
         // 旧 CLI 会静默剥掉引用上的 comment / agent：用户看到批注而模型收不到，入口只对声明者开放。
         if (capabilities.conversationQuoteComment === true) {
           conversationQuoteCommentClients.add(client);
+        }
+        // 旧 CLI 会静默剥掉信封级 executionBackend 并退回普通模型执行（静默改道），
+        // 后端选择只对声明者开放（Issue #24 / ACR-0002）。
+        if (capabilities.executionBackendMuseCode === true) {
+          executionBackendMuseCodeClients.add(client);
         }
         if (capabilities.sessionWorkspaceRouting) {
           await client.request(
@@ -7847,6 +7854,12 @@ export function createZCodeAgentService(
       // 与 worktreeCwd 相同：能力集合在 getClient 的启动屏障内写入。
       const client = await getClient(target);
       return conversationQuoteCommentClients.has(client);
+    },
+
+    async supportsExecutionBackendMuseCode(target) {
+      // 与 supportsWorktreeCwd 同一启动屏障；CLI 换代后 getClient 返回新连接，结果随之重算。
+      const client = await getClient(target);
+      return executionBackendMuseCodeClients.has(client);
     },
 
     disposeAll(): void {

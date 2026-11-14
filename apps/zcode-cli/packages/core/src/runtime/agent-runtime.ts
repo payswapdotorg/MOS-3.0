@@ -44,6 +44,7 @@ import type {
   ContextSourcePort,
   ExecutionPort,
   FileSystemPort,
+  MuseExecutionPort,
   ImageProcessorPort,
   PdfDocumentPort,
   McpConnectionSnapshot,
@@ -241,6 +242,7 @@ export class AgentRuntime {
   private branchGeneration = 0;
   private artifactStore?: ToolArtifactStorePort;
   private executionPort?: ExecutionPort;
+  private museExecutionPort?: MuseExecutionPort;
   private fileSystemPort?: FileSystemPort;
   private imageProcessorPort?: ImageProcessorPort;
   private pdfDocumentPort?: PdfDocumentPort;
@@ -370,6 +372,7 @@ export class AgentRuntime {
     this.subagentStallReminder = createSubagentStallReminder(runtime);
     this.artifactStore = deps.artifactStore;
     this.executionPort = deps.executionPort;
+    this.museExecutionPort = deps.museExecutionPort;
     this.fileSystemPort = deps.fileSystemPort;
     this.imageProcessorPort = deps.imageProcessorPort;
     this.pdfDocumentPort = deps.pdfDocumentPort;

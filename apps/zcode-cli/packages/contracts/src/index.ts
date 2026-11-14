@@ -32,6 +32,7 @@ export * from "./interfaces/off-peak.port.js";
 export * from "./interfaces/topic-resource.port.js";
 export * from "./interfaces/plugin-discovery.port.js";
 export * from "./interfaces/mcp.port.js";
+export * from "./interfaces/muse-execution.port.js";
 
 export * from "./interfaces/runtime-input-presentation.js";
 

@@ -65,6 +65,7 @@ import type { PromptRuntimeCommand } from "../command-queue.js";
 import { enqueueCancellableRuntimeCommand } from "./runtime-command-submit.js";
 import { buildReferencedSessionContextReminderBody } from "../../session-context/references.js";
 import { runRegularTurnLoop } from "./turn-loop.js";
+import { runDelegatedMuseTurn } from "./delegated-muse-turn.js";
 import { appendInterruptMarker } from "./interrupt-marker.js";
 import {
   maybeStartDeferredSessionTitleGeneration,
@@ -172,6 +173,13 @@ export async function executeTurnCommand(
   const admittedOutputStyle = this.config.outputStyle;
   const compactInstructions = parseCompactCommand(input);
   const rewindCommand = parseRewindCommand(input);
+  // 委托 Muse Code 执行后端（Issue #24 / ACR-0002）：本轮不创建 provider Model、
+  // 不运行本进程工具环；执行交给 runtime 的 MuseExecutionPort
+  // （methods/delegated-muse-turn.ts）。compact / rewind 是本地控制命令，优先于委托路径。
+  const delegatedMuseTurn =
+    options?.executionBackend === "muse-code" &&
+    rewindCommand === null &&
+    compactInstructions === null;
   const turnId = startReservation?.turnId ?? createTurnId();
   const queryId = options?.queryId ?? (options?.inputId as QueryId | undefined) ?? createQueryId();
   const displayInput = options?.displayInput ?? input;
@@ -279,7 +287,7 @@ export async function executeTurnCommand(
       let creationFallbackUnavailable = false;
       try {
         admittedModel =
-          rewindCommand === null
+          rewindCommand === null && !delegatedMuseTurn
             ? createTurnModel(this, {
                 requestDependencies: options?.modelExecution?.requestDependencies,
                 selection: admittedModelSelection,
@@ -799,7 +807,7 @@ export async function executeTurnCommand(
           traceContext: turnTraceContext,
         });
         throwIfTurnAborted(turnAbortSignal);
-        if (options?.skipInputRecord !== true && options?.inputVisibility !== "model-only") {
+        if (options?.skipInputRecord !== true && options?.inputVisibility !== "model-only" && !delegatedMuseTurn) {
           // 修复原因：标题生成以前等主 turn 成功后才启动，用户 stop/cancel 首轮请求时
           // generated title 永远没有机会发起。首条 query 持久化后即可异步生成，避免被主链路取消拖死。
           const titleGenerationStarted = maybeStartSessionTitleGeneration.call(
@@ -828,6 +836,48 @@ export async function executeTurnCommand(
         }
 
         this.messageHistory.setCacheMiss();
+        // 委托轮的收口摘要与普通轮共用同一组字段；两个分支各自产出，收口块只读 turnOutcomeSummary。
+        let turnOutcomeSummary:
+          | {
+              backgroundSubagentResultConsumed: boolean;
+              historyRoundCount: number;
+              modelResponse: string;
+              tokenCount: number;
+              toolCallCount: number;
+              workflowResultConsumed: boolean;
+            }
+          | undefined;
+        if (delegatedMuseTurn) {
+          // 委托轮：无 provider Model、无本进程工具环；MCP/compaction/announcement 等
+          // 模型请求前置件全部跳过，事件投影与持久化沿用普通轮收口。
+          openGoalStateChangeReminderDeferral(activeTurn);
+          phaseStartedAt = startTurnPhase("delegated_muse_turn");
+          try {
+            const delegatedResult = await runDelegatedMuseTurn.call(this, {
+              input,
+              userMessageId: userMessageId ?? createMessageId(),
+              turnId,
+              ...(options?.inputId ? { inputId: options.inputId } : {}),
+              turnMachine,
+              turnAbortSignal,
+              turnTraceContext,
+              events,
+              turnStartedAtMs,
+            });
+            completeTurnPhase("delegated_muse_turn", phaseStartedAt);
+            turnMachine = delegatedResult.turnMachine;
+            turnOutcomeSummary = {
+              backgroundSubagentResultConsumed: false,
+              historyRoundCount: 0,
+              modelResponse: delegatedResult.response,
+              tokenCount: 0,
+              toolCallCount: delegatedResult.toolCallCount,
+              workflowResultConsumed: false,
+            };
+          } finally {
+            await closeGoalStateChangeReminderDeferral.call(this, activeTurn, turnTraceContext);
+          }
+        } else {
         const loopModel = submissionModel ?? admittedModel;
         if (!loopModel) {
           throw new Error("Turn model was not created before execution");
@@ -916,7 +966,17 @@ export async function executeTurnCommand(
           await closeGoalStateChangeReminderDeferral.call(this, activeTurn, turnTraceContext);
         }
         turnMachine = loopState.turnMachine;
+        turnOutcomeSummary = {
+          backgroundSubagentResultConsumed: loopState.backgroundSubagentResultConsumed,
+          historyRoundCount: loopState.historyRoundCount,
+          modelResponse: loopState.modelResponse,
+          tokenCount: loopState.tokenCount,
+          toolCallCount: loopState.toolCallCount,
+          workflowResultConsumed: loopState.workflowResultConsumed,
+        };
+        }
 
+        const turnOutcome = turnOutcomeSummary!;
         const turnUsage = createModelUsageSummaryFromEvents(events);
         // goal usage/active-run 先结算，再固定 exact goal/verifier boundary；只有两者都
         // 已持久化，TurnComplete 才能让 projection/UI 开放最终 assistant fork。
@@ -927,7 +987,7 @@ export async function executeTurnCommand(
           traceContext: turnTraceContext,
           usage: turnUsage,
         });
-        if (loopState.stableProductStartMessageId && loopState.stableBoundaryAssistantMessageId) {
+        if (loopState?.stableProductStartMessageId && loopState.stableBoundaryAssistantMessageId) {
           await persistStableForkCompletionBoundary(this, {
             boundaryMessageId: loopState.stableBoundaryAssistantMessageId,
             startMessageId: loopState.stableProductStartMessageId,
@@ -935,7 +995,7 @@ export async function executeTurnCommand(
             traceContext: turnTraceContext,
           });
         }
-        if (loopState.stableBoundaryAssistantMessageId) {
+        if (loopState?.stableBoundaryAssistantMessageId) {
           await appendBrowserTurnScreenshot(
             this,
             loopState,
@@ -945,17 +1005,17 @@ export async function executeTurnCommand(
         const completeEvent = this.createEvent(
           SessionEventType.TurnComplete,
           {
-            response: loopState.modelResponse,
-            tokenCount: loopState.tokenCount,
+            response: turnOutcome.modelResponse,
+            tokenCount: turnOutcome.tokenCount,
             usage: turnUsage,
-            toolCallCount: loopState.toolCallCount,
-            historyRoundCount: loopState.historyRoundCount,
+            toolCallCount: turnOutcome.toolCallCount,
+            historyRoundCount: turnOutcome.historyRoundCount,
             duration: Date.now() - turnMachine.state.startedAt.getTime(),
             resultType: "success",
-            ...(loopState.backgroundSubagentResultConsumed
+            ...(turnOutcome.backgroundSubagentResultConsumed
               ? { backgroundSubagentResultConsumed: true }
               : {}),
-            ...(loopState.workflowResultConsumed ? { workflowResultConsumed: true } : {}),
+            ...(turnOutcome.workflowResultConsumed ? { workflowResultConsumed: true } : {}),
             cacheStats: this.messageHistory.getCacheStats(),
             inputId: options?.inputId,
           },
@@ -992,18 +1052,19 @@ export async function executeTurnCommand(
           event: "turn.completed",
           module: "core.runtime",
           status: "completed",
-          toolCallCount: loopState.toolCallCount,
+          toolCallCount: turnOutcome.toolCallCount,
         });
         // 单轮执行策略只抑制本次成功 Turn 的后台提取，不修改 Session Memory 配置。
-        if (options?.modelExecution?.memoryExtraction !== "skip") {
+        // 委托轮没有 loop Model，Memory 提取同样跳过（提取器依赖 provider Model）。
+        if (!delegatedMuseTurn && options?.modelExecution?.memoryExtraction !== "skip") {
           scheduleProjectMemoryExtraction(this, {
-            model: loopState.model,
+            model: loopState!.model,
             traceContext: turnTraceContext,
           });
         }
 
         const result: TurnResult = {
-          response: loopState.modelResponse,
+          response: turnOutcome.modelResponse,
           turnId,
           traceId,
           usage: turnUsage,

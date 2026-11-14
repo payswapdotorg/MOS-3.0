@@ -59,6 +59,7 @@ import {
   IOutputStyleService,
   ISettingsSyncService,
   IFeedbackService,
+  IMuseCodeService,
   IPromptAttachmentTransferService,
   IWindowControllerService,
   IWindowProjectService,
@@ -141,6 +142,8 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly outputStyleService: IOutputStyleService;
   readonly settingsSyncService: ISettingsSyncService;
   readonly feedbackService: IFeedbackService;
+  /** 委托 Muse Code 执行后端（Issue #24 / ACR-0002）：desktop base 连接注册；其余 scope 调用按不支持收口。 */
+  readonly museCodeService: IMuseCodeService;
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;
 
   constructor(
@@ -375,6 +378,9 @@ export class RemoteServiceAccess implements IServiceAccessor {
     );
     this.feedbackService = ProxyChannel.toService<IFeedbackService>(
       channelClient.getChannel(IFeedbackService.channelName),
+    );
+    this.museCodeService = ProxyChannel.toService<IMuseCodeService>(
+      channelClient.getChannel(IMuseCodeService.channelName),
     );
     this.promptAttachmentTransferService = ProxyChannel.toService<IPromptAttachmentTransferService>(
       channelClient.getChannel(IPromptAttachmentTransferService.channelName),

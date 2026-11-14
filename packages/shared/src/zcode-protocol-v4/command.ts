@@ -36,6 +36,7 @@ import {
 import { highspeedMessageMetaSchema } from "../highspeed.js";
 import { sharedContextRefSchema } from "./shared-context-ref.js";
 import { conversationInputSourceSchema } from "./input-intent.js";
+import { executionBackendSchema } from "../muse-code/muse-code-backend.js";
 export type { SharedContextRef } from "./shared-context-ref.js";
 export * from "./workflow-command-rejections.js";
 
@@ -438,6 +439,13 @@ export const commandEnvelopeSchema = z.object({
   pluginDiscoveryUi: z.literal(true).optional(),
   /** Host 可信 attachment 注入；CLI 保留到原 input intent。 */
   inputOrigin: z.enum(["desktop", "mobile"]).optional(),
+  /**
+   * delegated 执行后端选择（Issue #24 / ACR-0002）：createSession.firstInput 与
+   * sendText 交给本地 Muse Code CLI 执行，而不是普通模型轮。additive 字段：
+   * 旧 CLI 的 z.object 会静默剥掉它并退回普通模型执行（静默改道），所以客户端
+   * 必须先确认 CLI 的 runtime/capabilities.executionBackendMuseCode 才允许携带。
+   */
+  executionBackend: executionBackendSchema.optional(),
   ttft: localTtftContextSchema.optional(),
   // uuid v7，客户端生成，重试不变。
   commandId: z.string(),

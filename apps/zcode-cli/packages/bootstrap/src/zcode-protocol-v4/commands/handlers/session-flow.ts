@@ -92,6 +92,16 @@ async function sendText(
     });
   const routingMode = host.getInputRoutingMode?.(envelope.sessionId ?? "") ?? null;
   const forceStartNow = payload.requestedDelivery === "startNow";
+  // 委托执行后端（Issue #24 / ACR-0002）：delegated 轮不可 steer/queue——普通 admission
+  // 在 busy 时会把输入排队，提升路径不会携带 executionBackend，随后静默退回普通模型
+  // 执行（禁止静默改道）。fail-closed：busy / queue / guide / choice / 抢占一律 ACK 前拒绝。
+  const museBackendTurn = envelope.executionBackend === "muse-code";
+  if (museBackendTurn && isDelegatedMuseTurnInadmissible(host, record, routingMode, forceStartNow)) {
+    throw new V4InputAdmissionRejectedError(
+      "fault.command.inputRejected",
+      "Muse Code backend requires an idle session with immediate delivery; stop the active turn, send or clear queued inputs, then resend",
+    );
+  }
   // 队首被 composer 编辑态冻结时 Core 可能完全空闲；不强制入队会 startNow 越过冻结项。
   const queueHeadEditLocked =
     !forceStartNow &&
@@ -265,6 +275,7 @@ async function sendText(
       ...turnBackgroundAttributionOf(payload),
       ...(payload.botDeliveryTarget ? { botDeliveryTarget: payload.botDeliveryTarget } : {}),
       toolDisallowlist: payload.toolDisallowlist,
+      ...(museBackendTurn ? { executionBackend: "muse-code" as const } : {}),
       ...(payload.modelExecution
         ? { modelExecution: createModelExecutionContext(payload.modelExecution) }
         : {}),
@@ -369,6 +380,22 @@ async function stop(
     await host.afterLegacyStateMutation?.(record, "session_stop_goal_paused");
   }
   return undefined;
+}
+
+/** delegated 轮的 busy/queue 准入判定：任何一个非空闲信号都拒绝（不降级、不排队）。 */
+function isDelegatedMuseTurnInadmissible(
+  host: V4CommandCoreHost,
+  record: V4SessionRecordView,
+  routingMode: "startNow" | "enqueue" | "guide" | "reject" | "choice" | null,
+  forceStartNow: boolean,
+): boolean {
+  if (forceStartNow) return true;
+  if (routingMode !== null && routingMode !== "startNow") return true;
+  if (record.activeAbortController !== undefined) return true;
+  if (record.app.runtime?.getActiveTurnInfo?.() !== undefined) return true;
+  if (record.app.runtime?.getActiveForegroundExecutionId?.() !== undefined) return true;
+  if ((host.getQueueLength?.(record.app.sessionId) ?? 0) > 0) return true;
+  return false;
 }
 
 /** goal-pause barrier 共用件：stop 与 sendQueuedNow（抢占重发）复用，不复制。 */

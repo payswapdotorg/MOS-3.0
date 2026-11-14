@@ -993,6 +993,10 @@ export class ZCodeProtocolAgentServer {
           // plugins/overview 认识 includeExtensionSummary，并按它在商店信息里带扩展摘要
           // （docs/design/v2/plugin-compat.md「Extension summary」）。
           pluginExtensionSummary: true,
+          // 认识信封级 executionBackend: "muse-code"（delegated 执行后端，Issue #24 / ACR-0002）：
+          // create-app 已装配 MuseExecutionPort；旧 CLI 会静默剥掉该字段并退回普通模型执行，
+          // Host/客户端看到这一位才允许携带。
+          executionBackendMuseCode: true,
         };
       }
       case zcodeProtocolMethods.pluginsMarketplaceAdd:

@@ -270,6 +270,11 @@ export interface SubmitPromptOptionsBase {
   browserAmbientContext?: ExecuteTurnOptions["browserAmbientContext"];
   /** 标准 Selection 的单次执行约束；不进入 Session Selection 或持久化。 */
   modelExecution?: ModelExecutionContext;
+  /**
+   * delegated 执行后端（Issue #24 / ACR-0002）："muse-code" = 本轮交给本地 Muse Code
+   * CLI 执行；缺省 = 普通模型轮。由 v4 信封字段透传（capability 门控见 zcode-protocol-v4）。
+   */
+  executionBackend?: "muse-code";
 }
 
 export type SubmitPromptOptions = SubmitPromptOptionsBase &

@@ -1,0 +1,87 @@
+schema_version: 1
+stage: muse-code-delegated-backend
+parallel_workstreams_max: 1
+tech_lead:
+  owns:
+    - packages/shared/src/muse-code/**
+    - packages/services/src/muse-code/**
+    - packages/ui/src/settings/MuseCodeSection.tsx
+    - packages/ui/src/chat-input-toolbar/MuseCodeBackendIndicator.tsx
+    - packages/ui/src/v4/museCodeBackendState.ts
+    - apps/zcode-cli/packages/contracts/src/interfaces/muse-execution.port.ts
+    - apps/zcode-cli/packages/core/src/runtime/methods/delegated-muse-turn.ts
+    - apps/zcode-cli/packages/bootstrap/src/muse-code/**
+    - spec/decisions/ACR-0002-delegated-muse-execution-backend.md
+    - spec/integrations/provider-evidence/muse-code-connector-evidence.md
+  must_not_delegate:
+    - ACR 与架构裁决
+    - preservation-contract 边界审查
+    - 状态词汇（AGENTS.md §7）与证据判读
+work_packages:
+  - id: MC-A
+    name: Muse Code delegated execution backend vertical slice (Issue #24)
+    owner: tl
+    status: delivered
+    paths:
+      - packages/shared/src/muse-code/**
+      - packages/shared/src/node.ts
+      - packages/shared/src/zcode-protocol-v4/command.ts
+      - packages/shared/src/zcode-protocol/index.ts
+      - packages/shared/src/channels.ts
+      - packages/shared/src/index.ts
+      - packages/services/src/muse-code/**
+      - packages/services/src/node.ts
+      - packages/services/src/index.ts
+      - packages/services/src/accessor.ts
+      - packages/services/src/zcode-agent/zcodeAgent.ts
+      - packages/services/src/zcode-agent/zcodeAgentService.ts
+      - packages/client/src/remoteServiceAccess.ts
+      - packages/ui/src/settings/MuseCodeSection.tsx
+      - packages/ui/src/chat-input-toolbar/MuseCodeBackendIndicator.tsx
+      - packages/ui/src/v4/museCodeBackendState.ts
+      - packages/ui/src/v4/commandFactory.ts
+      - packages/ui/src/v4/composer/V4ComposerToolbar.tsx
+      - packages/ui/src/settings/settingsPageConfig.ts
+      - packages/ui/src/lib/settingsNavigation.ts
+      - packages/ui/src/SettingsPage.tsx
+      - packages/ui/src/i18n/locales/en-US.ts
+      - packages/ui/src/i18n/locales/zh-CN.ts
+      - apps/zcode-cli/packages/contracts/src/interfaces/muse-execution.port.ts
+      - apps/zcode-cli/packages/contracts/src/index.ts
+      - apps/zcode-cli/packages/core/src/runtime/deps.ts
+      - apps/zcode-cli/packages/core/src/runtime/types.ts
+      - apps/zcode-cli/packages/core/src/runtime/internal.ts
+      - apps/zcode-cli/packages/core/src/runtime/agent-runtime.ts
+      - apps/zcode-cli/packages/core/src/runtime/methods/delegated-muse-turn.ts
+      - apps/zcode-cli/packages/core/src/runtime/methods/turn.ts
+      - apps/zcode-cli/packages/bootstrap/src/muse-code/**
+      - apps/zcode-cli/packages/bootstrap/src/app/create-app.ts
+      - apps/zcode-cli/packages/bootstrap/src/app/types.ts
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol/server.ts
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/prompt-turn.ts
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/handlers/session-flow.ts
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/handlers/session-mgmt.ts
+    forbidden_paths:
+      - spec/architecture/**
+      - packages/provider/**
+      - packages/provider-node/**
+      - config/provider/**
+    tasks:
+      - ACR-0002 裁决与边界（单执行环、凭据红线、双门控）。
+      - shared 契约（status/settings schema、信封 executionBackend、capability、channel、设置文件路径约定）。
+      - contracts MuseExecutionPort + core delegated turn（事件投影、持久化、取消/失败收口）+ turn 路由分支。
+      - bootstrap 进程端口（spawn/树终止/超时/stderr 上限）+ JSONL 宽容映射 + capability + v4 fail-closed 准入。
+      - Host IMuseCodeService（探测/设置持久化/登录命令门控）+ 注册/访问器/renderer 接线。
+      - UI：设置分区（状态卡/Recheck/Connect/开关/高级项/计费 copy）+ Composer 指示器 + 信封双门控 + i18n。
+      - 契约测试（mock）+ 回归 + architecture admission + 证据文件。
+    deliverables:
+      - adapter_source
+      - settings_and_status_surface
+      - contract_tests
+      - on_machine_verification_checklist
+    acceptance:
+      - 信封字段缺省时零行为变化（普通模型路径原样）。
+      - 委托轮复用 TurnStarted/TurnComplete/Stop/冷恢复/mission linkage 既有机制，无双工具环。
+      - 无凭据读取/复制/展示；auth/contributor 未知即未知。
+      - busy/queue/guide/choice 委托输入一律 ACK 前拒绝（不静默改道）。
+      - mock 契约测试全绿；在机验证清单就绪（AGENTS.md §7：本阶段为 contract-tested / integrated，非 verified）。

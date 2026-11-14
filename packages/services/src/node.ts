@@ -582,6 +582,8 @@ import {
   createFeedbackService,
   type CreateFeedbackServiceOptions,
 } from "./feedback/feedbackService.js";
+import { IMuseCodeService } from "./muse-code/museCode.js";
+import { createMuseCodeService } from "./muse-code/museCodeService.js";
 import { createLocalPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransferService.js";
 import { createNodeApiClient } from "./providers/api/nodeApiClient.js";
 import {
@@ -3292,6 +3294,15 @@ export function createLocalServices(options: {
         apiClient,
         credentialService,
         oauthService,
+      }),
+    )
+    .register(
+      IMuseCodeService,
+      // 委托 Muse Code 执行后端（Issue #24 / ACR-0002）：CLI 能力查询走 zcodeAgentService，
+      // 失败按不支持处理（fail-closed）。探测/设置均不接触凭据材料。
+      createMuseCodeService({
+        supportsBackendCapability: (target) =>
+          zcodeAgentService.supportsExecutionBackendMuseCode?.(target) ?? Promise.resolve(false),
       }),
     )
     .register(IPromptAttachmentTransferService, createLocalPromptAttachmentTransferService());

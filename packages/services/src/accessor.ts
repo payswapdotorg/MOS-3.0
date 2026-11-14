@@ -56,6 +56,7 @@ import type { IMemoryService } from "./memory/memory.js";
 import type { IOutputStyleService } from "./output-style/outputStyle.js";
 import type { ISettingsSyncService } from "./settings-sync/settingsSync.js";
 import type { IFeedbackService } from "./feedback/feedback.js";
+import type { IMuseCodeService } from "./muse-code/museCode.js";
 import type { IPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransfer.js";
 import type { IWindowControllerService } from "./window-controller/windowController.js";
 import type { ISourceServerWorkspaceService } from "./source-server-workspace/sourceServerWorkspace.js";
@@ -145,5 +146,7 @@ export interface IServiceAccessor {
   readonly outputStyleService: IOutputStyleService;
   readonly settingsSyncService: ISettingsSyncService;
   readonly feedbackService: IFeedbackService;
+  /** 委托 Muse Code 执行后端（Issue #24 / ACR-0002）；desktop base attachment 注册，其他 scope 按可选能力消费。 */
+  readonly museCodeService?: IMuseCodeService;
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;
 }

@@ -42,6 +42,7 @@ import { ModelConfigSelect, type ModelSelectGroup } from "@/ModelConfigSelect.js
 import type { ComposerModelOptions } from "@/chat-input-toolbar/ComposerModelMenu.js";
 import { Button } from "@/components/ui/button.js";
 import { HighspeedModelIndicator } from "@/highspeed/HighspeedModelIndicator.js";
+import { MuseCodeBackendIndicator } from "@/chat-input-toolbar/MuseCodeBackendIndicator.js";
 import { formatHighspeedRemainingTime } from "@/highspeed/highspeedTime.js";
 import { ChatContextUsage } from "@/chat-input-toolbar/display.js";
 import {
@@ -1393,6 +1394,11 @@ function V4ComposerModelControlsImpl({
       {highspeedPresented && highspeedExpiresAt !== undefined ? (
         <HighspeedCountdown expiresAt={highspeedExpiresAt} />
       ) : null}
+      {/* 委托 Muse Code 执行后端（Issue #24 / ACR-0002）：常驻同步 supported 门控位；enabled 时展示。 */}
+      <MuseCodeBackendIndicator
+        workspacePath={workspacePath}
+        {...(workspaceIdentity ? { workspaceIdentity } : {})}
+      />
       {thoughtOption && (modelLocked || highspeedPresented) ? (
         <ThoughtLevelCycleControl
           composerCollapsePriority={3}

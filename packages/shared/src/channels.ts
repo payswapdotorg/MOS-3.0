@@ -218,6 +218,8 @@ export const ServiceChannels = {
   HighspeedCard: "highspeed-card",
   /** Onboarding 完成记录服务（本地持久化，后续上传服务器） */
   OnboardingRecord: "onboarding-record",
+  /** Meta Muse Code 本地执行后端（Issue #24 / ACR-0002）：CLI 状态探测与后端选择 */
+  MuseCode: "muse-code",
 } as const;
 
 export type ServiceChannelName = (typeof ServiceChannels)[keyof typeof ServiceChannels];

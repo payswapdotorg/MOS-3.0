@@ -97,6 +97,7 @@ import { MemorySettingsPage } from "@/settings/MemorySettingsSection.js";
 import { PersonalizationSection } from "@/settings/PersonalizationSection.js";
 import { BrowserSettingsSection } from "@/settings/BrowserSettingsSection.js";
 import { ComputerUseSection } from "@/settings/ComputerUseSection.js";
+import { MuseCodeSection } from "@/settings/MuseCodeSection.js";
 import { ShortcutSettingsSection } from "@/settings/ShortcutSettingsSection.js";
 import {
   SettingsSearch,
@@ -2073,6 +2074,15 @@ export function SettingsPage({
                                 onConsumePendingModelProviderTarget={() =>
                                   setPendingModelProviderTarget(undefined)
                                 }
+                              />
+                            </ServiceProvider>
+                          ) : activeSection === "museCode" ? (
+                            <ServiceProvider services={localHostServices}>
+                              {/* Muse Code 执行后端探测/设置属于本机全局事实源（Issue #24 / ACR-0002），
+                                  与模型供应商同源；激活远端 workspace 时也不能注入远端 Host。 */}
+                              <MuseCodeSection
+                                workspacePath={activeWorkspacePath}
+                                workspaceIdentity={activeWorkspaceIdentity}
                               />
                             </ServiceProvider>
                           ) : activeSection === "personalization" ? (
