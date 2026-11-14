@@ -33,9 +33,13 @@ Checklist (mirror of the handoff §4 real-desktop acceptance):
 1. Install/launch the latest MOS RC (keep an existing ZCode installation untouched).
 2. Sign in with the supported account flow (Model Providers → sign in).
 3. Open **Model Providers** → the Start Plan card for MOS is present and claimable.
-   - Before the backend ships it is absent/unavailable — stop here; Route A is not yet
-     available, and you must not treat ZCode's Start Plan card in the ZCode app as MOS
-     evidence.
+   - Before the backend ships, MOS shows **"the billing provider hasn't enabled a
+     Start Plan for this product yet"** (not a used-up trial). Stop here; Route A
+     is not yet available, and you must not treat ZCode's Start Plan card in the
+     ZCode app as MOS evidence.
+   - After the backend ships, an already-running MOS picks the plan up within
+     ~5 minutes automatically, or immediately via the **Refresh** button on the
+     Start Plan status card (Issue #23 fix; no reinstall/restart needed).
 4. Claim the MOS free plan (first claim for this account+product; reinstalling later
    must NOT offer a second trial).
 5. Select a verified free model from the MOS Start Plan provider

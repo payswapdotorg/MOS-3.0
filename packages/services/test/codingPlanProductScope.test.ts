@@ -596,3 +596,43 @@ describe("Start Plan 模型面请求材料（ACR-0001 P2：用量记入正确产
     expect(material.headers?.["X-ZCode-Product-Id"]).toBe("zcode");
   });
 });
+
+describe("Start Plan 预览 forceRefresh（Issue #23：负向预览不得被 1h 快照锁死）", () => {
+  it("1h TTL 内默认读快照；forceRefresh 清快照重拉并立即看到 provider 侧新配置", async () => {
+    mockState.configs.data.configs = {};
+    const provider = createProvider();
+
+    // 负向：本产品未配置免费计划 —— 首次拉取后 1h 内默认命中平台快照。
+    expect(await provider.getStartPlanPreview()).toBeNull();
+    expect(mockState.requests.configs.length).toBe(1);
+    await provider.getStartPlanPreview();
+    expect(mockState.requests.configs.length).toBe(1);
+
+    // provider 上线免费计划（mock 改写下一条响应）。
+    mockState.configs.data.configs = {
+      startPlanPreview: startPlanPreviewPayload("zcode-v3-start-plan"),
+    };
+
+    // 不带 force：仍是既有 1h 快照语义（读到旧负向结果）。
+    expect(await provider.getStartPlanPreview()).toBeNull();
+    expect(mockState.requests.configs.length).toBe(1);
+
+    // forceRefresh：清快照重拉 —— 运行中的客户端无需重启即可看到启用。
+    const preview = await provider.getStartPlanPreview({ forceRefresh: true });
+    expect(mockState.requests.configs.length).toBe(2);
+    expect(preview?.planId).toBe("zcode-v3-start-plan");
+
+    // 新快照就位：再次默认调用命中缓存，不重复请求。
+    await provider.getStartPlanPreview();
+    expect(mockState.requests.configs.length).toBe(2);
+  });
+
+  it("forceRefresh 后产品归属过滤仍生效（mos 不消费 zcode 归属预览）", async () => {
+    currentProduct = "mos";
+    mockState.configs.data.configs = {
+      startPlanPreview: startPlanPreviewPayload("zcode-v3-start-plan", { productId: "zcode" }),
+    };
+    const provider = createProvider();
+    expect(await provider.getStartPlanPreview({ forceRefresh: true })).toBeNull();
+  });
+});

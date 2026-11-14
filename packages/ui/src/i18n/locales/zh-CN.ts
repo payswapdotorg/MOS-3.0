@@ -4235,6 +4235,8 @@ const zhCN: Record<string, string> = {
   "settings.modelProvider.startPlan.status.loginRequired": "登录后查看和使用体验套餐",
   "settings.modelProvider.startPlan.status.expired": "体验套餐已过期",
   "settings.modelProvider.startPlan.status.noPlan": "暂无可用体验套餐",
+  "settings.modelProvider.startPlan.status.notConfigured": "计费服务尚未为本产品开通 Start Plan，开通后将显示在这里——你的免费额度并未被消耗或失效",
+  "settings.modelProvider.startPlan.refresh": "刷新",
   "settings.modelProvider.startPlan.status.loginExpired": "登录已失效，请重新登录",
   "settings.modelProvider.startPlan.title": "{provider} - 编程套餐",
   "settings.modelProvider.startPlan.meta.today": "Today",

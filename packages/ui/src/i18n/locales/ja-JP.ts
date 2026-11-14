@@ -4291,6 +4291,8 @@ const jaJP: Record<string, string> = {
     "Start Plan を表示・使用するにはサインインしてください",
   "settings.modelProvider.startPlan.status.expired": "Start Plan の有効期限が切れました",
   "settings.modelProvider.startPlan.status.noPlan": "利用可能な Start Plan はありません",
+  "settings.modelProvider.startPlan.status.notConfigured": "課金プロバイダーはまだこの製品向けに Start Plan を有効化していません。有効化されるとここに表示されます。無料枠が失われたわけではありません",
+  "settings.modelProvider.startPlan.refresh": "更新",
   "settings.modelProvider.startPlan.status.loginExpired":
     "サインインの有効期限が切れました。もう一度サインインしてください。",
   "settings.modelProvider.startPlan.title": "{provider} - Coding Plan",

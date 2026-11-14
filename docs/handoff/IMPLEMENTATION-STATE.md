@@ -842,3 +842,46 @@ requests from the release-engineering sandbox:
 The two not-claimable-yet deliverables (real two-allocation proof on one account; real
 Windows desktop acceptance evidence) remain blocked on the provider backend shipping
 the product-scope contract — unchanged by this verification.
+
+### Issue #23 client workstream record (2026-11-14, TL)
+
+Issue #23 (P0, "Fix MOS Settings: no available Start Plan") splits into the
+provider-owned backend workstream (A — unchanged: blocked on the provider implementing
+`docs/handoff/START-PLAN-PRODUCT-SCOPE-BACKEND-HANDOFF.md`; this repo's deliverable
+remains the handoff + coordination, and the issue must NOT close on a visible plan card
+alone) and the client workstream (B — implemented here):
+
+- **Negative-preview TTL split** (`useStartPlanPreview`): a `null` (not configured for
+  this product) preview is now cached for 5 minutes instead of 24 hours; positive
+  previews keep the 24h marketing-config TTL. A provider-side MOS enablement becomes
+  visible to a running client within ≤5 minutes automatically.
+- **True refresh path**: the hook's `refresh({ force: true })` bypasses the renderer
+  cache AND passes `forceRefresh` to `getStartPlanPreview` (new service option, same
+  semantics as the other client/configs consumers: clears the 1h platform snapshot).
+  Settings shows a Refresh button on the Start Plan status card in the
+  not-purchased/unavailable states; one click refreshes preview + entitlement/panel
+  together. Previously `refresh()` re-read the cache — there was no real retry path.
+- **Post-claim invalidation**: successful manual claim now invalidates the preview
+  cache (`invalidateStartPlanPreviewCache`) alongside the existing entitlement +
+  provider-settings refreshes.
+- **State distinction** (StatusCards): `notPurchased` + preview resolved `null` with
+  no error ⇒ new `startPlan.status.notConfigured` message ("the billing provider
+  hasn't enabled a Start Plan for this product yet — no free allowance has been used
+  up"); preview loading/errored keeps the existing copy — backend unavailability is
+  never rendered as a confirmed absence of entitlement. Login-required / checking /
+  unavailable / expired / active-grant states were already distinct and unchanged.
+  Fail-closed ownership rules untouched (foreign/unscoped records still never shown).
+- **i18n**: `status.notConfigured` + `refresh` keys added to all five locales.
+- Tests: `packages/ui/test/startPlanPreviewCache.test.ts` (5 tests: TTL semantics,
+  force-bypass + forceRefresh service contract, post-invalidation refetch, null
+  service safety) and `+2` in `packages/services/test/codingPlanProductScope.test.ts`
+  (forceRefresh clears the 1h snapshot and immediately reflects a provider-side
+  enablement; product-ownership filtering still applies after force). Registered in
+  `scripts/engineering-test-files.json`.
+- Docs: `docs/start-plan-product-scope.md` §负向预览的时效与显式刷新;
+  `docs/release/FREE-MODEL-SETUP.md` Route A step 3 now describes both the honest
+  not-configured message and the ≤5-min/Refresh pickup after the backend ships.
+
+Workstream A remains open on the provider; this record does not close Issue #23 (the
+definition of done requires a real server-backed MOS grant, real model execution, and
+ZCode-allocation isolation evidence).

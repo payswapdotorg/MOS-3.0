@@ -4530,6 +4530,8 @@ const enUS: Record<string, string> = {
   "settings.modelProvider.startPlan.status.loginRequired": "Log in to view and use your Start Plan",
   "settings.modelProvider.startPlan.status.expired": "Start Plan expired",
   "settings.modelProvider.startPlan.status.noPlan": "No available Start Plan",
+  "settings.modelProvider.startPlan.status.notConfigured": "The billing provider hasn't enabled a Start Plan for this product yet. Once it's enabled, it will appear here — no free allowance has been used up",
+  "settings.modelProvider.startPlan.refresh": "Refresh",
   "settings.modelProvider.startPlan.status.loginExpired":
     "Your login has expired. Please log in again.",
   "settings.modelProvider.startPlan.title": "{provider} - Coding Plan",

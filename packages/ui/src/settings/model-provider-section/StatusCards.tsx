@@ -9,7 +9,7 @@ import {
   type ZCodeAccountAccess,
   type ZCodeProviderAccountAccess,
 } from "@zcode/shared";
-import { InfoIcon, LoaderCircle } from "lucide-react";
+import { InfoIcon, LoaderCircle, RotateCwIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
@@ -221,6 +221,7 @@ export function CodingPlanStatusPanel({
   const billingDiscount = useCodingPlanBillingDiscount();
   const [internalUpgradePlansVisible, setInternalUpgradePlansVisible] = useState(false);
   const [startPlanEntitlementRefreshing, setStartPlanEntitlementRefreshing] = useState(false);
+  const [startPlanAvailabilityRefreshing, setStartPlanAvailabilityRefreshing] = useState(false);
   const upgradePlansVisible = controlledUpgradePlansVisible ?? internalUpgradePlansVisible;
   const setUpgradePlansVisible = onUpgradePlansVisibleChange ?? setInternalUpgradePlansVisible;
   const refreshStartPlanEntitlement = async () => {
@@ -269,6 +270,46 @@ export function CodingPlanStatusPanel({
       ? "chat.error.action.relogin"
       : "settings.modelProvider.startPlan.login"
     : "settings.modelProvider.codingPlan.connect";
+  const disconnectedStartPlanPricingVisible =
+    isStartPlanProvider && (isDisconnected || isNotPurchased);
+  const startPlanCardVisible =
+    startPlanPreviewVisible && disconnectedStartPlanPricingVisible && !upgradePlansVisible;
+  const startPlanPreview = useStartPlanPreview({
+    enabled: startPlanCardVisible,
+  });
+  // Issue #23：区分「未配置」与「未领取」。notPurchased 是服务端已确认的账号事实，
+  // 但预览为 null 且无错误说明计费服务尚未为本产品配置免费计划——两者不得共用
+  // “暂无可用体验套餐”，更不能暗示用户已用完/放弃试用。
+  // 预览仍在加载或读取失败时保持既有文案：后端不可用绝不能渲染成确定的权益缺失。
+  const startPlanNotConfigured =
+    isStartPlanProvider &&
+    isNotPurchased &&
+    startPlanCardVisible &&
+    !startPlanPreview.loading &&
+    startPlanPreview.error === null &&
+    startPlanPreview.preview === null;
+  // Issue #23：Start Plan 未领取/未配置状态下提供显式刷新入口。
+  // 一次点击同时刷新两条链路：预览（绕过 UI 24h/5min 缓存与 service 1h 快照）+
+  // 权益/账号面板（onQuotaResetEntitlementRefresh 即购买完成后的全量刷新链）。
+  // onRetry 是 Host 侧手动刷新的既有入口，作为无面板刷新回调时的兜底。
+  const refreshStartPlanAvailability = async () => {
+    if (startPlanAvailabilityRefreshing) {
+      return;
+    }
+    setStartPlanAvailabilityRefreshing(true);
+    try {
+      await Promise.allSettled([
+        startPlanPreview.refresh({ force: true }),
+        onQuotaResetEntitlementRefresh
+          ? Promise.resolve(onQuotaResetEntitlementRefresh()).then(() => undefined)
+          : onRetry
+            ? Promise.resolve(onRetry()).then(() => undefined)
+            : Promise.resolve(),
+      ]);
+    } finally {
+      setStartPlanAvailabilityRefreshing(false);
+    }
+  };
   const defaultStatusBadgeId = isUnsupported
     ? "settings.modelProvider.codingPlan.status.unsupported"
     : isDisconnected
@@ -287,7 +328,9 @@ export function CodingPlanStatusPanel({
       (isStartPlanProvider && isDisconnected
         ? "settings.modelProvider.startPlan.status.loginRequired"
         : isStartPlanProvider && isNotPurchased
-          ? "settings.modelProvider.startPlan.status.noPlan"
+          ? startPlanNotConfigured
+            ? "settings.modelProvider.startPlan.status.notConfigured"
+            : "settings.modelProvider.startPlan.status.noPlan"
           : defaultStatusBadgeId));
   const statusBadgeMessage = isChecking ? undefined : statusMessage?.trim();
   // 展示文案不是状态权威。Team Plan 交互只读取显式业务原因，
@@ -326,13 +369,6 @@ export function CodingPlanStatusPanel({
     isPurchased &&
     Boolean(purchaseUrl) &&
     Boolean(onOpenPurchase);
-  const disconnectedStartPlanPricingVisible =
-    isStartPlanProvider && (isDisconnected || isNotPurchased);
-  const startPlanCardVisible =
-    startPlanPreviewVisible && disconnectedStartPlanPricingVisible && !upgradePlansVisible;
-  const startPlanPreview = useStartPlanPreview({
-    enabled: startPlanCardVisible,
-  });
   const shouldShowBigModelRegistrationHint =
     isChecking &&
     providerIcon === BIGMODEL_PROVIDER_ID &&
@@ -558,6 +594,24 @@ export function CodingPlanStatusPanel({
         </span>
       ) : null}
       {statusMeta}
+      {isStartPlanProvider && (isNotPurchased || isUnavailable) && !retryVisible && !reloginVisible ? (
+        // Issue #23：Start Plan 未领取/未配置（或无既有重试/重登入口的不可用）状态下
+        // 提供显式刷新。已有 Retry/Relogin 按钮的路径不重复放置第二个同类按钮。
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          onClick={() => void refreshStartPlanAvailability()}
+          disabled={startPlanAvailabilityRefreshing || effectiveViewState.loginLoading}
+        >
+          {startPlanAvailabilityRefreshing ? (
+            <LoaderCircle className="size-3.5 animate-spin" />
+          ) : (
+            <RotateCwIcon className="size-3.5" aria-hidden="true" />
+          )}
+          {intl.formatMessage({ id: "settings.modelProvider.startPlan.refresh" })}
+        </Button>
+      ) : null}
       <CodingPlanStatusActions
         providerName={providerName}
         isDisconnected={actionIsDisconnected}

@@ -4188,6 +4188,8 @@ const koKR: Record<string, string> = {
     "Start Plan을 보고 사용하려면 로그인하세요",
   "settings.modelProvider.startPlan.status.expired": "Start Plan이 만료되었습니다",
   "settings.modelProvider.startPlan.status.noPlan": "사용 가능한 Start Plan이 없습니다",
+  "settings.modelProvider.startPlan.status.notConfigured": "결제 제공자가 아직 이 제품용 Start Plan을 활성화하지 않았습니다. 활성화되면 여기에 표시됩니다. 무료 할당량이 소진된 것이 아닙니다",
+  "settings.modelProvider.startPlan.refresh": "새로 고침",
   "settings.modelProvider.startPlan.status.loginExpired":
     "로그인이 만료되었습니다. 다시 로그인하세요.",
   "settings.modelProvider.startPlan.title": "{provider} - Coding Plan",
