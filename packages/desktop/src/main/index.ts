@@ -590,7 +590,17 @@ async function runBrowserCommandOnView(params: {
 let currentDesktopZoomLevel = 0;
 let currentDesktopWindowSize: DesktopWindowSize | undefined;
 const preloadPath = join(import.meta.dirname, "../preload/index.cjs");
-const settingsFile = join(homedir(), ".zcode", "v2", "setting.json");
+// 启动窗口 bootstrap 读 setting.json：与 settingService 的 resolveUserHomeDir 同一
+// env 优先级（ZCODE_DESKTOP_HOME_DIR > ZCODE_DATA_BASE_DIR > HOME），MOS 的设置
+// 落在 ~/.mos/.zcode/v2，读必须与写在同一处。
+const settingsFile = join(
+  process.env.ZCODE_DESKTOP_HOME_DIR?.trim() ||
+    process.env.ZCODE_DATA_BASE_DIR?.trim() ||
+    homedir(),
+  ".zcode",
+  "v2",
+  "setting.json",
+);
 let activeAppShutdownPolicy = resolveAppShutdownPolicy("normal", process.platform);
 let activeAppShutdownKind: AppShutdownKind | null = null;
 const WINDOWS_AGENT_FORCE_KILL_TIMEOUT_MS = 2_000;

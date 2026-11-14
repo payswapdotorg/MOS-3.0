@@ -6,11 +6,14 @@ import type { Locale } from "@zcode/shared";
 
 /**
  * 与 settingService 的 resolveUserHomeDir 保持同一优先级：独立 Dev 实例用 ZCODE_DESKTOP_HOME_DIR，
- * 否则用 HOME / USERPROFILE。不能直接用 os.homedir()，否则隔离实例会读到真实用户的设置。
+ * MOS/e2e 数据基座重定向用 ZCODE_DATA_BASE_DIR（MOS 的设置落在 ~/.mos/.zcode/v2，
+ * 读必须与写在同一处），否则用 HOME / USERPROFILE。不能直接用 os.homedir()，
+ * 否则隔离实例会读到真实用户的设置。
  */
 function resolveBootstrapHomeDir(): string {
   const envHome =
     process.env.ZCODE_DESKTOP_HOME_DIR?.trim() ||
+    process.env.ZCODE_DATA_BASE_DIR?.trim() ||
     process.env.HOME?.trim() ||
     process.env.USERPROFILE?.trim();
   return envHome && envHome.length > 0 ? envHome : homedir();
