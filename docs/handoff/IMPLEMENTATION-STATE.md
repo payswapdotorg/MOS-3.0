@@ -799,3 +799,46 @@ sourceCommit 0a6fc843; zcodeBaseline 3.18.0; attestation generated; unsigned dec
 resolves. This is the RC the local agent should use for the product-scoped Start Plan
 acceptance per `docs/release/FREE-MODEL-SETUP.md` (Route A activates once the provider
 backend ships; Route B interim fallback available now with its caveats).
+
+### Route B verification record (2026-11-14, sandbox re-established after reset)
+
+Post-reset re-verification plus first end-to-end proof of the Route B interim fallback
+(`docs/release/FREE-MODEL-SETUP.md` §Route B). **Scope honesty: this is NOT Start Plan
+acceptance evidence** — no product-scoped grant, no provider backend; Route A remains
+blocked on the provider per the backend handoff. What was verified, all with real
+requests from the release-engineering sandbox:
+
+- Repo/release state after the sandbox reset: fresh clone confirmed at main `44f51036`
+  (docs record for rc.2); CI green at HEAD (run 43592589522, `MOS CI` success); rc.2
+  release intact (18 assets, prerelease, draft=false); `/releases/latest` still does
+  not serve the RC (API 404, HTML redirect → `/releases`).
+- **B1 direct OpenRouter** (org key from `ops-vault` `credentials.env`, never printed;
+  key valid, free tier, historical usage $0.199): 14 `:free` variants in the live
+  catalog; **real completions verified on 6** (`liquid/lfm-3-1.7b:free`,
+  `nvidia/nemotron-3-ultra-550b-a55b:free`, `nvidia/nemotron-3.5-lightning:free`,
+  `cohere/north-mini-code:free`, `inclusionai/ling-3.2-flash:free`,
+  `baidu/ernie-5.5-flash-preview:free`); **real tool calls verified on 3** (ultra-550b,
+  north-mini-code, ling-3.2-flash — `finish_reason=tool_calls`, correct arguments);
+  total cost $0. Honest negatives: `google/gemma-4-26b-a4b-it:free` returned upstream
+  429 (shared free pool — retry/switch documented); small `max_tokens` budgets make
+  reasoning models emit null content before finishing (use adequate budgets).
+- **B2 FreeLLMAPI gateway** (MIT; upstream project, BYO-keys aggregator of 80+
+  provider free tiers): shallow-clone + `npm install` (801 pkgs, 12s) + headless boot
+  via `tsx src/index.ts` with declarative `FREEAPI_CONFIG_PATH` (admin + OpenRouter key
+  applied on boot); catalog monthly snapshot v2026.11.14 applied (330 models served
+  through the gateway); **real completion through the gateway** (`auto` →
+  `dots-studio/dots-3-note-preview:free`, content matched); **real tool call through
+  the gateway** (`auto` → `nvidia/nemotron-3.5-lightning:free` →
+  `get_weather({"city":"Accra"})`); specific-model selection verified
+  (`north-mini-code` 0.5s, `nemotron-3.5-lightning` 1.2s). Honest negative: unified id
+  `nemotron-3-ultra` failed "no usable provider key" (maps to the NVIDIA platform; no
+  key held) — the BYO-keys boundary works as documented. Windows desktop installer
+  verified published (`FreeLLMAPI-Setup-0.16.29.exe`, 109MB, released 2026-11-14).
+- Setup guide updated with the verified configuration (B1 exact base URL + verified
+  model ids; B2 Windows installer path + unified key flow + declarative config), the
+  shared-pool/BYO-keys/free-tier-limit caveats, and the key-hygiene rule (org key stays
+  in `ops-vault`; never in repo files or evidence records).
+
+The two not-claimable-yet deliverables (real two-allocation proof on one account; real
+Windows desktop acceptance evidence) remain blocked on the provider backend shipping
+the product-scope contract — unchanged by this verification.
