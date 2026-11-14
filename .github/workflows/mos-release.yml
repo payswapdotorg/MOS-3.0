@@ -449,7 +449,6 @@ jobs:
               exit 1
             fi
           fi
-          fi
 
           CREATE_ARGS=(--draft --target "$SOURCE_COMMIT" --title "$TITLE" --notes-file release-notes.md)
           if git rev-parse -q --verify "refs/tags/${TAG}^{commit}" >/dev/null 2>&1; then
