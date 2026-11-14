@@ -127,6 +127,11 @@ export interface StartPlanPreviewConfig {
   planId: string;
   name: string;
   entitlements: StartPlanPreviewEntitlement[];
+  /**
+   * 该预览归属的 API 产品（ACR-0001 P3）。服务端按请求头 X-ZCode-Product-Id 下发；
+   * 缺省表示旧后端的共享 zcode 配置 —— 只有默认产品 zcode 可消费，mos 不得据此推断自己有免费权益。
+   */
+  productId?: string;
 }
 
 export interface ManualClaimPlanEntitlement {
@@ -147,6 +152,8 @@ export interface ManualClaimPlanPreview {
   description: string;
   priority: number;
   entitlements: ManualClaimPlanEntitlement[];
+  /** 归属产品（服务端 product_id，ACR-0001 P3）；缺省 = 旧后端共享配置，仅 zcode 产品可领取。 */
+  productId?: string;
 }
 
 export interface ManualClaimPlanPreviewSnapshot {
@@ -178,10 +185,32 @@ export interface ManualClaimPlanClaimResult {
     userPlanId: string;
     planId: string;
     status: string;
+    /** 领取成功的套餐归属产品；与本产品不符时客户端按失败处理（fail-closed）。 */
+    productId?: string;
     startsAt?: number;
     endsAt?: number;
     entitlements?: ManualClaimPlanClaimEntitlement[];
   };
+}
+
+/**
+ * ACR-0001 P3 —— 计费/权益记录的产品归属裁决（单一实现，preview/claimable/balance 共用）。
+ *
+ * - 声明了归属产品：必须与当前产品 id 完全一致才算本产品记录（未知/他产品 id 一律拒绝）。
+ * - 未声明归属：视为旧后端的共享 zcode 配置，只有默认产品 `zcode` 可以继续消费；
+ *   `mos` 等衍生产产品不得把共享配置推断为自己的权益（handoff W2：不得因 zcode 预览存在而推断 mos 有 grant）。
+ */
+export function isStartPlanRecordOwnedByCurrentProduct(
+  recordProductId: unknown,
+  currentProductId: string,
+): boolean {
+  // 服务端 JSON 未经运行时校验：非字符串值一律按“未声明归属”处理，不做任何推断。
+  const declared =
+    typeof recordProductId === "string" ? recordProductId.trim() : "";
+  if (!declared) {
+    return currentProductId === "zcode";
+  }
+  return declared === currentProductId;
 }
 
 export interface ForceUpdateConfig {

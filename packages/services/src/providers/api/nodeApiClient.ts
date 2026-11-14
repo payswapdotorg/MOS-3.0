@@ -5,6 +5,7 @@ import {
   rewriteZCodeEndpointUrl,
   type ApiClient,
   type ApiRequestInit,
+  type ZCodeProductId,
 } from "@zcode/shared";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
 import { buildZCodeSourceHeaders } from "../sourceHeaders.js";
@@ -33,6 +34,11 @@ interface NodeApiClientOptions {
   resolveZCodeEndpointOrigin?: () => Promise<string> | string;
   /** 宿主内存里的实时界面语言；同步读取，未注入或无值时 X-Client-Language 回退进程 Intl locale。 */
   resolveClientLanguage?: () => string | undefined;
+  /**
+   * API 产品身份（ACR-0001 P2）：默认为构建期派生的 ZCODE_PRODUCT_ID；
+   * 仅供可信 composition / 工程测试注入，产品范围不得来自用户偏好或渲染层输入。
+   */
+  resolveProductId?: () => ZCodeProductId;
 }
 
 const DEFAULT_BUSINESS_UNAUTHORIZED_OBSERVATION_TIMEOUT_MS = 1000;
@@ -150,8 +156,9 @@ function withZCodeEndpointHeaders(
   headers: RequestInit["headers"] | undefined,
   endpointOrigin: string,
   clientLanguage: string | undefined,
+  productId: ZCodeProductId | undefined,
 ): RequestInit["headers"] {
-  const next = new Headers(buildZCodeSourceHeaders({ clientLanguage }));
+  const next = new Headers(buildZCodeSourceHeaders({ clientLanguage, productId }));
   if (headers) {
     new Headers(headers).forEach((value, key) => {
       next.set(key, value);
@@ -169,6 +176,7 @@ function resolveRequestHeaders(
   headers: RequestInit["headers"] | undefined,
   endpointOrigin: string,
   clientLanguage: string | undefined,
+  productId: ZCodeProductId | undefined,
 ): RequestInit["headers"] | undefined {
   if (!isRequestForEndpoint(requestInput, endpointOrigin)) {
     return headers;
@@ -176,7 +184,7 @@ function resolveRequestHeaders(
 
   // ZCode 后端请求以前只有部分业务路径手动补来源头。
   // 统一在 ApiClient 出口按 endpoint origin 注入，避免 OAuth/config/billing/snapshot 等链路遗漏。
-  return withZCodeEndpointHeaders(headers, endpointOrigin, clientLanguage);
+  return withZCodeEndpointHeaders(headers, endpointOrigin, clientLanguage, productId);
 }
 
 export class NodeApiClient implements ApiClient {
@@ -184,6 +192,7 @@ export class NodeApiClient implements ApiClient {
   private readonly resolveAssociatedCredentialRefresh?: NodeApiClientOptions["resolveAssociatedCredentialRefresh"];
   private readonly resolveZCodeEndpointOrigin?: () => Promise<string> | string;
   private readonly resolveClientLanguage?: NodeApiClientOptions["resolveClientLanguage"];
+  private readonly resolveProductId?: NodeApiClientOptions["resolveProductId"];
   private readonly onZcodeJwtInvalid?: (input: string | URL, headers: Headers) => void;
   private readonly isZcodeJwtRequest?: NodeApiClientOptions["isZcodeJwtRequest"];
   private readonly isBusinessUnauthorizedRequest?: NodeApiClientOptions["isBusinessUnauthorizedRequest"];
@@ -211,6 +220,7 @@ export class NodeApiClient implements ApiClient {
       DEFAULT_BUSINESS_UNAUTHORIZED_OBSERVATION_TIMEOUT_MS;
     this.resolveZCodeEndpointOrigin = options.resolveZCodeEndpointOrigin;
     this.resolveClientLanguage = options.resolveClientLanguage;
+    this.resolveProductId = options.resolveProductId;
   }
 
   private async confirmBusinessCredentialInvalid(
@@ -325,6 +335,7 @@ export class NodeApiClient implements ApiClient {
           init?.headers,
           activeEndpointOrigin,
           this.resolveClientLanguage?.(),
+          this.resolveProductId?.(),
         ),
       );
       if (isRequestForEndpoint(requestInput, activeEndpointOrigin)) {

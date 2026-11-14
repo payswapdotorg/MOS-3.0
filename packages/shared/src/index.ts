@@ -54,7 +54,7 @@ export type {
 } from "./locale.js";
 export { ZCODE_VERSION, ZCODE_COMMIT, ZCODE_BUILD_TIME } from "./version.js";
 export type { HelloMessage, HelloAckMessage } from "./handshake.js";
-export type { ArmsRumEnv, ZCodeEnv, ZCodeProductFlavor } from "./env.js";
+export type { ArmsRumEnv, ZCodeEnv, ZCodeProductFlavor, ZCodeProductId } from "./env.js";
 export type { RemoteAssetInstallMode } from "./remoteAssetInstallMode.js";
 export type {
   RemoteResourcePackageId,
@@ -87,6 +87,8 @@ export {
 export {
   ZCODE_ENV,
   ZCODE_PRODUCT_FLAVOR,
+  ZCODE_PRODUCT_ID,
+  ZCODE_PRODUCT_ID_HTTP_HEADER,
   ZCODE_APP_VERSION_ENV,
   ZCODE_BUILD_COMMIT_ID_ENV,
   ZCODE_CLIENT_LANGUAGE_ENV,
@@ -95,8 +97,10 @@ export {
   ZCODE_TELEMETRY_REPORT_ENDPOINT,
   ZCODE_AUTO_UPDATE_ENABLED,
   mapZCodeEnvToArmsRumEnv,
+  isRegisteredZCodeProductId,
   normalizeZCodeEnv,
   normalizeZCodeProductFlavor,
+  resolveZCodeProductId,
 } from "./env.js";
 export * from "./errors.js";
 export {

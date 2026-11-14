@@ -1,4 +1,5 @@
-import type { UsageEntitlementSnapshot } from "@zcode/shared";
+import type { UsageEntitlementSnapshot, ZCodeProductId } from "@zcode/shared";
+import { ZCODE_PRODUCT_ID } from "@zcode/shared";
 
 // 旧缓存可能由 quota level 合成订阅；切换命名空间避免升级后恢复伪权益。
 const USAGE_ENTITLEMENT_CACHE_PREFIX = "zcode:usage-entitlement:subscription-v2:";
@@ -20,14 +21,20 @@ function getLocalStorage(): Storage | null {
 export function buildUsageEntitlementCacheKey(params: {
   providerId: string;
   providerFingerprint: string;
+  /**
+   * ACR-0001 P4：缓存键的产品范围维度；缺省为构建期派生的当前产品身份（不可由
+   * 用户偏好/渲染层输入选择）。同账号下 zcode 与 mos 的权益缓存永不互读。
+   */
+  productId?: ZCodeProductId;
 }): string {
   const providerId = params.providerId.trim();
   const providerFingerprint = params.providerFingerprint.trim();
   if (!providerId || !providerFingerprint) {
     return "";
   }
+  const productId = params.productId ?? ZCODE_PRODUCT_ID;
 
-  return `${USAGE_ENTITLEMENT_CACHE_PREFIX}${providerId}:${providerFingerprint}`;
+  return `${USAGE_ENTITLEMENT_CACHE_PREFIX}${productId}:${providerId}:${providerFingerprint}`;
 }
 
 export function readCachedUsageEntitlementSnapshot(params: {

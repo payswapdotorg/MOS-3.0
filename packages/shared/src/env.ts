@@ -42,6 +42,27 @@ export const ZCODE_PRODUCT_FLAVOR = normalizeZCodeProductFlavor(
   typeof __ZCODE_PRODUCT_FLAVOR__ !== "undefined" ? __ZCODE_PRODUCT_FLAVOR__ : undefined,
   ZCODE_ENV,
 );
+
+// ── API 产品身份（计费/权益域）：与桌面打包身份、设备身份是三个不同的轴 ──
+// ACR-0001：产品 id 只能由可信的构建期 composition（product flavor define）派生，
+// 渲染层表单、用户偏好与任意运行时环境值都不得选择其他产品的权益。
+/** 已注册的 API 产品身份；新增 ZCode 衍生产品 = 在此注册 id + flavor 映射，无需改写订阅服务。 */
+export type ZCodeProductId = "zcode" | "mos";
+/** 计费/权益请求头的产品范围字段（ACR-0001 P2：scope 选择，不是授权）。 */
+export const ZCODE_PRODUCT_ID_HTTP_HEADER = "X-ZCode-Product-Id" as const;
+
+export function isRegisteredZCodeProductId(
+  value: string | undefined | null,
+): value is ZCodeProductId {
+  return value === "zcode" || value === "mos";
+}
+
+/** flavor → 产品 id：mos flavor → `mos`；production/preview/未注入（web、CLI、测试）→ `zcode`。 */
+export function resolveZCodeProductId(flavor: ZCodeProductFlavor): ZCodeProductId {
+  return flavor === "mos" ? "mos" : "zcode";
+}
+
+export const ZCODE_PRODUCT_ID: ZCodeProductId = resolveZCodeProductId(ZCODE_PRODUCT_FLAVOR);
 export const ZCODE_APP_VERSION_ENV = "ZCODE_APP_VERSION" as const;
 export const ZCODE_BUILD_COMMIT_ID_ENV = "ZCODE_BUILD_COMMIT_ID" as const;
 /**

@@ -68,6 +68,11 @@ import type {
   ZCodeModelContextBudgetStrategy,
   DynamicWorkflowClientConfig,
 } from "@zcode/shared";
+import {
+  isStartPlanRecordOwnedByCurrentProduct,
+  ZCODE_PRODUCT_ID,
+} from "@zcode/shared";
+import type { ZCodeProductId } from "@zcode/shared";
 import type { ModelSelectionView } from "@zcode/provider";
 import type { OffPeakClientConfig } from "./codingPlanSubscription.js";
 import {
@@ -122,6 +127,8 @@ interface ManualClaimPlanPreviewPayload {
   server_time?: number;
   plans?: Array<{
     plan_id?: string;
+    // ACR-0001 P2/P3：服务端声明的归属产品；缺省 = 旧后端共享配置（仅 zcode 可消费）。
+    product_id?: string;
     name?: string;
     description?: string;
     priority?: number;
@@ -145,6 +152,7 @@ interface ManualClaimPlanClaimPayload {
   plan?: {
     user_plan_id?: string;
     plan_id?: string;
+    product_id?: string;
     status?: string;
     starts_at?: number;
     ends_at?: number;
@@ -167,7 +175,7 @@ interface ZCodeClientConfigEnvelope {
           codingPlanBillingDiscount?: CodingPlanBillingDiscountConfig;
           codingPlanStaticProducts?: CodingPlanStaticProductsConfig;
           codingPlanStaticTeamProducts?: CodingPlanStaticTeamProductsConfig;
-          startPlanPreview?: StartPlanPreviewConfig | null;
+          startPlanPreview?: (StartPlanPreviewConfig & { productId?: string }) | null;
           // 闲时任务灰度（服务端）：内层字段服务端为 snake_case，与外层 camelCase 混排。
           offPeak?: {
             enable_offpeak_task?: boolean;
@@ -190,6 +198,11 @@ interface BigModelCodingPlanSubscriptionProviderOptions {
   loadOAuthAccountMaterial: (family: "zai" | "bigmodel") => Promise<OAuthAccountMaterial | null>;
   credentialService: Pick<ICredentialService, "load">;
   resolveOffPeakModelSelectionView?: () => Promise<ModelSelectionView>;
+  /**
+   * ACR-0001 P1/P4：当前 API 产品身份。缺省为构建期派生的 ZCODE_PRODUCT_ID；
+   * 仅供可信 composition / 工程测试注入，决定 preview/claim 的产品范围与配置缓存键。
+   */
+  resolveProductId?: () => ZCodeProductId;
 }
 
 interface TeamPlanProjectApiKeyPrewarmStatus {
@@ -221,6 +234,7 @@ export class BigModelCodingPlanSubscriptionProvider {
   private readonly loadOAuthAccountMaterial: BigModelCodingPlanSubscriptionProviderOptions["loadOAuthAccountMaterial"];
   protected readonly credentialService: Pick<ICredentialService, "load">;
   private readonly resolveOffPeakModelSelectionView?: () => Promise<ModelSelectionView>;
+  private readonly resolveProductId: () => ZCodeProductId;
   private clientConfigKey = "";
   private clientConfigSnapshot: ZCodeClientConfigEnvelope | null = null;
   private clientConfigSnapshotExpiresAt = 0;
@@ -231,6 +245,12 @@ export class BigModelCodingPlanSubscriptionProvider {
     this.loadOAuthAccountMaterial = options.loadOAuthAccountMaterial;
     this.credentialService = options.credentialService;
     this.resolveOffPeakModelSelectionView = options.resolveOffPeakModelSelectionView;
+    this.resolveProductId = options.resolveProductId ?? (() => ZCODE_PRODUCT_ID);
+  }
+
+  /** 当前产品身份（ACR-0001）：由构建期 composition 决定，不随用户偏好/渲染层输入变化。 */
+  protected currentProductId(): ZCodeProductId {
+    return this.resolveProductId();
   }
 
   // ─────────── family 维度抽象（供 ZaiCodingPlanSubscriptionProvider 覆盖）───────────
@@ -274,7 +294,7 @@ export class BigModelCodingPlanSubscriptionProvider {
 
   async getStartPlanPreview(): Promise<StartPlanPreviewConfig | null> {
     const payload = await this.getClientConfigs();
-    return unwrapClientConfigStartPlanPreview(payload);
+    return unwrapClientConfigStartPlanPreview(payload, this.currentProductId());
   }
 
   async getManualClaimPlanPreviews(): Promise<ManualClaimPlanPreviewSnapshot> {
@@ -301,12 +321,18 @@ export class BigModelCodingPlanSubscriptionProvider {
     }
     const data = payload.data;
     const serverTime = readServerTimeMilliseconds(data.server_time);
+    // ACR-0001 P3：每个可领取 plan 携带归属产品（product_id）；
+    // 未声明归属的旧后端共享配置只对默认产品 zcode 可见，mos 不据此展示领取入口。
+    const productId = this.currentProductId();
     const plans = (data.plans ?? []).flatMap((plan) => {
       const planId = plan.plan_id?.trim() ?? "";
       if (!planId) return [];
+      if (!isStartPlanRecordOwnedByCurrentProduct(plan.product_id, productId)) return [];
+      const planProductId = typeof plan.product_id === "string" ? plan.product_id.trim() : "";
       return [
         {
           planId,
+          ...(planProductId ? { productId: planProductId } : {}),
           name: plan.name?.trim() || planId,
           description: plan.description?.trim() ?? "",
           priority: Number.isFinite(plan.priority) ? (plan.priority ?? 0) : 0,
@@ -342,6 +368,13 @@ export class BigModelCodingPlanSubscriptionProvider {
     if (!token) {
       return { success: false, code: 401, message: "" };
     }
+    // ACR-0001 P2：非默认产品在 claim body 显式声明 product_id（zcode 保持与现状字节一致，
+    // 零回归风险）；服务端迁移期语义：缺省 product_id === zcode。
+    const productId = this.currentProductId();
+    const claimBody: Record<string, string> = { plan_id: request.planId };
+    if (productId !== "zcode") {
+      claimBody.product_id = productId;
+    }
     const payload = await readCodingPlanApiJson<
       Omit<RemoteEnvelope<ManualClaimPlanClaimPayload>, "code"> & { code?: number | string }
     >(
@@ -356,7 +389,7 @@ export class BigModelCodingPlanSubscriptionProvider {
           "X-ZCode-App-Version": ZCODE_VERSION,
           "X-Platform": resolveClientPlatformKey(),
         },
-        body: JSON.stringify({ plan_id: request.planId }),
+        body: JSON.stringify(claimBody),
         timeoutMs: REQUEST_TIMEOUT_MS,
       },
     );
@@ -382,6 +415,23 @@ export class BigModelCodingPlanSubscriptionProvider {
       };
     }
     const plan = payload.data.plan;
+    // ACR-0001 P3：领取结果必须归属当前产品；声明了其他/未知产品时按失败处理（fail-closed），
+    // 不得把他产品 grant 展示为本产品领取成功。
+    const claimedProductId =
+      typeof plan.product_id === "string" ? plan.product_id.trim() : "";
+    if (claimedProductId && !isStartPlanRecordOwnedByCurrentProduct(claimedProductId, productId)) {
+      log.warn(undefined, "claim 结果产品归属不匹配，按失败处理", {
+        claimedProductId,
+        currentProductId: productId,
+        planId: request.planId,
+      });
+      return {
+        success: false,
+        code,
+        message: "start_plan_product_scope_mismatch",
+        ...(serverTime === undefined ? {} : { serverTime }),
+      };
+    }
     return {
       success: true,
       code,
@@ -391,6 +441,7 @@ export class BigModelCodingPlanSubscriptionProvider {
         userPlanId: plan.user_plan_id?.trim() ?? "",
         planId: plan.plan_id?.trim() || request.planId,
         status: plan.status?.trim() ?? "",
+        ...(claimedProductId ? { productId: claimedProductId } : {}),
         ...(Number.isFinite(plan.starts_at) ? { startsAt: plan.starts_at } : {}),
         ...(Number.isFinite(plan.ends_at) ? { endsAt: plan.ends_at } : {}),
         entitlements: (plan.entitlements ?? []).flatMap((entitlement) => {
@@ -842,7 +893,9 @@ export class BigModelCodingPlanSubscriptionProvider {
     const url = resolveCodingPlanClientConfigUrl(process.env);
     url.searchParams.set("app_version", ZCODE_VERSION);
     url.searchParams.set("platform", resolveClientPlatformKey());
-    const key = JSON.stringify([url.toString(), authorization]);
+    // ACR-0001 P4：配置缓存键必须包含产品范围 —— 同一 URL+JWT 下 zcode 与 mos 的
+    // client/configs（含 startPlanPreview）不同，缓存不得跨产品复用。
+    const key = JSON.stringify([url.toString(), authorization, this.currentProductId()]);
     // 登录、换号、退出或切换 endpoint 后不能沿用上一上下文的套餐配置。
     if (this.clientConfigKey !== key) {
       this.clientConfigKey = key;
@@ -1454,12 +1507,19 @@ function unwrapClientConfigBillingDiscount(
 
 function unwrapClientConfigStartPlanPreview(
   payload: ZCodeClientConfigEnvelope,
+  productId: ZCodeProductId,
 ): StartPlanPreviewConfig | null {
   if (payload.code !== undefined && payload.code !== 0) {
     throw new Error(payload.msg?.trim() || "ZCode client config request failed");
   }
   const preview = payload.data?.configs?.startPlanPreview;
   if (!preview) {
+    return null;
+  }
+  // ACR-0001 P3：预览归属裁决 —— 声明了其他/未知产品，或（非默认产品下）未声明归属的
+  // 旧后端共享配置，都不得作为本产品的 Start Plan 预览（handoff W2：mos 不得因 zcode
+  // 预览存在而推断自己有 grant）。返回 null 即上层不展示免费领取入口。
+  if (!isStartPlanRecordOwnedByCurrentProduct(preview.productId, productId)) {
     return null;
   }
   if (
@@ -1472,6 +1532,9 @@ function unwrapClientConfigStartPlanPreview(
   return {
     planId: preview.planId,
     name: preview.name,
+    ...(typeof preview.productId === "string" && preview.productId.trim()
+      ? { productId: preview.productId.trim() }
+      : {}),
     entitlements: preview.entitlements.filter(isValidStartPlanPreviewEntitlement),
   };
 }

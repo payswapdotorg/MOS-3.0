@@ -7,6 +7,7 @@ import {
   ZCODE_ENV,
   ZCODE_SOURCE_HEADERS,
   ZCODE_VERSION,
+  type ZCodeProductId,
 } from "@zcode/shared";
 import { getAppConfigDir } from "../paths.js";
 
@@ -18,6 +19,8 @@ interface ZCodeSourceHeaderOptions {
   clientLanguage?: string;
   clientTimezone?: string;
   osVersion?: string;
+  /** ACR-0001 P2：产品身份，缺省为构建期派生的 ZCODE_PRODUCT_ID（不可由用户偏好选择）。 */
+  productId?: ZCodeProductId;
   platform?: NodeJS.Platform;
   releaseChannel?: string;
 }
@@ -75,6 +78,7 @@ export function buildZCodeSourceHeaders(
     normalizePrintableHeaderValue(options.clientTimezone) ?? resolveClientTimezone();
   const osVersion = normalizePrintableHeaderValue(options.osVersion ?? readOsVersion());
   const deviceMid = readExistingDeviceMid();
+  const productId = options.productId;
 
   return buildZCodeSourceHeadersFromContext({
     appVersion,
@@ -83,6 +87,7 @@ export function buildZCodeSourceHeaders(
     clientTimezone,
     deviceMid,
     osVersion,
+    ...(productId ? { productId } : {}),
     platform,
     releaseChannel,
     sourceTitle: "electron",

@@ -1,4 +1,5 @@
 import type { StartPlanPreviewConfig } from "@zcode/shared";
+import { ZCODE_PRODUCT_ID } from "@zcode/shared";
 import { useCallback, useEffect, useState } from "react";
 import { useOptionalServices } from "@/hooks/useServices.js";
 import { logger } from "@/logger.js";
@@ -11,23 +12,75 @@ interface StartPlanPreviewState {
 }
 
 const START_PLAN_PREVIEW_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-let previewCache: { preview: StartPlanPreviewConfig | null; expiresAt: number } | null = null;
-let previewRequest: Promise<StartPlanPreviewConfig | null> | null = null;
+
+/**
+ * ACR-0001 P4 —— 预览缓存按 service 实例 + 产品范围隔离。
+ * service 实例随登录/换号重建（hook 已依赖 service 身份），产品范围随构建期身份派生；
+ * 旧实现是模块级全局缓存，换号或换产品后会串用上一下上下文的 Start Plan 预览。
+ */
+const previewCacheByService = new WeakMap<
+  object,
+  { productId: string; preview: StartPlanPreviewConfig | null; expiresAt: number }
+>();
+const previewRequestByService = new WeakMap<
+  object,
+  Promise<StartPlanPreviewConfig | null>
+>();
+// 测试辅助函数的默认槽位（无 service 引用时读写）。
+let fallbackPreviewCache: {
+  productId: string;
+  preview: StartPlanPreviewConfig | null;
+  expiresAt: number;
+} | null = null;
+
+function readPreviewCache(service: object | null): {
+  preview: StartPlanPreviewConfig | null;
+} | null {
+  if (service && previewCacheByService.has(service)) {
+    const entry = previewCacheByService.get(service)!;
+    return entry.productId === ZCODE_PRODUCT_ID && entry.expiresAt > Date.now()
+      ? entry
+      : null;
+  }
+  if (!service && fallbackPreviewCache) {
+    return fallbackPreviewCache.productId === ZCODE_PRODUCT_ID &&
+      fallbackPreviewCache.expiresAt > Date.now()
+      ? fallbackPreviewCache
+      : null;
+  }
+  return null;
+}
+
+function writePreviewCache(
+  service: object | null,
+  preview: StartPlanPreviewConfig | null,
+): void {
+  const entry = {
+    productId: ZCODE_PRODUCT_ID,
+    preview,
+    expiresAt: Date.now() + START_PLAN_PREVIEW_CACHE_TTL_MS,
+  };
+  if (service) previewCacheByService.set(service, entry);
+  else fallbackPreviewCache = entry;
+}
 
 export function useStartPlanPreview(options?: { enabled?: boolean }) {
   const services = useOptionalServices();
   const service = services?.codingPlanSubscriptionService;
   const enabled = options?.enabled !== false;
-  const [state, setState] = useState<StartPlanPreviewState>({
-    preview: previewCache?.preview ?? null,
-    loading: enabled && Boolean(service) && !previewCache,
-    error: null,
+  const [state, setState] = useState<StartPlanPreviewState>(() => {
+    const cached = readPreviewCache(service ?? null);
+    return {
+      preview: cached?.preview ?? null,
+      loading: enabled && Boolean(service) && !cached,
+      error: null,
+    };
   });
 
   const refresh = useCallback(async () => {
     if (!enabled) {
       setState({
-        preview: previewCache?.preview ?? null,
+        preview: readPreviewCache(service ?? null)?.preview ?? null,
         loading: false,
         error: null,
       });
@@ -81,41 +134,41 @@ export function useStartPlanPreview(options?: { enabled?: boolean }) {
 }
 
 export function clearStartPlanPreviewCacheForTest() {
-  previewCache = null;
-  previewRequest = null;
+  fallbackPreviewCache = null;
+  // WeakMap 无法整体清空；逐 service 记录由 GC 与产品/身份守卫失效。
 }
 
 export function primeStartPlanPreviewCacheForTest(
   preview: StartPlanPreviewConfig | null,
 ) {
-  previewCache = {
+  fallbackPreviewCache = {
+    productId: ZCODE_PRODUCT_ID,
     preview,
     expiresAt: Date.now() + START_PLAN_PREVIEW_CACHE_TTL_MS,
   };
-  previewRequest = null;
 }
 
 async function loadStartPlanPreview(
   service: NonNullable<ReturnType<typeof useOptionalServices>>["codingPlanSubscriptionService"],
 ): Promise<StartPlanPreviewConfig | null> {
-  const now = Date.now();
-  if (previewCache && previewCache.expiresAt > now) {
-    return previewCache.preview;
+  if (!service) return null;
+  const cached = readPreviewCache(service);
+  if (cached) {
+    return cached.preview;
   }
-  if (previewRequest) {
-    return previewRequest;
+  const inflight = previewRequestByService.get(service);
+  if (inflight) {
+    return inflight;
   }
 
   // 远端配置一天内变化频率低，未登录设置页可能反复挂载，合并请求避免重复打 client/configs。
-  previewRequest = service.getStartPlanPreview();
+  const request = service.getStartPlanPreview();
+  previewRequestByService.set(service, request);
   try {
-    const preview = await previewRequest;
-    previewCache = {
-      preview,
-      expiresAt: now + START_PLAN_PREVIEW_CACHE_TTL_MS,
-    };
+    const preview = await request;
+    writePreviewCache(service, preview);
     return preview;
   } finally {
-    previewRequest = null;
+    previewRequestByService.delete(service);
   }
 }
