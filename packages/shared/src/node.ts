@@ -21,6 +21,72 @@ export function resolveMuseCodeSettingsFilePath(env: NodeJS.ProcessEnv = process
 }
 
 /**
+ * Muse 会话映射文件（MOS sessionId → muse sessionId；PR #27 评审 R2）：
+ * 与 settings 同目录；env 覆盖约定供测试注入。文件由 bootstrap 端口读写
+ * （原子写、宽容读），跨 MOS 重启保持会话连续性。
+ */
+export const MUSE_CODE_SESSIONS_FILE_ENV = "ZCODE_MUSE_CODE_SESSIONS_FILE";
+
+export function defaultMuseCodeSessionsFilePath(home: string = homedir()): string {
+  return join(home, ".zcode", "v2", "muse-code-sessions.json");
+}
+
+export function resolveMuseCodeSessionsFilePath(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env[MUSE_CODE_SESSIONS_FILE_ENV]?.trim();
+  return override && override.length > 0 ? override : defaultMuseCodeSessionsFilePath();
+}
+
+/**
+ * Muse 子进程环境允许清单（PR #27 评审 R5）：delegated agent 的进程树只继承
+ * 进程启动与 Muse 自身运行所需的变量 + MUSE_ 前缀透传（muse 官方 env 约定）。
+ * Host 的其它集成凭据（GITHUB_TOKEN / OPENROUTER_API_KEY / *_SECRET 等）绝不进入。
+ * 登录态保持：muse CLI 的凭据存于其自身配置目录（USERPROFILE/APPDATA/HOME 覆盖），
+ * 不需要 MOS 传递任何凭据材料（ACR-0002 凭据红线）。
+ */
+export const MUSE_CHILD_ENV_ALLOWLIST: readonly string[] = [
+  // 进程启动/查找可执行
+  "PATH",
+  "PATHEXT",
+  // Windows 进程基础（缺失会导致 spawn/网络栈异常）
+  "SystemRoot",
+  "SystemDrive",
+  "ComSpec",
+  // 临时目录（--prompt-file 临时文件由 MOS 父进程创建，子进程也可能使用）
+  "TEMP",
+  "TMP",
+  // 用户配置目录（muse CLI 登录态/配置的存放位置——保持既有订阅登录的关键）
+  "HOME",
+  "USERPROFILE",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "PROGRAMDATA",
+  // 区域/显示（CLI 输出编码稳定性）
+  "LANG",
+  "LC_ALL",
+  "TZ",
+  "TERM",
+  "NO_COLOR",
+];
+
+/**
+ * 构造 Muse 子进程环境：仅复制允许清单内且值非空的变量，外加所有 `MUSE_` 前缀
+ * 变量（官方 env 约定 + 测试 fixture 注入）。其余 Host 环境变量一律不继承。
+ */
+export function buildMuseChildEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const childEnv: NodeJS.ProcessEnv = {};
+  for (const key of MUSE_CHILD_ENV_ALLOWLIST) {
+    const value = env[key];
+    if (typeof value === "string" && value.length > 0) childEnv[key] = value;
+  }
+  for (const [key, value] of Object.entries(env)) {
+    if (key.startsWith("MUSE_") && typeof value === "string" && value.length > 0) {
+      childEnv[key] = value;
+    }
+  }
+  return childEnv;
+}
+
+/**
  * Windows PATH 解析：只返回可直接 spawn 的可执行文件（.exe/.com）。
  * .cmd/.bat npm shim 需要经 cmd.exe 解析，MOS 不为其打开 shell（Issue #24 / ACR-0002；
  * Host 探测与 CLI 执行端口共用同一判定，找不到返回 null）。

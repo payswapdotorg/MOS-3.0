@@ -4,11 +4,13 @@ import { isAbsolute } from "node:path";
 import {
   DEFAULT_MUSE_CODE_BACKEND_SETTINGS,
   museCodeBackendSettingsSchema,
+  selectMuseExecutionSurface,
   type MuseCodeBackendSettings,
   type MuseCodeCliStatus,
 } from "@zcode/shared";
 import {
   atomicWritePrivateTextFile,
+  buildMuseChildEnv,
   resolveMuseCodeSettingsFilePath,
   resolveWindowsExecutableOnPath,
 } from "@zcode/shared/node";
@@ -65,8 +67,10 @@ export function createMuseCodeService(deps: CreateMuseCodeServiceDeps = {}): IMu
   const logger = deps.logger;
   const settingsPath = deps.settingsPath ?? (deps.resolveSettingsPath ?? resolveMuseCodeSettingsFilePath)(env);
   const runProbe: ProbeRunner =
-    deps.runProbe ?? ((executable, args, timeoutMs) => runProcessProbe(executable, args, timeoutMs));
-  const launchDetached = deps.launchDetached ?? defaultLaunchDetached;
+    deps.runProbe ??
+    ((executable, args, timeoutMs) => runProcessProbe(executable, args, timeoutMs, env));
+  const launchDetached =
+    deps.launchDetached ?? ((executable, args) => defaultLaunchDetached(executable, args, env));
   let cachedStatus: MuseCodeCliStatus | undefined;
 
   const readSettings = async (): Promise<MuseCodeBackendSettings> => {
@@ -163,7 +167,13 @@ export function createMuseCodeService(deps: CreateMuseCodeServiceDeps = {}): IMu
       target && deps.supportsBackendCapability
         ? await deps.supportsBackendCapability(target).catch(() => false)
         : false;
-    return { backendSupported, settings, status: cachedStatus };
+    // 执行面预判（R1；展示用途）：与 bootstrap 端口同一判定函数。版本未知/探针失败
+    // → muse-exec（回退面）。逐轮真相由端口 result.surface 回传。
+    const executionSurface = selectMuseExecutionSurface({
+      cliVersion: cachedStatus.version,
+      settings,
+    });
+    return { backendSupported, executionSurface, settings, status: cachedStatus };
   };
 
   return {
@@ -290,6 +300,7 @@ async function runProcessProbe(
   executable: string,
   args: readonly string[],
   timeoutMs: number,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<MuseCodeProbeResult> {
   return await new Promise<MuseCodeProbeResult>((resolve) => {
     let stdout = "";
@@ -300,6 +311,9 @@ async function runProcessProbe(
       child = spawn(executable, [...args], {
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
+        // 环境隔离（PR #27 评审 R5）：探针子进程与执行端口同策略——允许清单构造，
+        // Host 集成凭据不外流；登录态经 USERPROFILE/APPDATA/HOME 保持。
+        env: buildMuseChildEnv(env),
       });
     } catch (error) {
       resolve({
@@ -333,12 +347,14 @@ async function runProcessProbe(
   });
 }
 
-function defaultLaunchDetached(executable: string, args: readonly string[]): boolean {
+function defaultLaunchDetached(executable: string, args: readonly string[], env: NodeJS.ProcessEnv = process.env): boolean {
   try {
     const child = spawn(executable, [...args], {
       detached: true,
       stdio: "ignore",
       windowsHide: true,
+      // 环境隔离（R5）：与探针/执行端口同策略。
+      env: buildMuseChildEnv(env),
     });
     child.unref();
     return child.pid !== undefined;

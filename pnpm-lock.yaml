@@ -318,6 +318,9 @@ importers:
 
   apps/zcode-cli/packages/bootstrap:
     dependencies:
+      '@muse-code/sdk':
+        specifier: 1.4.20
+        version: 1.4.20(@types/node@24.12.2)
       '@zcode/adapters':
         specifier: workspace:*
         version: link:../adapters
@@ -4057,6 +4060,15 @@ packages:
   '@mswjs/interceptors@0.41.3':
     resolution: {integrity: sha512-cXu86tF4VQVfwz8W1SPbhoRyHJkti6mjH/XJIxp40jhO4j2k1m4KYrEykxqWPkFF3vrK4rgQppBh//AwyGSXPA==}
     engines: {node: '>=18'}
+
+  '@muse-code/sdk@1.4.20':
+    resolution: {integrity: sha512-eEdVdqof0Ffpo8NYRipIfgsG7vldX8LNMmbXn0rTrYcK85D1HeDYV0TrNmGpVIwS5wLPcZgHXgGUX5GJ2Tb24g==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@types/node': '>=20'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
 
   '@napi-rs/canvas-android-arm64@0.1.100':
     resolution: {integrity: sha512-hjhCKhntPv9+t4ckHymdx0phYNcVW+GKQR6Lzw2zE+pOVjOplSmtx9nNNknTjbEDLcuLZqA1y8ufKg1XfgftzQ==}
@@ -15748,6 +15760,10 @@ snapshots:
       is-node-process: 1.2.0
       outvariant: 1.4.3
       strict-event-emitter: 0.5.1
+
+  '@muse-code/sdk@1.4.20(@types/node@24.12.2)':
+    optionalDependencies:
+      '@types/node': 24.12.2
 
   '@napi-rs/canvas-android-arm64@0.1.100':
     optional: true

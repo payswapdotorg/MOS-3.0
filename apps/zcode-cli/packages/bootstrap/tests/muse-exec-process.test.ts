@@ -7,9 +7,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MuseExecStreamEvent } from "@zcode/contracts";
 import type { MuseCodeBackendSettings } from "@zcode/shared";
 import { DEFAULT_MUSE_CODE_BACKEND_SETTINGS } from "@zcode/shared";
-import { createMuseExecutionPort } from "../src/muse-code/muse-exec-process.js";
-// muse exec 子进程端口的契约测试（Issue #24 / ACR-0002）：
-// 用 mock CLI（fixtures/muse-code/mock-muse-cli.mjs）验证 spawn/流式/取消/超时/退出码语义。
+import { createMuseExecProcessPort } from "../src/muse-code/muse-exec-process.js";
+import type { MuseSessionMap, MuseSessionStore } from "../src/muse-code/muse-session-store.js";
+// muse exec 子进程端口的契约测试（Issue #24 / ACR-0002；PR #27 评审修订 R2–R6）：
+// 用 mock CLI（fixtures/muse-code/mock-muse-cli.mjs）验证 spawn/流式/取消/超时/退出码语义、
+// workspace 收敛、环境允许清单、审批姿态旗标、会话续接与审批/提问可见性。
 // 这是 mock 契约证据，不是真实 Meta CLI 的执行证据（AGENTS.md §7：contract-tested）。
 
 const FIXTURE_URL = new URL("./fixtures/muse-code/mock-muse-cli.mjs", import.meta.url);
@@ -21,10 +23,26 @@ afterEach(async () => {
   }
 });
 
+function createMemorySessionStore(initial: MuseSessionMap = {}): MuseSessionStore & {
+  map: () => MuseSessionMap;
+} {
+  let current: MuseSessionMap = { ...initial };
+  return {
+    map: () => current,
+    async read() {
+      return { ...current };
+    },
+    async write(next) {
+      current = { ...next };
+    },
+  };
+}
+
 async function prepareFixture(env: NodeJS.ProcessEnv = {}): Promise<{
   env: NodeJS.ProcessEnv;
   settings: MuseCodeBackendSettings;
   workdir: string;
+  fixturePath: string;
 }> {
   const workdir = await mkdtemp(join(tmpdir(), "muse-exec-test-"));
   cleanups.push(() => rm(workdir, { force: true, recursive: true }));
@@ -33,8 +51,9 @@ async function prepareFixture(env: NodeJS.ProcessEnv = {}): Promise<{
   await chmod(fixtureCopy, 0o755);
   return {
     env,
-    settings: { ...DEFAULT_MUSE_CODE_BACKEND_SETTINGS },
+    settings: { ...DEFAULT_MUSE_CODE_BACKEND_SETTINGS, executablePath: fixtureCopy },
     workdir,
+    fixturePath: fixtureCopy,
   };
 }
 
@@ -43,17 +62,19 @@ function runPort(input: {
   settings: MuseCodeBackendSettings;
   workdir: string;
   prompt?: string;
+  sessionId?: string;
+  workspaceRoot?: string;
   timeoutMs?: number;
   signal?: AbortSignal;
   maxModelSteps?: number;
   executablePath?: string;
+  sessionStore?: MuseSessionStore;
   onEvent?: (event: MuseExecStreamEvent) => void;
 }) {
-  const port = createMuseExecutionPort({
+  const port = createMuseExecProcessPort({
     env: input.env,
     readSettings: async () => input.settings,
-    // 绝对路径直连 mock fixture（不依赖 PATH；Windows 由在机验证覆盖）。
-    resolveExecutable: () => join(input.workdir, "mock-muse-cli.mjs"),
+    sessionStore: input.sessionStore ?? createMemorySessionStore(),
   });
   const events: MuseExecStreamEvent[] = [];
   return {
@@ -61,8 +82,10 @@ function runPort(input: {
     run: port.runMuseExec(
       {
         prompt: input.prompt ?? "refactor the parser module",
+        sessionId: input.sessionId ?? "sess_muse_test",
         signal: input.signal ?? new AbortController().signal,
         workingDirectory: input.workdir,
+        workspaceRoot: input.workspaceRoot ?? input.workdir,
         ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
         ...(input.maxModelSteps !== undefined ? { maxModelSteps: input.maxModelSteps } : {}),
         ...(input.executablePath !== undefined ? { executablePath: input.executablePath } : {}),
@@ -77,7 +100,7 @@ function runPort(input: {
   };
 }
 
-describe("createMuseExecutionPort", () => {
+describe("createMuseExecProcessPort", () => {
   it("streams mapped events and returns a clean exit settlement", async () => {
     const ctx = await prepareFixture();
     const { events, run } = runPort({ ...ctx, maxModelSteps: 42 });
@@ -85,7 +108,9 @@ describe("createMuseExecutionPort", () => {
     expect(result.exitCode).toBe(0);
     expect(result.timedOut).toBe(false);
     expect(result.cancelled).toBe(false);
-    // system / result 两个未映射类型必须计数。
+    expect(result.surface).toBe("muse-exec");
+    expect(result.approvalPosture).toBe("fail-closed");
+    // system / result / session_* 等未映射类型必须计数。
     expect(result.unknownEventCount).toBeGreaterThanOrEqual(2);
     const kinds = events.map((event) => event.kind);
     expect(kinds).toContain("text_delta");
@@ -114,6 +139,118 @@ describe("createMuseExecutionPort", () => {
     expect(await readFile(join(ctx.workdir, "muse-fixture-marker.txt"), "utf8")).toContain(
       "written-by-muse",
     );
+  });
+
+  it("rejects before spawn when the working directory escapes the workspace root (R4)", async () => {
+    const ctx = await prepareFixture();
+    const outside = await mkdtemp(join(tmpdir(), "muse-outside-"));
+    cleanups.push(() => rm(outside, { force: true, recursive: true }));
+    await expect(
+      runPort({ ...ctx, workdir: outside, workspaceRoot: ctx.workdir }).run,
+    ).rejects.toThrow(/inside the workspace root/i);
+  });
+
+  it("spawns the CLI under the allowlisted environment only (R5)", async () => {
+    const ctx = await prepareFixture({
+      PATH: process.env.PATH ?? "",
+      HOME: "/home/fixture-user",
+      MUSE_FIXTURE_MODE: "env-audit",
+      // Host 集成凭据：允许清单下绝不进入子进程。
+      GITHUB_TOKEN: "ghp_host_secret",
+      OPENROUTER_API_KEY: "sk-or-host-secret",
+      ZCODE_DESKTOP_SECRET: "host-only-secret",
+    });
+    const result = await runPort({ ...ctx }).run;
+    expect(result.exitCode).toBe(0);
+    const envKeys = (
+      await readFile(join(ctx.workdir, "muse-fixture-env.txt"), "utf8")
+    )
+      .split("\n")
+      .filter((line) => line.length > 0);
+    expect(envKeys).toContain("PATH");
+    expect(envKeys).toContain("HOME");
+    // MUSE_ 前缀透传（fixture 注入模式自身依赖该约定）。
+    expect(envKeys).toContain("MUSE_FIXTURE_MODE");
+    expect(envKeys).not.toContain("GITHUB_TOKEN");
+    expect(envKeys).not.toContain("OPENROUTER_API_KEY");
+    expect(envKeys).not.toContain("ZCODE_DESKTOP_SECRET");
+  });
+
+  it("passes the documented unattended approval flag only for the unattended posture (R3)", async () => {
+    const unattended = await prepareFixture({ MUSE_FIXTURE_MODE: "argv-audit" });
+    const unattendedResult = await runPort({
+      ...unattended,
+      settings: { ...unattended.settings, approvalPosture: "unattended-sandboxed" },
+    }).run;
+    expect(unattendedResult.exitCode).toBe(0);
+    expect(unattendedResult.approvalPosture).toBe("unattended-sandboxed");
+    const unattendedArgv = await readFile(join(unattended.workdir, "muse-fixture-argv.txt"), "utf8");
+    expect(unattendedArgv).toContain("--disable-approval");
+    expect(unattendedArgv).not.toContain("--yolo");
+
+    const failClosed = await prepareFixture({ MUSE_FIXTURE_MODE: "argv-audit" });
+    const failClosedResult = await runPort({ ...failClosed }).run;
+    expect(failClosedResult.exitCode).toBe(0);
+    const failClosedArgv = await readFile(join(failClosed.workdir, "muse-fixture-argv.txt"), "utf8");
+    expect(failClosedArgv).not.toContain("--disable-approval");
+    expect(failClosedArgv).not.toContain("--yolo");
+  });
+
+  it("captures the muse session id and resumes the documented --session-id on the next turn (R2)", async () => {
+    const ctx = await prepareFixture();
+    const store = createMemorySessionStore();
+    const first = await runPort({ ...ctx, sessionId: "sess_muse_A", sessionStore: store }).run;
+    expect(first.museSessionId).toBe("muse-fixture-session-1");
+    expect(first.resumedMuseSession).toBe(false);
+    expect(store.map()["sess_muse_A"]?.museSessionId).toBe("muse-fixture-session-1");
+    expect(store.map()["sess_muse_A"]?.surface).toBe("muse-exec");
+
+    // 第二轮（模拟 MOS 重启后的新端口实例 + 同一持久映射）必须续接同一 muse 会话。
+    const audit = await prepareFixture({ MUSE_FIXTURE_MODE: "argv-audit" });
+    const storeAfterRestart = createMemorySessionStore(store.map());
+    const second = await runPort({
+      env: audit.env,
+      settings: { ...audit.settings, executablePath: audit.fixturePath },
+      workdir: audit.workdir,
+      sessionId: "sess_muse_A",
+      sessionStore: storeAfterRestart,
+    }).run;
+    expect(second.resumedMuseSession).toBe(true);
+    expect(second.museSessionId).toBe("muse-fixture-session-1");
+    const argv = await readFile(join(audit.workdir, "muse-fixture-argv.txt"), "utf8");
+    expect(argv).toContain("--session-id");
+    expect(argv).toContain("muse-fixture-session-1");
+  });
+
+  it("does not pass --session-id when no mapping exists (fresh session)", async () => {
+    const ctx = await prepareFixture({ MUSE_FIXTURE_MODE: "argv-audit" });
+    const result = await runPort({ ...ctx }).run;
+    expect(result.exitCode).toBe(0);
+    expect(result.resumedMuseSession).toBe(false);
+    const argv = await readFile(join(ctx.workdir, "muse-fixture-argv.txt"), "utf8");
+    expect(argv).not.toContain("--session-id");
+  });
+
+  it("surfaces approval requests and user questions as visible events with counts (R3)", async () => {
+    const approval = await prepareFixture({ MUSE_FIXTURE_MODE: "approval-event" });
+    const approvalRun = runPort({ ...approval });
+    const approvalResult = await approvalRun.run;
+    expect(approvalResult.exitCode).toBe(0);
+    expect(approvalResult.approvalRequestsObserved).toBe(1);
+    const approvalEvent = approvalRun.events.find((event) => event.kind === "approval_required");
+    expect(approvalEvent && approvalEvent.kind === "approval_required" ? approvalEvent.toolName : "").toBe(
+      "Bash",
+    );
+
+    const question = await prepareFixture({ MUSE_FIXTURE_MODE: "question-event" });
+    const questionRun = runPort({ ...question });
+    const questionResult = await questionRun.run;
+    expect(questionResult.exitCode).toBe(0);
+    expect(questionResult.userQuestionsObserved).toBe(1);
+    const questionEvent = questionRun.events.find((event) => event.kind === "user_question");
+    expect(
+      questionEvent && questionEvent.kind === "user_question" ? questionEvent.summary : "",
+    ).toContain("database engine");
   });
 
   it("rejects with a startup error when the executable cannot start", async () => {

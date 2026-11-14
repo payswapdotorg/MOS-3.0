@@ -1,86 +1,97 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { delimiter, isAbsolute, join } from "node:path";
+import { join } from "node:path";
 import type {
   MuseExecutionPort,
   MuseExecHandlers,
   MuseExecRequest,
   MuseExecRunResult,
   MuseExecStreamEvent,
+  MuseExecApprovalPosture,
 } from "@zcode/contracts";
 import {
   DEFAULT_MUSE_CODE_EXEC_TIMEOUT_MS,
   type MuseCodeBackendSettings,
 } from "@zcode/shared";
+import { buildMuseChildEnv } from "@zcode/shared/node";
 import { parseMuseExecJsonlLine } from "./muse-exec-jsonl.js";
 import { readMuseCodeBackendSettings } from "./muse-code-settings.js";
-// Muse Code CLI 子进程执行端口（Issue #24 / ACR-0002）。
+import {
+  MuseExecStartupError,
+  assertMuseWorkspaceContainment,
+  resolveMuseExecutableEntry,
+} from "./muse-exec-support.js";
+import {
+  createFileMuseSessionStore,
+  lookupMuseSessionId,
+  recordMuseSessionMapping,
+  type MuseSessionStore,
+} from "./muse-session-store.js";
+// Muse Code CLI `muse exec --json` 子进程执行端口（Issue #24 / ACR-0002；
+// PR #27 评审修订 R2–R6）。
 //
 // 进程纪律（对齐 services/zcode-agent/zcodeStdioTransport.ts 的收口语义，CLI 进程内自持有）：
 // - 绝不 shell:true；显式 argv；Windows 上不 spawn .cmd/.bat shim（CVE 修复后 Node
 //   拒绝无 shell 的 .cmd，MOS 也不为此打开 shell），只支持可执行文件，用户可在
 //   设置里填绝对路径覆盖。
-// - cwd 固定为会话工作目录（工作区约束边界）；stdin 忽略，提示经 documented
-//   `--prompt-file` 临时文件传入，避免 argv 长度/转义问题。
+// - cwd 固定为会话工作目录；stdin 忽略，提示经 documented `--prompt-file` 临时文件
+//   传入，避免 argv 长度/转义问题。
+// - workspace 收敛（R4）：workingDirectory 必须位于 workspaceRoot 内（spawn 前校验，
+//   fail-closed）。`--workspace` 旗标在可核实的 Meta 文档中不存在（见 evidence §1），
+//   不虚构旗标；边界 = cwd 收敛 + Muse 自身 sandbox（保持开启）。
+// - 环境隔离（R5）：子进程环境经 buildMuseChildEnv 允许清单，Host 集成凭据不外流。
+// - 审批姿态（R3）：fail-closed（缺省）不传任何审批旗标；unattended-sandboxed 附加
+//   documented `--disable-approval`（sandbox 保持开启）。`--yolo` 永不出现在 argv。
+// - 会话连续性（R2）：优先续接持久映射的 muse 会话（documented `--session-id`）；
+//   信封级候选 session id 从 JSONL 捕获并回写映射。
 // - abort/超时 → 进程树终止（POSIX 进程组 SIGTERM→SIGKILL；Windows taskkill /T /F）。
 // - stderr 只保留尾部 64KB 诊断窗口；stdout 逐行 JSONL，超长行按 unknown 计数。
 
 const STDERR_LIMIT = 64 * 1024;
 const MAX_LINE_BYTES = 4 * 1024 * 1024;
 const TREE_FORCE_AFTER_MS = 5_000;
-const MUSE_EXECUTABLE_ENV = "ZCODE_MUSE_EXECUTABLE";
 
 export interface MuseExecProcessDeps {
   env?: NodeJS.ProcessEnv;
   /** 测试注入：覆盖设置读取。 */
   readSettings?: (env: NodeJS.ProcessEnv) => Promise<MuseCodeBackendSettings>;
-  /** 测试注入：覆盖可执行入口解析。 */
-  resolveExecutable?: (env: NodeJS.ProcessEnv, settings: MuseCodeBackendSettings) => string;
+  /** 测试注入：覆盖会话映射存储。 */
+  sessionStore?: MuseSessionStore;
+  /** 测试注入：写映射失败时的告警出口（缺省静默降级为本轮不可续接）。 */
+  onSessionMapWriteError?: (error: unknown) => void;
 }
 
-class MuseExecStartupError extends Error {
-  constructor(
-    readonly issueCode: "executableNotFound" | "spawnFailed",
-    message: string,
-    options?: { cause?: unknown },
-  ) {
-    super(message, options);
-    this.name = "MuseExecStartupError";
-  }
-}
-
-export function createMuseExecutionPort(deps: MuseExecProcessDeps = {}): MuseExecutionPort {
+/** exec 面端口实现（`muse exec --json`）。 */
+export function createMuseExecProcessPort(deps: MuseExecProcessDeps = {}): MuseExecutionPort {
   const env = deps.env ?? process.env;
   const readSettings = deps.readSettings ?? readMuseCodeBackendSettings;
-  const resolveExecutable =
-    deps.resolveExecutable ??
-    ((envValue: NodeJS.ProcessEnv, settings: MuseCodeBackendSettings) =>
-      resolveDefaultMuseExecutable(envValue, settings));
+  const sessionStore = deps.sessionStore ?? createFileMuseSessionStore(env);
 
   return {
     async runMuseExec(
       request: MuseExecRequest,
       handlers: MuseExecHandlers,
     ): Promise<MuseExecRunResult> {
+      // workspace 收敛（R4）：越界绝不 spawn。
+      assertMuseWorkspaceContainment(request.workingDirectory, request.workspaceRoot);
       const settings = await readSettings(env);
-      const executable = request.executablePath ?? resolveExecutable(env, settings);
-      if (isAbsolute(executable)) {
-        return runMuseExecChild(executable, request, settings, handlers, env);
+      const executable = resolveMuseExecutableEntry(env, settings, request.executablePath);
+      if (!executable) {
+        throw new MuseExecStartupError(
+          "executableNotFound",
+          `Muse Code CLI executable "${settings.executablePath?.trim() || "muse"}" was not found. Install the CLI or set an absolute executable path in MOS Model Settings.`,
+        );
       }
-      if (process.platform === "win32") {
-        const resolved = resolveOnWindowsPath(env, executable);
-        if (!resolved) {
-          throw new MuseExecStartupError(
-            "executableNotFound",
-            `Muse Code CLI executable "${executable}" was not found on PATH. Install the CLI or set an absolute executable path in MOS Model Settings.`,
-          );
-        }
-        return runMuseExecChild(resolved, request, settings, handlers, env);
-      }
-      return runMuseExecChild(executable, request, settings, handlers, env);
+      // 会话映射（R2）：既有映射 → documented `--session-id` 续接。
+      const sessionMap = await sessionStore.read().catch(() => ({} as Record<string, never>));
+      const existingMuseSessionId = lookupMuseSessionId(sessionMap, request.sessionId);
+      return runMuseExecChild(executable, request, settings, handlers, env, {
+        existingMuseSessionId,
+        sessionStore,
+        onSessionMapWriteError: deps.onSessionMapWriteError,
+      });
     },
   };
 }
@@ -90,7 +101,12 @@ async function runMuseExecChild(
   request: MuseExecRequest,
   settings: MuseCodeBackendSettings,
   handlers: MuseExecHandlers,
-  spawnEnv: NodeJS.ProcessEnv,
+  parentEnv: NodeJS.ProcessEnv,
+  continuity: {
+    existingMuseSessionId?: string;
+    sessionStore: MuseSessionStore;
+    onSessionMapWriteError?: (error: unknown) => void;
+  },
 ): Promise<MuseExecRunResult> {
   const timeoutMs =
     request.timeoutMs && request.timeoutMs > 0
@@ -99,6 +115,8 @@ async function runMuseExecChild(
         ? settings.timeoutMs
         : DEFAULT_MUSE_CODE_EXEC_TIMEOUT_MS;
   const maxModelSteps = request.maxModelSteps ?? settings.maxModelSteps;
+  const approvalPosture: MuseExecApprovalPosture =
+    settings.approvalPosture === "unattended-sandboxed" ? "unattended-sandboxed" : "fail-closed";
   const promptDir = join(tmpdir(), `mos-muse-${crypto.randomUUID().slice(0, 8)}`);
   const promptFile = join(promptDir, "prompt.txt");
   let child: ReturnType<typeof spawn> | undefined;
@@ -107,6 +125,9 @@ async function runMuseExecChild(
   let unknownEventCount = 0;
   let stderr = "";
   let toolEventSeq = 0;
+  let approvalRequestsObserved = 0;
+  let userQuestionsObserved = 0;
+  let capturedMuseSessionId: string | undefined;
   const activeToolIdsByName = new Map<string, string>();
   const pending = new Set<Promise<void>>();
 
@@ -144,6 +165,12 @@ async function runMuseExecChild(
       stderrTail: "",
       timedOut: !request.signal.aborted,
       unknownEventCount: 0,
+      surface: "muse-exec",
+      ...(continuity.existingMuseSessionId ? { museSessionId: continuity.existingMuseSessionId } : {}),
+      resumedMuseSession: false,
+      approvalRequestsObserved: 0,
+      userQuestionsObserved: 0,
+      approvalPosture,
     };
   }
 
@@ -156,14 +183,23 @@ async function runMuseExecChild(
       "--prompt-file",
       promptFile,
       ...(maxModelSteps !== undefined ? ["--max-model-steps", String(maxModelSteps)] : []),
+      // 会话续接（R2）：documented `--session-id <uuid>`（dev.meta.ai/docs/muse-code/extending
+      // "Headless and CI"：headless runs are sessions; continue with the session id）。
+      ...(continuity.existingMuseSessionId
+        ? ["--session-id", continuity.existingMuseSessionId]
+        : []),
+      // 审批姿态（R3）：unattended-sandboxed = documented `--disable-approval`
+      // （skip approval prompts, keep the sandbox on）。fail-closed 不传任何审批旗标。
+      // `--yolo`（关审批+关 sandbox）永不被构造（ACR-0002 红线）。
+      ...(approvalPosture === "unattended-sandboxed" ? ["--disable-approval"] : []),
     ];
     try {
       child = spawn(executable, args, {
         cwd: request.workingDirectory,
         detached: process.platform !== "win32",
-        // 子进程继承装配 env（create-app options.env；缺省 = 本进程环境）：
-        // muse CLI 的自身登录态在其自己的配置目录里，不需要 MOS 传递任何凭据。
-        env: spawnEnv,
+        // 环境隔离（R5）：允许清单构造；muse CLI 的登录态在其自身配置目录
+        // （USERPROFILE/APPDATA/HOME 已覆盖），不需要 MOS 传递任何凭据。
+        env: buildMuseChildEnv(parentEnv),
         stdio: ["ignore", "pipe", "pipe"],
       });
     } catch (error) {
@@ -190,10 +226,17 @@ async function runMuseExecChild(
       }
       const parsed = parseMuseExecJsonlLine(line);
       if (parsed.status === "empty") return;
+      // 信封级候选 session id 捕获（R2）：任意行（含未知类型行——如 session_started
+      // 申报）都先捕获再分流；首个非空值生效（后续同值幂等）。
+      if ("museSessionId" in parsed && parsed.museSessionId && !capturedMuseSessionId) {
+        capturedMuseSessionId = parsed.museSessionId;
+      }
       if (parsed.status === "unknown" || parsed.status === "invalid") {
         unknownEventCount += 1;
         return;
       }
+      if (parsed.event.kind === "approval_required") approvalRequestsObserved += 1;
+      if (parsed.event.kind === "user_question") userQuestionsObserved += 1;
       await handlers.onEvent(synthesizeToolCallIds(parsed.event));
     };
 
@@ -228,12 +271,37 @@ async function runMuseExecChild(
     // 子进程退出后，先前派发的事件仍在飞；全部收口再返回。
     while (pending.size > 0) await Promise.allSettled(pending);
     if (dispatchFailure !== undefined) throw dispatchFailure;
+    // 会话映射回写（R2）：捕获到 session id 即持久化（原子写；失败降级 + 告警，
+    // 绝不阻断 turn 收口）。exec 面的 id 申报依赖 JSONL 信封字段（在机验证 §4）。
+    if (capturedMuseSessionId) {
+      try {
+        const map = await continuity.sessionStore.read();
+        await continuity.sessionStore.write(
+          recordMuseSessionMapping(map, request.sessionId, {
+            museSessionId: capturedMuseSessionId,
+            surface: "muse-exec",
+            workspaceRoot: request.workspaceRoot,
+          }),
+        );
+      } catch (error) {
+        continuity.onSessionMapWriteError?.(error);
+      }
+    }
+    // 观测/恢复（R2）：本轮 JSONL 申报的 id 优先；CLI 未再申报时回退到本轮
+    // 续接传入的 id（我们持有的事实——由 argv 传给 CLI 并驱动了本轮 resume）。
+    const reportedMuseSessionId = capturedMuseSessionId ?? continuity.existingMuseSessionId;
     return {
       cancelled,
       exitCode,
       stderrTail: stderr,
       timedOut,
       unknownEventCount,
+      surface: "muse-exec",
+      ...(reportedMuseSessionId ? { museSessionId: reportedMuseSessionId } : {}),
+      resumedMuseSession: continuity.existingMuseSessionId !== undefined,
+      approvalRequestsObserved,
+      userQuestionsObserved,
+      approvalPosture,
     };
   } finally {
     combinedSignal.removeEventListener("abort", onCombinedAbort);
@@ -241,31 +309,6 @@ async function runMuseExecChild(
     while (pending.size > 0) await Promise.allSettled(pending);
     await rm(promptDir, { force: true, recursive: true }).catch(() => undefined);
   }
-}
-
-function resolveDefaultMuseExecutable(
-  env: NodeJS.ProcessEnv,
-  settings: MuseCodeBackendSettings,
-): string {
-  const override = env[MUSE_EXECUTABLE_ENV]?.trim();
-  if (override && override.length > 0) return override;
-  return settings.executablePath?.trim() || "muse";
-}
-
-/**
- * Windows PATH 解析：只接受可直接 spawn 的可执行文件（.exe/.com）。
- * .cmd/.bat npm shim 需要经 cmd.exe 解析，MOS 不为其打开 shell；
- * 用户可把绝对路径（原生安装的 muse.exe 或 shim 的真实目标）填进设置。
- */
-function resolveOnWindowsPath(env: NodeJS.ProcessEnv, command: string): string | null {
-  const pathDirs = (env.PATH ?? "").split(delimiter).filter((dir) => dir.length > 0);
-  for (const dir of pathDirs) {
-    for (const candidate of [`${command}.exe`, `${command}.com`]) {
-      const fullPath = join(dir, candidate);
-      if (existsSync(fullPath)) return fullPath;
-    }
-  }
-  return null;
 }
 
 function terminateChildTree(child: ReturnType<typeof spawn> | undefined): void {

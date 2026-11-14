@@ -23,7 +23,7 @@ import {
   resolveEffectiveBashShellSelection,
 } from "@zcode/adapters/exec";
 import { createNodeFileSystemAdapter } from "@zcode/adapters/fs";
-import { createMuseExecutionPort } from "../muse-code/muse-exec-process.js";
+import { createMuseExecutionPort } from "../muse-code/muse-execution-port.js";
 import { createNodeWebFetchHttpClientAdapter } from "@zcode/adapters/http";
 import { createJimpImageProcessorAdapter } from "@zcode/adapters/image";
 import { createPopplerPdfDocumentAdapter } from "@zcode/adapters/pdf";
@@ -621,8 +621,10 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       options.pdfDocumentPort ?? createPopplerPdfDocumentAdapter({ executionPort });
     // browser-use 控制端口：仅当宿主（desktop）注入时可用，无本地 fallback（纯 CLI 无浏览器底座）。
     const fileSystemPort = options.fileSystemPort ?? createNodeFileSystemAdapter();
-    // 委托 Muse Code 执行端口（Issue #24 / ACR-0002）：进程生命周期由本模块持有；
-    // 行为开关（executablePath/timeout/maxModelSteps）由 Host 侧设置文件宽容读取。
+    // 委托 Muse Code 执行端口（Issue #24 / ACR-0002；PR #27 评审 R1）：进程生命周期
+    // 由本模块持有；行为开关（executablePath/timeout/maxModelSteps/approvalPosture/
+    // executionSurface）由 Host 侧设置文件宽容读取；执行面（muse exec --json 或
+    // muse serve + @muse-code/sdk MSP）按 CLI 版本运行时选择（muse-execution-port.ts）。
     const museExecutionPort = createMuseExecutionPort({ env: options.env });
     const httpClientPort =
       options.httpClientPort ??

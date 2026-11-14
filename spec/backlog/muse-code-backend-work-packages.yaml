@@ -85,3 +85,72 @@ work_packages:
       - 无凭据读取/复制/展示；auth/contributor 未知即未知。
       - busy/queue/guide/choice 委托输入一律 ACK 前拒绝（不静默改道）。
       - mock 契约测试全绿；在机验证清单就绪（AGENTS.md §7：本阶段为 contract-tested / integrated，非 verified）。
+  - id: MC-B
+    name: PR #27 external review revision (R1–R7)
+    owner: tl
+    status: delivered
+    paths:
+      - apps/zcode-cli/packages/bootstrap/package.json
+      - apps/zcode-cli/packages/bootstrap/src/muse-code/**
+      - apps/zcode-cli/packages/bootstrap/tests/muse-exec-jsonl.test.ts
+      - apps/zcode-cli/packages/bootstrap/tests/muse-exec-process.test.ts
+      - apps/zcode-cli/packages/bootstrap/tests/muse-session-protocol.test.ts
+      - apps/zcode-cli/packages/bootstrap/tests/fixtures/muse-code/mock-muse-cli.mjs
+      - apps/zcode-cli/packages/contracts/src/interfaces/muse-execution.port.ts
+      - apps/zcode-cli/packages/contracts/src/interfaces/session-store.port.ts
+      - apps/zcode-cli/packages/core/src/runtime/methods/delegated-muse-turn.ts
+      - apps/zcode-cli/packages/core/src/runtime/methods/turn.ts
+      - apps/zcode-cli/packages/core/tests/delegated-muse-turn.test.ts
+      - packages/services/src/muse-code/**
+      - packages/services/test/museCodeService.test.ts
+      - packages/shared/src/muse-code/muse-code-backend.ts
+      - packages/shared/src/node.ts
+      - packages/shared/src/zcode-protocol-legacy-types.ts
+      - packages/ui/src/i18n/locales/en-US.ts
+      - packages/ui/src/i18n/locales/zh-CN.ts
+      - packages/ui/src/settings/MuseCodeSection.tsx
+      - packages/ui/src/v4/composer/V4ComposerToolbar.tsx
+      - pnpm-lock.yaml
+    forbidden_paths:
+      - spec/architecture/**
+      - packages/provider/**
+      - packages/provider-node/**
+      - config/provider/**
+    tasks:
+      - R1：双官方执行面端口（`muse serve` + `@muse-code/sdk` exact-pin 1.4.20 为首选项，
+        `muse exec --json` 为兼容回退面）；shared selectMuseExecutionSurface 统一判定；
+        `muse --version` 版本门控探针；逐轮 result.surface 如实归因；ACR-0002 Revision 2。
+      - R2：MOS 会话 ↔ muse 会话持久映射（muse-code-sessions.json，原子写/宽容读/上限裁剪）；
+        MSP 面 resumeSession 续接；exec 面 documented `--session-id` 续接；JSONL 信封级候选
+        session-id 捕获（不虚构 id）。
+      - R3：审批姿态设置（fail-closed 缺省 / unattended-sandboxed）；MSP 面审批回调只选
+        服务端 offered 的非批准选项（无拒绝选项即抛错、由超时收口）；exec 面仅在
+        unattended-sandboxed 传 documented `--disable-approval`；审批/提问投影为可见活动行
+        并计数；`--yolo` / 关闭 sandbox 永不出现在 argv。
+      - R4：workspaceRoot 策略边界 + spawn 前收敛校验（workspaceViolation fail-closed）；
+        MSP 面官方 session/start workspaceRoot / workspaceRoots；exec 面 cwd 收敛（不虚构
+        `--workspace` 旗标）。
+      - R5：buildMuseChildEnv 子进程环境允许清单（exec/MSP host/版本探针/状态探针/登录
+        启动统一应用）；Host 集成凭据绝不进入子进程树。
+      - R6：delegated 轮 cost: null（未申报）绝不记 0；协议 schema cost 放宽为
+        number | null；端口申报 token 用量如实映射 + usageReporting 元数据 + 订阅窗口快照；
+        Composer 后端激活时锁定模型选择并明示原因。
+      - R7：rebase 到 main@703fd7bd（保留 RC3 出版记录条目）+ 全链路本地验证（受影响包
+        构建、tsc、muse 契约套件、回归、全量工程套件、lint、架构治理/检查、发布测试、
+        文档短语、SQLite schema 契约）；CI + 评审以推送 head 为准。
+    deliverables:
+      - dual_surface_execution_port
+      - session_continuity_map
+      - approval_posture_guardrails
+      - workspace_containment
+      - child_env_allowlist
+      - honest_usage_accounting
+      - verification_chain_evidence
+    acceptance:
+      - SDK exact-pin（1.4.20，锁步配对）真实安装并按发布类型面逐成员核对（非本地 stub）。
+      - fail-closed 姿态绝不 auto-approve；无 `--yolo`；sandbox 永不关闭。
+      - 越界 workingDirectory 一律 spawn 前拒绝。
+      - 子进程环境经允许清单构造（fixture 审计测试逐 spawn 路径断言）。
+      - delegated 轮 cost 记 null；usageReporting 如实标注。
+      - 全量工程套件在修订 head 上执行（唯一失败 = mos-ci.yml 头注 4 已记录的环境敏感基线）。
+      - 在机验证清单（证据文件 §4 rev. 2）覆盖 MSP/连续性/审批/边界/环境隔离各面。

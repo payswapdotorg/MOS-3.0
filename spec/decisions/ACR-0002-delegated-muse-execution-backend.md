@@ -1,10 +1,10 @@
 # Architecture Change Record — ACR-0002
 
-**Status:** accepted
+**Status:** accepted (rev. 2 — PR #27 external review revisions R1–R7)
 **Owner:** TL (payswapdotorg)
-**Date:** 2026-11-14
-**Related PR / issue:** Issue #24 (P0, Integrate Muse Code Contributor CLI into MOS New Task); PR 本条随附
-**Affected modules/contracts:** packages/shared（muse-code 契约、v4 信封字段、runtime capability、channel）、packages/services（IMuseCodeService）、packages/client、packages/ui（设置分区/Composer 指示器/信封门控）、apps/zcode-cli/packages/contracts（MuseExecutionPort）、apps/zcode-cli/packages/core（delegated turn 执行器 + turn 路由）、apps/zcode-cli/packages/bootstrap（进程端口 + JSONL 映射 + capability + v4 命令门控）
+**Date:** 2026-11-14 (rev. 2: 2026-11-14)
+**Related PR / issue:** Issue #24 (P0, Integrate Muse Code Contributor CLI into MOS New Task); PR #27（rev. 2 随附）
+**Affected modules/contracts:** packages/shared（muse-code 契约、v4 信封字段、runtime capability、channel）、packages/services（IMuseCodeService）、packages/client、packages/ui（设置分区/Composer 指示器/信封门控）、apps/zcode-cli/packages/contracts（MuseExecutionPort）、apps/zcode-cli/packages/core（delegated turn 执行器 + turn 路由）、apps/zcode-cli/packages/bootstrap（执行端口（双面）+ JSONL 映射 + MSP 会话端口 + 会话映射存储 + capability + v4 命令门控）
 
 ## Context
 
@@ -65,8 +65,86 @@ PR 落地顺序：shared 契约（schema/字段/capability/channel）→ contrac
 
 关闭 Model Settings 的「Use Muse Code as the New Task backend」（renderer 停止携带信封字段；所有轮回到普通模型路径）。彻底回滚可 revert 本 PR——无数据迁移、无凭据残留。
 
+## Revision 2 (2026-11-14, PR #27 external review R1–R7)
+
+External review verdict on rev. 1: "Do not merge yet — a contract-tested prototype of the
+delegated execution path, not a proven integration of the user's existing Muse Code
+experience." Seven ordered revision requirements, all addressed in this revision:
+
+- **R1 — official execution surfaces, pinned and contract-tested.** The delegated execution
+  port now has **two official surfaces** selected at runtime (`shared
+  selectMuseExecutionSurface`; explicit setting override > auto version gate):
+  1. **Muse Session Protocol (MSP)** — `muse serve` + the official TypeScript SDK
+     `@muse-code/sdk`, **exact-pinned `1.4.20`** (SDK and CLI "version in lockstep with Muse
+     Code" per the official README — exact pin, never a `^` range). Auto-selected when the
+     installed CLI version ≥ the pinned pairing (`muse --version` probe, cached in-process,
+     probe failure = conservative fallback). This surface is itself **developer preview** per
+     Meta — recorded as a known admission, with the exec fallback always available.
+  2. **`muse exec --json`** — the documented headless surface available on every CLI version;
+     remains the compatibility fallback (old/unknown CLI version, explicit override).
+  The hand-rolled JSONL-only adapter is no longer the primary integration claim; the actual
+  surface used is reported per-turn (`result.surface`) for honest attribution.
+- **R2 — Muse session continuity.** A durable MOS-session ↔ Muse-session map
+  (`~/.zcode/v2/muse-code-sessions.json`, atomic writes, tolerant reads, size-capped,
+  survives MOS restarts). MSP surface resumes via the SDK's `resumeSession`; exec surface
+  resumes via the documented `--session-id`. The mapping is written as soon as a Muse session
+  id is observed (a failed first turn still leaves a resumable session). No id is ever
+  invented; a missing mapping simply starts a fresh session.
+- **R3 — approval posture, never auto-approve.** New setting `approvalPosture` (Meta's docs
+  require choosing an unattended posture in advance for headless runs):
+  - `fail-closed` (default): exec surface passes **no** approval flags (an unanswered prompt
+    is bounded by the overall timeout); MSP surface registers an approval callback that
+    **only ever selects a server-offered non-approving choice** (`denied` /
+    `deniedPolicyAmendment` / `abort`); if no non-approving choice is offered, the handler
+    throws — the approval stays open and the turn is bounded by the timeout. The SDK's own
+    default is deny, which this posture preserves.
+  - `unattended-sandboxed`: exec surface adds the documented `--disable-approval`
+    (sandbox stays on); MSP surface uses `approvalMode: "allowAll"` (sandbox still applies
+    independently).
+  Approval requests and agent questions are projected as visible session activity rows
+  (never answered on the user's behalf); counts are reported in the turn result, message
+  metadata, and logs. **`--yolo` and sandbox-disable never appear in any argv** (red line).
+- **R4 — workspace boundary.** `MuseExecRequest.workspaceRoot` is the policy boundary.
+  MOS-side containment validation (`workingDirectory` must be inside `workspaceRoot`;
+  normalization for win32 separators/drive case) runs before any spawn — violations reject
+  with a stable `workspaceViolation` issue code. MSP surface passes the root as the official
+  `session/start` `workspaceRoot` (single root) / `workspaceRoots` (cwd is a subdirectory;
+  first root = CWD, all roots receive the ADR `:workspace_roots` rules). The exec surface's
+  boundary is cwd containment plus Muse's own sandbox (which stays enabled); no undocumented
+  `--workspace` flag is invented (verified absent from Meta's docs — see evidence §1).
+- **R5 — child-process environment isolation.** `shared/node buildMuseChildEnv` builds the
+  Muse child environment from a tested allowlist (process bootstrap + user-profile dirs for
+  the CLI's own login state + locale + `MUSE_*` passthrough). Host integration credentials
+  (`GITHUB_TOKEN`, `OPENROUTER_API_KEY`, `*_SECRET`, …) never enter the delegated agent's
+  process tree. Applied uniformly: exec surface, MSP host spawn, version probe, status
+  probes, and the login launcher.
+- **R6 — honest usage accounting.** Delegated turns record `cost: null` (unreported) —
+  never `0`, which downstream readers would misread as free/zero consumption. The protocol
+  schema widens `cost` to `number | null` for all messages (additive; normal model turns
+  keep numeric costs). Token usage is mapped when the port reports it (MSP `turn/completed`
+  TokenUsage); message metadata carries `museExecution.usageReporting: "reported" |
+  "unreported"` plus the Muse session id, surface, resume flag, approval/question counts,
+  and (best-effort) the subscription usage window snapshot (MSP `usage/read`). The Composer
+  disables model selection while the backend is active with an explicit lock reason (the
+  selected model is not used for delegated turns) instead of silently ignoring it.
+- **R7 — verification chain on the rebased head.** Rebased onto `main@703fd7bd` (RC3
+  publication entry preserved through the shared-file overlap); the full chain was run
+  locally on the revision head (see the evidence record §2): affected package builds,
+  `tsc -b` (shared/services/client/ui), muse contract suites (bootstrap exec/JSONL/MSP,
+  core delegated turn, services, ui stamping), core turn/admission regressions, the full
+  bootstrap v4 command suite, the full engineering suite, lint, architecture governance
+  tests, architecture check (zero new violations vs `main`), release tests, doc-stale-phrase
+  check, and the SQLite schema contract check. GitHub CI + review on the pushed head remain
+  required before merge (local runs are not CI evidence).
+
+No decision in the "Current locked decision" / "Proposed decision" sections above changes:
+Muse Code remains a delegated execution backend (never a provider), the single
+tool-execution-loop boundary stands (MOS never re-approves or re-executes the external
+agent's tools), and the credentials red line is unchanged.
+
 ## Approval
 
-- TL: payswapdotorg（TL-authored vertical slice）
-- Required domain/security reviewers: 待评审
-- Commit / PR that updates architecture lock and module registry: 本 PR（policy admission：`muse-code-delegated-backend-unmanaged-edit`）
+- TL: payswapdotorg（TL-authored vertical slice; rev. 2 revisions TL-authored after external review）
+- Required domain/security reviewers: 待评审（rev. 2 后需在推送 head 上重新评审）
+- Commit / PR that updates architecture lock and module registry: PR #27（policy admission：`muse-code-delegated-backend-unmanaged-edit`）
+

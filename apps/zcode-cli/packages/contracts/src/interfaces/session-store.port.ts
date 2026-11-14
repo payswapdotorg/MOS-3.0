@@ -428,7 +428,8 @@ export interface AssistantMessageInfo {
     root: string;
   };
   summary?: boolean;
-  cost: number;
+  /** null = 未申报（unreported）——例如订阅计量的 delegated 轮（PR #27 评审 R6：不得把未知消耗记成 0/免费）。 */
+  cost: number | null;
   tokens: TokenUsageInfo;
   structured?: unknown;
   reasoningLevel?: string;
@@ -739,7 +740,8 @@ export interface StepFinishPart {
   type: "step-finish";
   reason: string;
   snapshot?: string;
-  cost: number;
+  /** null = 未申报（unreported）；与消息级 cost 同语义（PR #27 评审 R6）。 */
+  cost: number | null;
   tokens: TokenUsageInfo;
 }
 

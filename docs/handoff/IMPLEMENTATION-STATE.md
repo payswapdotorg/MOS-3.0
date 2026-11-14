@@ -1103,8 +1103,59 @@ work package `spec/backlog/muse-code-backend-work-packages.yaml`):
   violations vs `main` (10 pre-existing `missing-module-artifact` violations identical on
   `main`). Evidence: `spec/integrations/provider-evidence/muse-code-connector-evidence.md`.
 
-Status (AGENTS.md §7): backend integration **contract-tested** (mock CLI). Real CLI
-execution is **planned**: Issue #24 §5 on-machine verification (Windows, real signed-in CLI)
-must run and append sanitized evidence before this record or the evidence file may claim
-`integrated`/`verified`. The JSONL mapping is a versioned candidate pending on-machine
-reconciliation. Issue #24 stays open until then.
+Status (AGENTS.md §7): backend integration **contract-tested** (mock CLI + the installed
+official `@muse-code/sdk@1.4.20` typings verified member-by-member; real CLI binary not
+present in this environment). Real CLI execution is **planned**: Issue #24 §5 on-machine
+verification (Windows, real signed-in CLI; evidence file §4 rev. 2 checklist covers the new
+MSP/session-continuity/approval/workspace/env surfaces) must run and append sanitized
+evidence before this record or the evidence file may claim `integrated`/`verified`. The
+JSONL mapping remains a versioned candidate (v2) for the exec fallback surface; the primary
+MSP surface does not depend on it. Issue #24 stays open until then.
+
+### PR #27 review revision (R1–R7), branch tl/muse-code-delegated-backend (2026-11-14)
+
+External review verdict on rev. 1: "Do not merge yet." All seven ordered revision
+requirements addressed (ACR-0002 §Revision 2; work package MC-B; evidence record rev. 2):
+
+- **R1 dual official surfaces**: new MSP port (`muse serve` + `@muse-code/sdk`, exact-pinned
+  `1.4.20` per the lockstep rule, auto-selected when the installed CLI ≥ the pinned version
+  via a cached `muse --version` probe; SDK is developer preview — recorded admission) +
+  `muse exec --json` fallback; shared `selectMuseExecutionSurface` is the single decision
+  rule (explicit setting override for on-machine diagnosis); per-turn `result.surface`
+  attribution. New `muse-execution-port.ts` assembly entry, `muse-exec-support.ts`
+  (executable resolution / workspace containment / version probe), `muse-session-protocol.ts`
+  (SDK adapter: per-turn host lifecycle, fail-closed approval deny handler, resumeSession,
+  workspaceRoot(s), token + subscription usage), `muse-session-store.ts` (durable MOS↔Muse
+  session map, atomic + tolerant + size-capped).
+- **R2 session continuity**: durable mapping file `~/.zcode/v2/muse-code-sessions.json`;
+  MSP resumes via `resumeSession`, exec resumes via documented `--session-id`; envelope-level
+  candidate session-id capture (never invented; missing mapping = fresh session).
+- **R3 approval posture**: setting `approvalPosture` (`fail-closed` default / opt-in
+  `unattended-sandboxed`); fail-closed denies by selecting only server-offered non-approving
+  choices (no such choice → handler throws, approval stays open, timeout bounds the turn);
+  `unattended-sandboxed` = documented `--disable-approval` (exec) / `approvalMode
+  "allowAll"` (MSP) with sandbox always on; approval/question events projected as visible
+  activity rows with reconciled counts; `--yolo` never constructed.
+- **R4 workspace boundary**: `MuseExecRequest.workspaceRoot` + pre-spawn containment
+  validation (`workspaceViolation` fail-closed); MSP passes official
+  `workspaceRoot`/`workspaceRoots`; no invented `--workspace` flag.
+- **R5 env isolation**: `shared/node buildMuseChildEnv` allowlist applied to every Muse
+  child spawn path (exec, MSP host, version probe, status probes, login); host integration
+  credentials excluded by construction, asserted by fixture audit tests.
+- **R6 honest usage**: delegated turns record `cost: null` (unreported, never 0); protocol
+  schema `cost: number | null`; token usage mapped when the port reports it;
+  `museExecution` message metadata (surface, usageReporting, session id, resume flag,
+  approval/question counts, subscription window snapshot); Composer locks model selection
+  with an explicit reason while the backend is active.
+- **R7 verification on the rebased head**: rebased onto `main@703fd7bd` (RC3 publication
+  entry preserved). Full local chain on the revision head: `pnpm --filter
+  @zcode/bootstrap... build` + `tsc -b` (shared/services/client/ui) green against the
+  installed real SDK; muse contract suites green (bootstrap JSONL 6/6, process 16/16,
+  MSP 15/15 new, core delegated-turn 7/7, services 7/7, ui stamping 3/3); regressions green
+  (core turn/admission 60/60, full bootstrap v4 725/725 in 29 files, architecture
+  governance 61/61); **full engineering suite executed chunked (237 files / 1,894 tests:
+  1,885 passed, 8 intentional skips, 1 failed = the `miseToolchainEnv` environment baseline
+  documented in mos-ci.yml header note 4 — unrelated to this PR)**; lint, stale-doc-phrase,
+  SQLite schema contract, release tests green; architecture check: zero new violations vs
+  `main` (10 pre-existing, identical sets verified by stash-and-rerun). GitHub CI + review
+  on the pushed head remain the merge-blocking authority. Merge stays blocked until both.

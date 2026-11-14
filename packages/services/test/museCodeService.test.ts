@@ -115,6 +115,32 @@ describe("createMuseCodeService status probing", () => {
     expect(view.status.authenticated).toBeUndefined();
     expect(view.status.contributorMode).toBeUndefined();
   });
+
+  it("exposes the execution surface preview with the same selection rule as the port (R1)", async () => {
+    const withVersion = async (stdout: string) => {
+      const settingsPath = await prepareSettingsFile();
+      const service = createMuseCodeService({
+        settingsPath,
+        runProbe: async () => ({ exitCode: 0, stderr: "", stdout, timedOut: false }),
+      });
+      return service.getView();
+    };
+    // 旧 CLI / 版本未知 → muse-exec 回退（fail-closed 选择，不猜测）。
+    expect((await withVersion("muse version 1.2.3\n")).executionSurface).toBe("muse-exec");
+    expect((await withVersion("muse version unknown-build\n")).executionSurface).toBe("muse-exec");
+    // CLI >= SDK 锁步配对版本 → session-protocol（官方 MSP 面）。
+    expect((await withVersion("muse version 1.4.20\n")).executionSurface).toBe("session-protocol");
+    expect((await withVersion("muse version 2.0.1\n")).executionSurface).toBe("session-protocol");
+    // 显式用户覆盖优先（诊断/在机验收）。
+    const settingsPath = await prepareSettingsFile(
+      JSON.stringify({ useAsTaskBackend: false, executionSurface: "session-protocol" }),
+    );
+    const service = createMuseCodeService({
+      settingsPath,
+      runProbe: async () => ({ exitCode: 0, stderr: "", stdout: "muse version 1.2.3", timedOut: false }),
+    });
+    expect((await service.getView()).executionSurface).toBe("session-protocol");
+  });
 });
 
 describe("createMuseCodeService settings and login", () => {

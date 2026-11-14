@@ -26,6 +26,7 @@
     "lint:fix": "oxlint --write src"
   },
   "dependencies": {
+    "@muse-code/sdk": "1.4.20",
     "@zcode/adapters": "workspace:*",
     "@zcode/contracts": "workspace:*",
     "@zcode/core": "workspace:*",

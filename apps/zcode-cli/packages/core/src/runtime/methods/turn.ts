@@ -870,7 +870,11 @@ export async function executeTurnCommand(
               backgroundSubagentResultConsumed: false,
               historyRoundCount: 0,
               modelResponse: delegatedResult.response,
-              tokenCount: 0,
+              // 端口申报时如实计数（MSP 面 turn/completed token usage）；
+              // 未申报 = 0 计数（cost 在消息/part 层记 null + metadata unreported）。
+              tokenCount: delegatedResult.usage
+                ? delegatedResult.usage.inputTokens + delegatedResult.usage.outputTokens
+                : 0,
               toolCallCount: delegatedResult.toolCallCount,
               workflowResultConsumed: false,
             };

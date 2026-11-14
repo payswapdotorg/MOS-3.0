@@ -1,6 +1,7 @@
 import type {
   MuseCodeBackendSettings,
   MuseCodeCliStatus,
+  MuseCodeExecutionSurface,
 } from "@zcode/shared";
 import { ServiceChannels } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
@@ -22,6 +23,12 @@ export interface MuseCodeBackendView {
   settings: MuseCodeBackendSettings;
   /** 当前 workspace 的 CLI 是否声明 executionBackendMuseCode；false = 后端不可选（fail-closed）。 */
   backendSupported: boolean;
+  /**
+   * 当前设置/版本下将使用的执行面（PR #27 评审 R1；与 bootstrap 端口同一判定
+   * selectMuseExecutionSurface）：显式设置优先，auto 按 CLI 版本门控；版本未知 =
+   * muse-exec 回退。展示用途，真相在端口侧逐轮回传 result.surface。
+   */
+  executionSurface: MuseCodeExecutionSurface;
 }
 
 export interface MuseCodeLaunchLoginResult {

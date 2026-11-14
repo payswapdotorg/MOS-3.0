@@ -9,12 +9,25 @@
 // 计费红线（copy 必须如实）：该后端消耗用户在本机 muse CLI 已完成的订阅登录，
 // 不经 OpenRouter、不经 Meta Model API、不创建按量计费 API key。
 import { useCallback, useEffect, useState } from "react";
-import type { MuseCodeBackendSettings } from "@zcode/shared";
+import {
+  MUSE_CODE_APPROVAL_POSTURES,
+  MUSE_CODE_EXECUTION_SURFACES,
+  type MuseCodeBackendSettings,
+  type MuseCodeExecutionSurfaceSetting,
+  type MuseCodeApprovalPosture,
+} from "@zcode/shared";
 import type { IMuseCodeService, MuseCodeBackendView } from "@zcode/services";
 import { Button } from "@/components/ui/button.js";
 import { Switch } from "@/components/ui/switch.js";
 import { Input } from "@/components/ui/input.js";
 import { Label } from "@/components/ui/label.js";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select.js";
 import { toast } from "@/components/ui/toast.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -192,6 +205,21 @@ export function MuseCodeSection({ workspacePath, workspaceIdentity }: MuseCodeSe
                 </SettingsBadge>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                <SettingsBadge>
+                  {intl.formatMessage(
+                    { id: "settings.museCode.surface.badge" },
+                    {
+                      surface: intl.formatMessage({
+                        id:
+                          view?.executionSurface === "session-protocol"
+                            ? "settings.museCode.surface.sessionProtocol"
+                            : "settings.museCode.surface.museExec",
+                      }),
+                    },
+                  )}
+                </SettingsBadge>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="secondary"
                   size="sm"
@@ -255,6 +283,12 @@ function MuseCodeAdvancedSettings({
   const [statusProbeCommand, setStatusProbeCommand] = useState(
     settings.statusProbeCommand?.join(" ") ?? "",
   );
+  const [approvalPosture, setApprovalPosture] = useState<MuseCodeApprovalPosture>(
+    settings.approvalPosture ?? "fail-closed",
+  );
+  const [executionSurface, setExecutionSurface] = useState<MuseCodeExecutionSurfaceSetting>(
+    settings.executionSurface ?? "auto",
+  );
   const [timeoutMinutes, setTimeoutMinutes] = useState(
     settings.timeoutMs ? String(Math.round(settings.timeoutMs / 60000)) : "",
   );
@@ -275,6 +309,8 @@ function MuseCodeAdvancedSettings({
         ...(statusProbeCommand.trim()
           ? { statusProbeCommand: statusProbeCommand.trim().split(/\s+/) }
           : {}),
+        approvalPosture,
+        executionSurface,
         ...(Number.isFinite(parsedTimeout) && parsedTimeout > 0
           ? { timeoutMs: parsedTimeout * 60_000 }
           : {}),
@@ -292,6 +328,8 @@ function MuseCodeAdvancedSettings({
     executablePath,
     loginCommand,
     statusProbeCommand,
+    approvalPosture,
+    executionSurface,
     timeoutMinutes,
     maxModelSteps,
     intl,
@@ -344,6 +382,52 @@ function MuseCodeAdvancedSettings({
                 onChange={(event) => setStatusProbeCommand(event.target.value)}
                 placeholder="auth status"
               />
+            </div>
+            <div className="flex flex-row gap-3">
+              <div className="flex flex-1 flex-col gap-1">
+                <Label htmlFor="muse-code-approval-posture">
+                  {intl.formatMessage({ id: "settings.museCode.advanced.approvalPosture" })}
+                </Label>
+                <Select
+                  value={approvalPosture}
+                  onValueChange={(value) =>
+                    setApprovalPosture(value as MuseCodeApprovalPosture)
+                  }
+                >
+                  <SelectTrigger id="muse-code-approval-posture" size="lg" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MUSE_CODE_APPROVAL_POSTURES.map((posture) => (
+                      <SelectItem key={posture} value={posture}>
+                        {intl.formatMessage({ id: `settings.museCode.approvalPosture.${posture}` })}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-1 flex-col gap-1">
+                <Label htmlFor="muse-code-execution-surface">
+                  {intl.formatMessage({ id: "settings.museCode.advanced.executionSurface" })}
+                </Label>
+                <Select
+                  value={executionSurface}
+                  onValueChange={(value) =>
+                    setExecutionSurface(value as MuseCodeExecutionSurfaceSetting)
+                  }
+                >
+                  <SelectTrigger id="muse-code-execution-surface" size="lg" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MUSE_CODE_EXECUTION_SURFACES.map((surface) => (
+                      <SelectItem key={surface} value={surface}>
+                        {intl.formatMessage({ id: `settings.museCode.surfaceSetting.${surface}` })}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="flex flex-row gap-3">
               <div className="flex flex-1 flex-col gap-1">

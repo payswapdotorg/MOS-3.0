@@ -30,6 +30,11 @@ function createScriptedMusePort(script: (run: ScriptedPortRun) => Promise<void>)
         stderrTail: "",
         timedOut: false,
         unknownEventCount: 1,
+        surface: "muse-exec",
+        resumedMuseSession: false,
+        approvalRequestsObserved: 0,
+        userQuestionsObserved: 0,
+        approvalPosture: "fail-closed",
       } satisfies import("@zcode/contracts").MuseExecRunResult;
     },
   };
@@ -130,9 +135,12 @@ describe("runDelegatedMuseTurn", () => {
       });
       await run.handlers.onEvent({ kind: "text_delta", text: "world" });
       await run.handlers.onEvent({ kind: "text_end" });
-      // 提示必须按会话工作区约束原样交给端口。
+      // 提示必须按会话工作区约束原样交给端口；会话身份与 workspace 根一并下发
+      //（PR #27 评审 R2/R4：MOS sessionId 是 muse 会话映射键；workspaceRoot 是边界）。
       expect(run.request.prompt).toBe("fix the failing parser test");
       expect(run.request.workingDirectory).toBe("/workspace/fixture");
+      expect(run.request.workspaceRoot).toBe("/workspace/fixture");
+      expect(run.request.sessionId).toBe("sess_muse_test");
     });
     const { appended, persistedMessages, persistedParts, runtime } = createStubRuntime(port);
     const events: SessionEvent[] = [];
@@ -157,6 +165,15 @@ describe("runDelegatedMuseTurn", () => {
     expect(assistant?.providerId).toBe("muse-code");
     expect(assistant?.modelId).toBe("muse-exec");
     expect(typeof assistant?.time?.completed).toBe("number");
+    // 用量诚实（R6）：订阅计量的委托轮没有货币成本——cost 必须是 null（未申报），
+    // 绝不是 0（会被下游误读为免费）；metadata 明确标注 unreported。
+    expect(assistant?.cost).toBeNull();
+    const stepFinish = persistedParts.find((part) => part.type === "step-finish");
+    expect(stepFinish && stepFinish.type === "step-finish" ? stepFinish.cost : undefined).toBeNull();
+    const museMetadata = (
+      assistant?.metadata as { museExecution?: { usageReporting?: string } } | undefined
+    )?.museExecution;
+    expect(museMetadata?.usageReporting).toBe("unreported");
   });
 
   it("fails closed when the runtime has no muse execution port", async () => {
@@ -212,6 +229,11 @@ describe("runDelegatedMuseTurn", () => {
           stderrTail: "boom detail",
           timedOut: false,
           unknownEventCount: 0,
+          surface: "muse-exec",
+          resumedMuseSession: false,
+          approvalRequestsObserved: 0,
+          userQuestionsObserved: 0,
+          approvalPosture: "fail-closed",
         } satisfies import("@zcode/contracts").MuseExecRunResult;
       },
     };
@@ -234,5 +256,90 @@ describe("runDelegatedMuseTurn", () => {
     await expect(
       runDelegatedMuseTurn.call(runtime, baseParams(runtime, controller.signal, [])),
     ).rejects.toThrow(/quota exhausted/);
+  });
+
+  it("projects approval requests and user questions as visible activity rows (R3)", async () => {
+    const controller = new AbortController();
+    const port = createScriptedMusePort(async (run) => {
+      await run.handlers.onEvent({
+        kind: "approval_required",
+        summary: "run the test suite",
+        toolName: "Bash",
+      });
+      await run.handlers.onEvent({ kind: "user_question", summary: "Which database engine?" });
+      await run.handlers.onEvent({ kind: "text_delta", text: "continuing" });
+    });
+    const { appended, runtime } = createStubRuntime(port);
+    const result = await runDelegatedMuseTurn.call(
+      runtime,
+      baseParams(runtime, controller.signal, []),
+    );
+    // 不代答/不代批：请求与提问如实投影为 ToolCall 行（fail-closed 拒绝在端口侧发生）。
+    expect(result.approvalRequestsObserved).toBe(1);
+    expect(result.userQuestionsObserved).toBe(1);
+    const toolNames = appended
+      .filter((event) => event.type === SessionEventType.ToolCallStarted)
+      .map((event) => (event.payload as { toolName?: string }).toolName);
+    expect(toolNames).toContain("muse-approval:Bash");
+    expect(toolNames).toContain("muse-question");
+  });
+
+  it("maps reported token usage from the port and still records null cost (R6)", async () => {
+    const controller = new AbortController();
+    const port = {
+      async runMuseExec(
+        _request: import("@zcode/contracts").MuseExecRequest,
+        handlers: ScriptedPortRun["handlers"],
+      ) {
+        await handlers.onEvent({ kind: "text_delta", text: "answer" });
+        return {
+          cancelled: false,
+          exitCode: 0,
+          stderrTail: "",
+          timedOut: false,
+          unknownEventCount: 0,
+          surface: "session-protocol",
+          museSessionId: "muse-session-42",
+          resumedMuseSession: true,
+          approvalRequestsObserved: 0,
+          userQuestionsObserved: 0,
+          usage: {
+            inputTokens: 120,
+            outputTokens: 30,
+            reasoningTokens: 5,
+            cachedTokens: 8,
+            cacheReadTokens: 6,
+            cacheWriteTokens: 2,
+          },
+          approvalPosture: "fail-closed",
+        } satisfies import("@zcode/contracts").MuseExecRunResult;
+      },
+    };
+    const { persistedMessages, persistedParts, runtime } = createStubRuntime(port);
+    const result = await runDelegatedMuseTurn.call(
+      runtime,
+      baseParams(runtime, controller.signal, []),
+    );
+    // 端口申报的 token 如实映射到 turn 结果；货币成本仍是 null（订阅计量无 USD 值）。
+    expect(result.usage).toMatchObject({ inputTokens: 120, outputTokens: 30 });
+    expect(result.surface).toBe("session-protocol");
+    expect(result.resumedMuseSession).toBe(true);
+    expect(result.museSessionId).toBe("muse-session-42");
+    const assistant = persistedMessages.filter((message) => message.role === "assistant").at(-1);
+    expect(assistant?.cost).toBeNull();
+    expect(assistant?.tokens).toMatchObject({ input: 120, output: 30, reasoning: 5 });
+    expect((assistant?.tokens as { cache?: { read?: number } }).cache?.read).toBe(6);
+    const museMetadata = (
+      assistant?.metadata as { museExecution?: { usageReporting?: string; surface?: string } }
+    )?.museExecution;
+    expect(museMetadata?.usageReporting).toBe("reported");
+    expect(museMetadata?.surface).toBe("session-protocol");
+    const stepFinish = persistedParts.find((part) => part.type === "step-finish");
+    expect(stepFinish && stepFinish.type === "step-finish" ? stepFinish.cost : 0).toBeNull();
+    expect(
+      stepFinish && stepFinish.type === "step-finish"
+        ? (stepFinish.tokens as { input?: number }).input
+        : undefined,
+    ).toBe(120);
   });
 });

@@ -47,6 +47,22 @@ export interface DelegatedMuseTurnResult {
   turnMachine: TurnMachineImpl;
   response: string;
   toolCallCount: number;
+  /** 端口申报的 turn 级 token 用量（缺省 = 未申报；PR #27 评审 R6）。 */
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    reasoningTokens: number;
+    cachedTokens: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+  };
+  /** 审批请求/用户提问观测计数（fail-closed 拒绝同样计数；可见性优先）。 */
+  approvalRequestsObserved: number;
+  userQuestionsObserved: number;
+  /** 本轮实际执行面（端口选择；归因如实）。 */
+  surface: "muse-exec" | "session-protocol";
+  museSessionId?: string;
+  resumedMuseSession: boolean;
 }
 
 export async function runDelegatedMuseTurn(
@@ -85,6 +101,38 @@ export async function runDelegatedMuseTurn(
   let responseText = "";
   let streamError: { message: string; code?: string } | undefined;
   const startedToolCallIds = new Set<string>();
+  // 审批/提问可见性（PR #27 评审 R3）：外部 agent 的审批请求与用户提问不是工具遥测，
+  // 但 headless 轮里必须可见——投影为专用活动行，绝不代答/代批。
+  let approvalRequestsObserved = 0;
+  let userQuestionsObserved = 0;
+  let observedApprovalToolNames: string[] = [];
+  const emitExternalNoticeRow = async (
+    trace: typeof params.turnTraceContext,
+    toolCallId: string,
+    toolName: string,
+    summary: string,
+  ): Promise<void> => {
+    await this.appendEvent(
+      this.createEvent(
+        SessionEventType.ToolCallStarted,
+        { startedAt: new Date(), toolCallId, toolName },
+        trace,
+      ),
+      trace,
+    );
+    await this.appendEvent(
+      this.createEvent(
+        SessionEventType.ToolCallResult,
+        {
+          duration: 0,
+          result: { content: summary, success: false, truncated: true },
+          toolCallId,
+        },
+        trace,
+      ),
+      trace,
+    );
+  };
   // 与普通轮同一状态机纪律：进入流式前先 startModelRequest（归因标签如实标注委托执行源）。
   let turnMachine = new TurnMachineImpl(
     params.turnMachine.startModelRequest("muse-code/muse-exec", []),
@@ -114,7 +162,9 @@ export async function runDelegatedMuseTurn(
       {
         prompt: params.input,
         signal: params.turnAbortSignal,
+        sessionId: this.sessionId,
         workingDirectory: this.workingDirectory,
+        workspaceRoot: this.workspaceRoot,
       },
       {
         onEvent: async (event) => {
@@ -186,6 +236,29 @@ export async function runDelegatedMuseTurn(
               streamError = { code: event.code, message: event.message };
               return;
             }
+            case "approval_required": {
+              approvalRequestsObserved += 1;
+              if (event.toolName) observedApprovalToolNames.push(event.toolName);
+              await emitExternalNoticeRow.call(
+                this,
+                trace,
+                createToolCallId(`muse:approval:${approvalRequestsObserved}`),
+                event.toolName ? `muse-approval:${event.toolName}` : "muse-approval",
+                `Muse agent requested approval${event.summary ? `: ${event.summary}` : ""} — not approved in delegated mode (unattended posture); adjust the approval posture in Model Settings or continue in the CLI`,
+              );
+              return;
+            }
+            case "user_question": {
+              userQuestionsObserved += 1;
+              await emitExternalNoticeRow.call(
+                this,
+                trace,
+                createToolCallId(`muse:question:${userQuestionsObserved}`),
+                "muse-question",
+                `Muse agent asked a question (unanswered in delegated mode): ${event.summary}`,
+              );
+              return;
+            }
           }
         },
       },
@@ -206,9 +279,23 @@ export async function runDelegatedMuseTurn(
 
   try {
     throwIfTurnAborted(params.turnAbortSignal);
+    // 审批/提问计数对账（R3）：端口申报数与 core 事件投影数观测同一流，取大值
+    // ——绝不低报（两侧实现差异/计数口径漂移只影响上限，不影响事实）。
+    const observedApprovalRequests = Math.max(
+      approvalRequestsObserved,
+      runResult.approvalRequestsObserved,
+    );
+    const observedUserQuestions = Math.max(
+      userQuestionsObserved,
+      runResult.userQuestionsObserved,
+    );
     if (streamError) {
       throw new Error(
-        `Muse Code execution failed: ${trimForError(streamError.message)}`,
+        `Muse Code execution failed: ${trimForError(streamError.message)}${
+        observedApprovalRequests > 0
+          ? ` (${observedApprovalRequests} approval request(s) were observed; the unattended posture did not approve them — see Settings → Meta Muse Code)`
+          : ""
+      }`,
       );
     }
     if (runResult.timedOut) {
@@ -219,7 +306,11 @@ export async function runDelegatedMuseTurn(
     if (runResult.exitCode !== 0) {
       throw Object.assign(
         new Error(
-          `Muse Code CLI exited with code ${runResult.exitCode ?? "unknown"}${runResult.stderrTail ? `: ${trimForError(runResult.stderrTail)}` : ""}`,
+          `Muse Code CLI exited with code ${runResult.exitCode ?? "unknown"}${runResult.stderrTail ? `: ${trimForError(runResult.stderrTail)}` : ""}${
+            observedApprovalRequests > 0
+              ? ` — ${observedApprovalRequests} approval request(s) observed; the unattended posture did not approve them (see Settings → Meta Muse Code)`
+              : ""
+          }`,
         ),
         { code: MUSE_EXEC_TURN_EXIT_CODE },
       );
@@ -231,6 +322,34 @@ export async function runDelegatedMuseTurn(
       trace,
       params.events,
     );
+    // 用量诚实（PR #27 评审 R6）：订阅计量的 delegated 轮没有可记录的货币成本——
+    // cost 记 null（未申报），绝不记 0（会被下游误读为免费/零消耗）。token 由端口
+    // 申报时如实映射（MSP 面 turn/completed）；exec 面未申报时 metadata 明确标注。
+    const reportedUsage = runResult.usage;
+    const delegatedTokens = reportedUsage
+      ? {
+          input: reportedUsage.inputTokens,
+          output: reportedUsage.outputTokens,
+          reasoning: reportedUsage.reasoningTokens,
+          cache: {
+            read: reportedUsage.cacheReadTokens ?? reportedUsage.cachedTokens,
+            write: reportedUsage.cacheWriteTokens ?? 0,
+          },
+        }
+      : emptyTokenUsageInfo();
+    const delegatedUsageMetadata = {
+      museExecution: {
+        surface: runResult.surface,
+        usageReporting: reportedUsage ? ("reported" as const) : ("unreported" as const),
+        ...(runResult.museSessionId ? { museSessionId: runResult.museSessionId } : {}),
+        resumedMuseSession: runResult.resumedMuseSession,
+        approvalRequestsObserved: observedApprovalRequests,
+        userQuestionsObserved: observedUserQuestions,
+        ...(runResult.subscriptionUsage
+          ? { subscriptionUsage: runResult.subscriptionUsage }
+          : {}),
+      },
+    };
     await persistTextBlockParts(
       this,
       {
@@ -248,8 +367,8 @@ export async function runDelegatedMuseTurn(
         messageID: assistantMessageId,
         type: "step-finish",
         reason: "muse_turn_complete",
-        cost: 0,
-        tokens: emptyTokenUsageInfo(),
+        cost: null,
+        tokens: delegatedTokens,
       },
       trace,
     );
@@ -258,10 +377,11 @@ export async function runDelegatedMuseTurn(
       messageID: assistantMessageId,
       parentID: params.userMessageId,
       traceContext: trace,
+      metadata: delegatedUsageMetadata,
       update: {
         completed: Date.now(),
         finish: "muse_turn_complete",
-        tokens: emptyTokenUsageInfo(),
+        tokens: delegatedTokens,
       },
     });
     let finalTurnMachine = new TurnMachineImpl(turnMachine.receiveModelResponse(responseText));
@@ -273,6 +393,15 @@ export async function runDelegatedMuseTurn(
       exitCode: runResult.exitCode,
       module: "core.runtime",
       status: "completed",
+      surface: runResult.surface,
+      ...(runResult.museSessionId ? { museSessionId: runResult.museSessionId } : {}),
+      resumedMuseSession: runResult.resumedMuseSession,
+      approvalRequestsObserved: observedApprovalRequests,
+      userQuestionsObserved: observedUserQuestions,
+      usageReporting: reportedUsage ? "reported" : "unreported",
+      ...(runResult.subscriptionUsage
+        ? { subscriptionWindowUsedPercent: runResult.subscriptionUsage.windowUsedPercent }
+        : {}),
       toolCallCount: startedToolCallIds.size,
       unknownEventCount: runResult.unknownEventCount,
     });
@@ -280,6 +409,12 @@ export async function runDelegatedMuseTurn(
       response: responseText,
       toolCallCount: startedToolCallIds.size,
       turnMachine: finalTurnMachine,
+      ...(reportedUsage ? { usage: reportedUsage } : {}),
+      approvalRequestsObserved: observedApprovalRequests,
+      userQuestionsObserved: observedUserQuestions,
+      surface: runResult.surface,
+      ...(runResult.museSessionId ? { museSessionId: runResult.museSessionId } : {}),
+      resumedMuseSession: runResult.resumedMuseSession,
     };
   } catch (error) {
     await settleDelegatedMuseStream.call(this, {
@@ -381,6 +516,8 @@ async function persistDelegatedMuseAssistantMessage(
     messageID: MessageId;
     parentID: MessageId;
     traceContext: TraceContext;
+    /** 委托执行归因/用量申报标记（PR #27 评审 R6；metadata 字段即为此设计的自由栏）。 */
+    metadata?: Record<string, unknown>;
     update?: {
       completed?: number;
       error?: { name: string; data?: Record<string, unknown> };
@@ -415,9 +552,10 @@ async function persistDelegatedMuseAssistantMessage(
         cwd: this.workingDirectory,
         root: this.workspaceRoot,
       },
-      cost: 0,
+      cost: null,
       tokens: input.update?.tokens ?? emptyTokenUsageInfo(),
       finish: input.update?.finish,
+      ...(input.metadata ? { metadata: input.metadata } : {}),
       semantics: {
         origin: "agent_runtime",
         kind: "assistant_response",
