@@ -22,6 +22,7 @@
 - [x] Week 3 transformation/artifact-lineage modules implemented and contract-tested (7 packages, 274 new tests; mos-studio deferred — composition blocker; see Week 3 record).
 - [x] Composition-root milestone delivered (mos-studio plugin: New Task → Mission → capabilities → routes → authorized read; see composition-root milestone record).
 - [x] Week 4 economy/capacity modules implemented and contract-tested (mos-commerce + mos-resource-network, architecture §8 invariants §23–§26; see Week 4 record).
+- [x] Distributable desktop release published (mos-v3.0.0-rc.1: GitHub Actions full pipeline green — 4/4 builds, 4/4 clean-machine smokes, checksums/manifest/attestation verified; TL review + publish record below).
 
 ## Evidence ledger
 
@@ -40,6 +41,7 @@
 | Live provider read | blocked | No HubSpot account/OAuth client in this environment; live-verification plan recorded in the evidence record |
 | In-app composition + UI mounting | delivered (composition-root milestone) | mos-studio ZCode plugin (`ui.surfaces` + top-level `slots` nav.primary/sidePane.launcher + SessionStart hook); inline plugin via `plugins.dirs` (defaultEnabled). Desktop renders the MCP Apps panel; Web/remote degrade to plain tool records (upstream fallback). Real discovery/loader validation + real-stack journey + live Composio read in the milestone record below; Desktop visual mount + desktop E2E remain blocked (no docker/display) |
 | Product behavior | preserved, not yet exercised | Import adds no ZCode behavior changes; only MOS docs, preserved upstream doc copies and import evidence were added |
+| Distributable desktop release | **published** | Release `mos-v3.0.0-rc.1` (2026-11-14T05:04:06Z, prerelease): https://github.com/payswapdotorg/MOS-3.0/releases/tag/mos-v3.0.0-rc.1 — 18 assets (8 installers, SHA256SUMS, release-manifest.json, smoke-evidence ×4, workdir listings ×4); pipeline run 9 all-green (gate → 4/4 builds → 4/4 clean-machine smokes → draft); TL independent re-verify (manifest↔SUMS 8/8 MATCH, clean download hash recompute MATCH, attestation generated); full record in the release-engineering record below |
 
 ## Update rules
 
@@ -595,3 +597,111 @@ branch additive-only).
   marketplace copy-style plugin packaging, `@zcode/contracts` dist build-state gap
   (flagged this stage for a future gate-wiring decision), environment-sensitive
   miseToolchainEnv failure (pre-existing baseline).
+
+## Release-engineering record (branches tl/mos-release-engineering + fix/mos-release-round2-9, 2026-11-13/14)
+
+Delivers the architect handoff `docs/handoff/FINAL-TL-HANDOFF-DISTRIBUTABLE-RELEASE.md`
+(backlog `spec/backlog/release-engineering.md`): MOS as a distributable desktop product —
+GitHub Actions builds + GitHub Release publishing; the local AI agent is a pure consumer
+(`docs/release/CONSUMER-CONTRACT.md`: query metadata → pick target → download → SHA-256
+verify → OS-native install → launch; never builds, never edits configs).
+
+**PUBLISHED: `mos-v3.0.0-rc.1`** — https://github.com/payswapdotorg/MOS-3.0/releases/tag/mos-v3.0.0-rc.1
+(2026-11-14T05:04:06Z; prerelease; 18 assets). Final source commit `308f0d60` (PR chain
+#10 → #11 → #12/#13 → #14 → #15 → #16 → #17 → #18, all merged to main). MOS version
+3.0.0-rc.1 (channel rc); ZCode upstream baseline 3.18.0 recorded in release-manifest.json.
+Release workflow run 9 (43556399832) — the first fully green end-to-end pipeline.
+
+### Deliverables
+
+1. **MOS desktop identity** (independent product; coexists with upstream ZCode):
+   compile-time flavor `ZCODE_PRODUCT_FLAVOR="mos"` + build injection `MOS_PRODUCT_IDENTITY=1`
+   (appId org.payswap.mos, productName MOS, linux executable/package `mos`, Windows AUMID
+   org.payswap.mos.<version>); runtime data root `~/.mos` (setDataBaseDir → ZCODE_HOME →
+   agent-state env surface → settings file via in-process ZCODE_DATA_BASE_DIR); Electron
+   identity applied in the early bootstrap BEFORE any identity-sensitive module load
+   (setName + home/userData/sessionData setPath), with the packaged package.json
+   productName rewritten via electron-builder extraMetadata as defense-in-depth; auto-update
+   disabled by flavor (production-gated autoUpdater; no update feed in artifacts —
+   latest*.yml forbidden, blockmaps inert/excluded, differentialPackage off); deterministic
+   pure-Node MOS brand asset generator (PNG/ICO/hicolor/dmg background).
+2. **Bundled MOS Studio**: staged into the packaged `resources/glm` per target (staging key
+   from getTargetPlatform; native closure @napi-rs/keyring + koffi per-OS binaries; hooks
+   run without system Node via the packaged-runtime dialect); unique slot item ids; verified
+   by the build-time package-inside gate AND the installed-app smoke on every platform.
+3. **Reproducible release pipeline** (`.github/workflows/mos-release.yml`): release-gate
+   (tag shape `mos-v*`, main ancestry, upstream-form rejection) → 4-target build matrix
+   (explicit --os/--arch, package-inside inspect gate, artifact collection contract) →
+   per-platform native-runner clean-machine smoke → release job (SHA256SUMS +
+   release-manifest.json + SLSA provenance attestation + verify-release full recompute +
+   DRAFT release, never auto-published, never clobbers assets, evidence JSONs archived as
+   Release assets per runbook §7). `.github/workflows/mos-ci.yml` gates every PR.
+4. **Installers**: win-x64 NSIS exe; mac-x64/arm64 dmg+zip; linux-x64 AppImage+deb
+   (+rpm best-effort, present); naming `MOS-<version>-<os>-<arch>.<ext>`; deb version uses
+   Debian `~` canonicalization (3.0.0~rc.1 — semver-equivalent, accepted by the gates).
+5. **Checksums + machine-readable manifest + provenance**: SHA256SUMS; release-manifest.json
+   (schema v1: version/sourceCommit/zcodeBaseline/buildRunUrl/per-target sha256+sizeBytes/
+   minOs/omittedTargets win-arm64+linux-arm64/signature.status="unsigned"/
+   attestationStatus="generated"); SLSA build-provenance attestation (attestations: write).
+6. **Clean-machine acceptance** (`scripts/release-smoke/run-platform-smoke.mjs`):
+   verify-artifact → isolate-home → install (apt install ./deb, hdiutil+ditto dmg, NSIS /S)
+   → identity → launch + relaunch (mac expectation = real-home `Application Support/MOS`;
+   Chromium ignores the HOME override) → plugin-seeded → plugin-alive (MCP initialize →
+   tools/list → tools/call(mos_studio_status) with safe degradation) → session-hook →
+   data-persistence → upgrade (honest skipped for same-version RC) → upstream-decoys-
+   untouched (`~/.zcode` + `<appData>/ZCode` decoy snapshots prove no upstream writes).
+   Run 9 evidence: all four platforms `ok: true`, every step passed except the honest
+   upgrade skip; evidence JSONs + per-platform workdir listings archived on the Release.
+
+### Release run history (tag mos-v3.0.0-rc.1) — defense-in-depth worked as designed
+
+| Run | Head | Outcome | Root cause (fix) |
+|---|---|---|---|
+| 1 | 9d74e944 (PR #10) | failure | mac artifact naming/collection + blockmap contract; win GNU tar colon-path (`--force-local`); differentialPackage off; pacman dropped (PR #11) |
+| 2 | f99bbb0c (PR #11) | failure | all 4 builds green; smoke caught: plugin staged to `bundled-agents/linux_x64` while consumers read `linux-x64` (packaged app had NO mos-studio) + agent state on upstream literal-home paths (PR #12: staging key from getTargetPlatform + official agent-state env surface + inspect-package build gate) |
+| 3 | c918b224 (PR #12) | failure | dpkg-deb control fields carry one leading space (regex now tolerant, regression test); win 7z off-PATH (absolute probe); mac-x64 transient hdiutil race (job rerun path) (PR #13) |
+| 4 | b7245642 (PR #13) | failure | deb version Debian `~` canonicalization + NSIS packs the whole payload as `$PLUGINSDIR/app-64.7z` with dateless listing rows → two-level inspect (validated against the real run-2 installer: 11/11 top rows, 3561/3561 inner entries) (PR #14) |
+| 5 | 237be6ec (PR #14) | failure | product defects caught by smoke: packaged package.json productName "ZCode" → ARMS RUM store wrote `<appData>/ZCode` before setName (early-identity bootstrap + extraMetadata); harness agent children missing ZCODE_HOME (env contract mirror); mac Chromium appData ignores HOME (real-home expectation); dpkg -i unconfigured deps (apt install path); duplicate slot item id dropped the launcher entry; evidence upload 250-490MB (trim) (PR #15) |
+| 6 | 56662c27 (PR #15) | failure | 10/12 steps green everywhere; settingService wrote first-launch defaults into upstream `~/.zcode/v2/setting.json` (env chain + in-process ZCODE_DATA_BASE_DIR + aligned early readers + MOS skips the upstream data-dir relocation bootstrap) (PR #16) |
+| 7 | 3f8549c7 (PR #16) | builds 4/4 + smoke 4/4 green; release job failed | first full acceptance matrix green; DRAFT-assembly step (never before executed): tag check mis-read a lightweight tag (gh api error body in captured var; SHA-guard) + missing attestations: write permission (PR #17) |
+| 8 | feabe743 (PR #17) | failure (release job only) | stray `fi` from the round-7 line replacement — bash syntax error in the step; all run: blocks are now bash -n validated locally (PR #18) |
+| 9 | 308f0d60 (PR #18) | **SUCCESS — draft created** | —; TL review found the draft lacked the evidence assets (upload loop only globbed release-staging) — attached run-9 evidence as a documented backfill; workflow fixed for future runs (PR #19) |
+
+### TL draft review + publish (runbook §5)
+
+- Draft assets verified: 8 installers + SHA256SUMS + release-manifest.json; smoke evidence
+  ×4 + workdir listings ×4 attached (run-9 files, same bytes as the Actions artifacts).
+- Independent verification from this clean sandbox: manifest ↔ SHA256SUMS bidirectional
+  MATCH on all 8 targets; clean download + SHA-256 recompute of the win-x64 exe: MATCH
+  (0c0850b9…a7b5b6); attestationStatus "generated"; limitations declared honestly
+  (unsigned, no auto-update, omitted arm64 targets, pkg.tar.zst omitted with reason).
+- Published `2026-11-14T05:04:06Z` via the only publish path (draft→published; flagged
+  prerelease so /releases/latest never serves the RC as stable).
+
+### Product-level defects the clean-machine smoke caught (all fixed before publish)
+
+1. Packaged app wrote RUM telemetry state into upstream ZCode's Electron userData
+   (`<appData>/ZCode/rum-electron-store`) — would pollute co-installed upstream ZCode on
+   real machines; macOS exposed it because Chromium's appData resolution ignores the HOME
+   override.
+2. Desktop settingService persisted first-launch settings into upstream
+   `~/.zcode/v2/setting.json` — co-installed products would fight over one settings file.
+3. mos-studio slot item id collision dropped the sidePane launcher entry.
+4. Tooling/fidelity fixes: NSIS two-level inspect, Debian `~` acceptance, agent env
+  contract mirror, mac userData expectation, apt install path, tag-check SHA guard,
+  attestation permission, evidence artifact trim (250-491MB → 17-48KB per platform).
+
+### Known limitations (declared in manifest/notes; honest RC posture)
+
+- Unsigned (signature.status="unsigned"): macOS Gatekeeper right-click-open; Windows
+  SmartScreen "more info → run anyway"; Linux AppImage chmod +x. Never claimed signed.
+- omittedTargets: win-arm64, linux-arm64 (pending native/runtime smoke verification).
+- Auto-update intentionally absent (no feed; manual download path per consumer contract).
+- Upgrade-in-place verification deferred to rc.2 (same-version RC records honest skipped).
+- Personal-instructions file (`~/.zcode/AGENTS.md`) is deliberately HOME-based per the CLI
+  contract comment (App and agent must not fork); editing personal instructions in MOS on a
+  machine with co-installed upstream ZCode would write that shared file — follow-up needs a
+  CLI-side MOS-aware resolver decision. Not part of the first-launch acceptance surface.
+- Manual acceptance items from `docs/release/ACCEPTANCE-RC.md` that need a human desktop:
+  visual icon on a real desktop, full-machine reboot re-launch, disable-plugin degradation
+  journey, native-feature regression pass (reviewer's machine).
