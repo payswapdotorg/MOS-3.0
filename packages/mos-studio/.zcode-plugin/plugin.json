@@ -45,7 +45,7 @@
     ],
     "sidePane.launcher": [
       {
-        "id": "mos-studio",
+        "id": "mos-studio-side-pane",
         "target": { "surface": "mos-studio" },
         "title": {
           "en-US": "MOS Studio",

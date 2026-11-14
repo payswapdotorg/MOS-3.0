@@ -626,6 +626,12 @@ export default {
     zcodeProductFlavor: desktopProductIdentity.flavor,
     // fpm 从 app package.json 的 description 取 deb/rpm 包描述；MOS 包不得顶着 ZCode 描述发布。
     ...(isMosDesktopProduct ? { description: "MOS Desktop App — PaySwap" } : {}),
+    // 打包内 app.asar 的 package.json productName 仍是源码里的上游值（实测 run 2 产物："ZCode"）——
+    // Electron 的默认应用名/默认 userData 在任何运行时 setName 之前都取它。打包期把 productName
+    // 改写成目标身份，与运行期早期 bootstrap 的 setName/setPath（先于 ARMS/RUM 模块加载）
+    // 构成双层防线：即便未来某个模块在身份应用前解析默认路径，默认名也是 MOS
+    // 而不是上游 ZCode（并排安装互不污染的契约保证）。
+    ...(isMosDesktopProduct ? { productName: desktopProductIdentity.productName } : {}),
     homepage: isMosDesktopProduct ? "https://github.com/payswapdotorg/MOS-3.0" : "https://zcode.z.ai",
     author: isMosDesktopProduct
       ? {

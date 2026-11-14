@@ -31,9 +31,11 @@ import {
   PLATFORM_SPECS,
   artifactExtensionMatchesPlatform,
   artifactFileName,
+  buildAgentProcessEnv,
   buildIsolatedEnv,
   electronUserDataDir,
   expectedArtifactFileNames,
+  expectedElectronUserDataHome,
   getPlatformSpec,
   keyringPlatformPackageName,
   mosDataBaseDir,
@@ -333,6 +335,33 @@ test("数据目录隔离：MOS 与上游 ZCode 的 userData/数据根在所有�
       "0.1.0",
     ),
   );
+});
+
+test("agent 子进程环境契约：镜像桌面 buildHostProcessEnv 的 MOS 数据根变量集（run 5 回归）", () => {
+  // run 5 实测：seed/MCP/hook 缺 ZCODE_HOME 时，CLI telemetry bootstrap 回落到
+  // homedir()/.zcode/v2/telemetry-state.json，把上游 decoy 写花。
+  const home = join("/", "smoke", "home");
+  const env = buildAgentProcessEnv("linux-x64", home);
+  assert.equal(env.ZCODE_HOME, join(home, ".mos", ".zcode"));
+  assert.equal(env.ZCODE_DATA_BASE_DIR, join(home, ".mos"));
+  assert.equal(env.ZCODE_STORAGE_DIR, join(home, ".mos", ".zcode"));
+  assert.equal(env.ZCODE_SESSION_DB_PATH, join(home, ".mos", ".zcode", "cli", "db", "db.sqlite"));
+  assert.equal(env.ZCODE_LOG_DIR, join(home, ".mos", ".zcode", "cli", "log"));
+  // 契约底线：五个变量全部落在 MOS 数据根（~/.mos）内，无一指向隔离家目录的上游 ~/.zcode。
+  for (const value of Object.values(env)) {
+    assert.ok(value.startsWith(join(home, ".mos")), `越出 MOS 数据根：${value}`);
+  }
+});
+
+test("Electron userData 期望家目录：darwin 用真实家目录，其它平台用隔离家目录", () => {
+  // run 5 实测：mac 的 Chromium 解析 appData 不跟随 HOME 环境覆盖，首启 userData
+  // 始终落在真实家目录 ~/Library/Application Support/MOS。
+  const isolated = join("/", "smoke", "work", "home");
+  const real = join("/", "Users", "runner");
+  assert.equal(expectedElectronUserDataHome("mac-arm64", isolated, real), real);
+  assert.equal(expectedElectronUserDataHome("mac-x64", isolated, real), real);
+  assert.equal(expectedElectronUserDataHome("win-x64", isolated, real), isolated);
+  assert.equal(expectedElectronUserDataHome("linux-x64", isolated, real), isolated);
 });
 
 test("隔离运行环境：HOME/APPDATA 等全部指向隔离家目录，TMPDIR 保留系统值", () => {

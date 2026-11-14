@@ -193,10 +193,6 @@ import {
   resolveZCodeEndpointEnvBaseOrigin,
   desktopRuntimeEnv,
   runtimeApplicationName,
-  runtimeHomePath,
-  runtimeSessionDataPath,
-  runtimeUserDataPath,
-  shouldUseElectronDefaultUserDataPath,
 } from "./desktopRuntimeEnv.js";
 import {
   disposeHostProcess,
@@ -312,19 +308,10 @@ if (!app.isPackaged && process.env.ZCODE_DISABLE_FIXED_REMOTE_DEBUGGING_PORT !==
   app.commandLine.appendSwitch("remote-debugging-port", "9229");
 }
 
-app.setName(runtimeApplicationName);
-if (runtimeHomePath) {
-  app.setPath("home", runtimeHomePath);
-}
-if (!shouldUseElectronDefaultUserDataPath) {
-  if (!runtimeUserDataPath || !runtimeSessionDataPath) {
-    throw new Error(
-      "Desktop runtime data paths are required when Electron default userData is disabled",
-    );
-  }
-  app.setPath("userData", runtimeUserDataPath);
-  app.setPath("sessionData", runtimeSessionDataPath);
-}
+// 应用身份（setName + home/userData/sessionData setPath）已由早期 bootstrap
+// desktopEarlyDataBaseDirBootstrap.js（index.ts 上游的既有早期模块，先于 ARMS/RUM
+// 等模块加载）应用——晚于此的早期路径解析曾落进上游 <appData>/ZCode
+// （run 5 冒烟 decoy 捕获，见该模块注释）。
 process.title = runtimeApplicationName;
 
 process.on("unhandledRejection", (reason) => {

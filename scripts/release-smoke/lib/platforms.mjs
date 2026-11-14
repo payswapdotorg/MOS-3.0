@@ -255,6 +255,34 @@ export function seededPluginRoot(homeDir, pluginVersion = MOS_PLUGIN_VERSION) {
   );
 }
 
+/**
+ * 冒烟驱动的 agent 类子进程（seed / MCP / hook）必须镜像桌面 buildHostProcessEnv 的
+ * MOS 子进程环境契约（desktopRuntimeEnv）：ZCODE_HOME/ZCODE_DATA_BASE_DIR/…
+ * 全部指向 MOS 数据根。run 5 实测：缺 ZCODE_HOME 时 CLI telemetry bootstrap
+ * 回落到 `homedir()/.zcode/v2/telemetry-state.json`（decoy 被写）。
+ */
+export function buildAgentProcessEnv(platformKey, homeDir) {
+  getPlatformSpec(platformKey);
+  const mosDataRoot = join(mosDataBaseDir(homeDir), ".zcode");
+  return {
+    ZCODE_HOME: mosDataRoot,
+    ZCODE_DATA_BASE_DIR: mosDataBaseDir(homeDir),
+    ZCODE_STORAGE_DIR: mosDataRoot,
+    ZCODE_SESSION_DB_PATH: join(mosDataRoot, "cli", "db", "db.sqlite"),
+    ZCODE_LOG_DIR: join(mosDataRoot, "cli", "log"),
+  };
+}
+
+/**
+ * Electron userData 的期望家目录：macOS 上 Chromium 解析 appData 走操作系统真实家目录
+ * （不跟随 HOME 环境覆盖，run 5 实测：首启 userData 始终落在真实家目录的
+ * `~/Library/Application Support`），因此 darwin 的期望落点必须用真实家目录；
+ * win/linux 的 Electron 跟随 APPDATA/XDG_CONFIG_HOME/HOME 环境变量，期望落点用隔离家目录。
+ */
+export function expectedElectronUserDataHome(platformKey, isolatedHomeDir, realHomeDir) {
+  return getPlatformSpec(platformKey).os === "darwin" ? realHomeDir : isolatedHomeDir;
+}
+
 /** Windows 默认每用户安装目录（%LOCALAPPDATA%\Programs\MOS）。 */
 export function defaultWindowsInstallDir(localAppDataDir) {
   return join(localAppDataDir, "Programs", MOS_PRODUCT_NAME);
