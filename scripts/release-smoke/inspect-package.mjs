@@ -92,6 +92,17 @@ export function parseDpkgInfo(text) {
   return info;
 }
 
+/**
+ * semver 预发布连字符在 Debian 版本里不合法：electron-builder/fpm 将 `-` 规范化为 `~`
+ * （3.0.0-rc.1 → 3.0.0~rc.1；Debian 语义里 `~` 排在发布前，与 semver 预发布一致）。
+ * 同时保留原样形态兼容（未来 fpm 行为变化时可立刻发现）。
+ */
+export function debExpectedVersions(mosVersion) {
+  const version = String(mosVersion);
+  const mangled = version.replace(/-/g, "~");
+  return mangled === version ? [version] : [version, mangled];
+}
+
 /** 解析 Info.plist（优先 plutil -p；无 plutil 时退回 XML 正则）。 */
 export function parseInfoPlist(text, { mode = "xml" } = {}) {
   if (mode === "plutil") {
@@ -118,20 +129,44 @@ export function normalizeArchiveEntryPath(entry) {
   return String(entry).replaceAll("\\", "/").replace(/^\.\//, "");
 }
 
-/** 7z 列表里是否包含全部必需条目（前缀闭包成员逐项匹配）。 */
-export function sevenZipListingHasEntries(listingText, requiredEntries) {
-  const listed = new Set();
+/**
+ * 解析 7z `l` 输出的条目名。实测（7-Zip 24.09，GH runner 同源家族）两类视图的行
+ * 常缺列：solid NSIS 头多数行无时间戳（`                    .....            6931  $PLUGINSDIR/System.dll`），
+ * solid 7z payload 的目录/文件行同样无日期且 Compressed 列常空
+ * （`                    ....A    246302208               MOS.exe`）——
+ * 日期与两个数值列都按可选处理；Name 取行尾（路径可含空格）。
+ * 汇总行（`2026-11-13 21:08:24          834151942    166138502  2759 files, ...`）
+ * 无属性列，天然不匹配；表头/分隔行同理。
+ */
+export function parseSevenZipListing(listingText) {
+  const entries = [];
   for (const line of String(listingText).split(/\r?\n/)) {
-    // 7z `l` 输出：`<日期> <时间> <属性> <Size> [<Compressed>] <Name>`；
-    // 目录行没有 Compressed 列，两列都按可选处理，Name 取行尾（路径可能含空格）。
     const match =
-      /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) ([DRHSA.]{5})\s+(\d+)(?:\s+(\d+))?\s+(\S.*)$/.exec(
+      /^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})?\s*([DRHSA.]{5})(?:\s+[\d,]+)?(?:\s+[\d,]+)?\s{2,}(\S.*)$/.exec(
         line,
       );
-    if (match) listed.add(normalizeArchiveEntryPath(match[5]));
+    if (match) entries.push(normalizeArchiveEntryPath(match[2]));
   }
+  return entries;
+}
+
+/** 7z 列表里是否包含全部必需条目（前缀闭包成员逐项匹配）。 */
+export function sevenZipListingHasEntries(listingText, requiredEntries) {
+  const listed = new Set(parseSevenZipListing(listingText));
   const missing = requiredEntries.map(normalizeArchiveEntryPath).filter((entry) => !listed.has(entry));
   return { missing, listedCount: listed.size };
+}
+
+/**
+ * electron-builder NSIS 安装器的 app payload 惯例位置：整个应用打成单个
+ * `$PLUGINSDIR/app-64.7z`（x64/arm64；ia32 为 app-32.7z），安装期由 nsis7z.dll 解包。
+ * NSIS 顶层没有 MOS.exe/resources —— 内容断言必须进入这一层内层压缩包。
+ */
+export function findNsisPayloadEntry(entries) {
+  for (const entry of entries) {
+    if (/(?:^|\/)app-(?:32|64)\.7z$/i.test(entry)) return entry;
+  }
+  return null;
 }
 
 /** 扫描产物目录的更新 feed 元数据（publish:null 契约）。 */
@@ -161,6 +196,14 @@ export async function scanUpdateMetadata(distDir) {
 
 function artifactFailure(failures, file, check, detail) {
   failures.push({ artifact: file, check, detail });
+}
+
+/**
+ * 7z 过滤器分隔符：Windows 7z.exe 的列表/过滤器用反斜杠；其它平台保持正斜杠
+ * （Linux 7zz 会把 `\` 当普通文件名字符，过滤器将匹配不到任何条目）。
+ */
+function sevenZipFilter(entryPath) {
+  return process.platform === "win32" ? entryPath.replaceAll("/", "\\") : entryPath;
 }
 
 /** 插件根（<resources>/glm/packages/mos-studio-plugin）的闭包 + 清单断言。 */
@@ -231,7 +274,8 @@ async function inspectDebArtifact({ filePath, extractDir, platformKey, mosVersio
   const failures = [];
   const fileName = basename(filePath);
 
-  // dpkg-deb -I：包名/维护者/版本必须指向 MOS。
+  // dpkg-deb -I：包名/维护者/版本必须指向 MOS（版本接受 fpm 的 Debian `~` 规范化形态）。
+  const expectedVersions = debExpectedVersions(mosVersion);
   const infoResult = await runCapture("dpkg-deb", ["-I", filePath], { timeoutMs: 120_000 });
   const info = infoResult.code === 0 ? parseDpkgInfo(infoResult.stdout) : {};
   checks.dpkgInfo = {
@@ -241,7 +285,7 @@ async function inspectDebArtifact({ filePath, extractDir, platformKey, mosVersio
     maintainer: info.Maintainer ?? null,
     architecture: info.Architecture ?? null,
     packageNameOk: info.Package === MOS_LINUX_PACKAGE_NAME,
-    versionOk: info.Version === mosVersion,
+    versionOk: expectedVersions.includes(info.Version),
     maintainerOk: /PaySwap/i.test(info.Maintainer ?? ""),
   };
   if (infoResult.code !== 0) {
@@ -255,7 +299,12 @@ async function inspectDebArtifact({ filePath, extractDir, platformKey, mosVersio
       artifactFailure(failures, fileName, "dpkgInfo.packageNameOk", `deb 包名必须为 ${MOS_LINUX_PACKAGE_NAME}，实际 ${info.Package}`);
     }
     if (!checks.dpkgInfo.versionOk) {
-      artifactFailure(failures, fileName, "dpkgInfo.versionOk", `deb 版本必须等于 MOS 版本 ${mosVersion}，实际 ${info.Version}`);
+      artifactFailure(
+        failures,
+        fileName,
+        "dpkgInfo.versionOk",
+        `deb 版本必须匹配 MOS 版本（接受 ${expectedVersions.join(" / ")}，fpm 将 semver 预发布连字符规范化为 Debian ~），实际 ${info.Version}`,
+      );
     }
     if (!checks.dpkgInfo.maintainerOk) {
       artifactFailure(failures, fileName, "dpkgInfo.maintainerOk", `deb 维护者必须包含 PaySwap，实际 ${info.Maintainer}`);
@@ -431,6 +480,9 @@ async function inspectWindowsExeArtifact({ filePath, extractDir, platformKey }) 
     return { checks, failures };
   }
 
+  // 第一层：NSIS 顶层。electron-builder 把整个应用 payload 打成单个
+  // $PLUGINSDIR/app-64.7z（nsis7z.dll 安装期解包），顶层没有 MOS.exe/resources ——
+  // 先定位 payload，再对内层压缩包断言安装器内容。
   const listResult = await runCapture(sevenZip, ["l", filePath], { timeoutMs: 300_000 });
   checks.sevenZipList = { ok: listResult.code === 0 };
   if (listResult.code !== 0) {
@@ -440,7 +492,39 @@ async function inspectWindowsExeArtifact({ filePath, extractDir, platformKey }) 
     });
     return { checks, failures };
   }
+  const topLevelEntries = parseSevenZipListing(listResult.stdout);
+  const payloadEntry = findNsisPayloadEntry(topLevelEntries);
+  checks.nsisPayload = {
+    entry: payloadEntry,
+    topLevelCount: topLevelEntries.length,
+    topLevelSample: topLevelEntries.slice(0, 20),
+  };
+  if (!payloadEntry) {
+    artifactFailure(failures, fileName, "nsisPayload", {
+      message: "NSIS 顶层缺少 electron-builder app payload（app-64.7z/app-32.7z）",
+      topLevelEntries: topLevelEntries.slice(0, 20),
+    });
+    return { checks, failures };
+  }
 
+  // 解出 payload（7z x 保留伪路径 → extractDir/<payloadEntry>；rc=0 但未落盘按失败处理）。
+  const payloadExtract = await runCapture(
+    sevenZip,
+    ["x", filePath, `-o${extractDir}`, "-y", sevenZipFilter(payloadEntry)],
+    { timeoutMs: 600_000 },
+  );
+  checks.payloadExtract = { ok: payloadExtract.code === 0 };
+  const payloadPath = join(extractDir, ...payloadEntry.split("/"));
+  if (payloadExtract.code !== 0 || !(await pathExists(payloadPath))) {
+    artifactFailure(failures, fileName, "payloadExtract", {
+      message: "7z 解出 NSIS app payload 失败或未落盘",
+      expectedPath: payloadPath,
+      stderr: payloadExtract.stderr?.slice(-2000),
+    });
+    return { checks, failures };
+  }
+
+  // 第二层：对 app-64.7z 断言安装器内容（条目位于压缩包根 = 安装目录布局）。
   // 安装器必须携带：MOS.exe、resources\app.asar、插件闭包（$PLUGINSDIR 属安装器私有，不在断言内）。
   const pluginRootPrefix = `resources/${MOS_STUDIO_PLUGIN_RESOURCE_PATH}`;
   const requiredEntries = [
@@ -448,20 +532,30 @@ async function inspectWindowsExeArtifact({ filePath, extractDir, platformKey }) 
     "resources/app.asar",
     ...requiredStudioPluginFiles(platformKey).map((relative) => `${pluginRootPrefix}/${relative}`),
   ];
-  const listing = sevenZipListingHasEntries(listResult.stdout, requiredEntries);
+  const innerListResult = await runCapture(sevenZip, ["l", payloadPath], { timeoutMs: 300_000 });
+  checks.innerList = { ok: innerListResult.code === 0 };
+  if (innerListResult.code !== 0) {
+    artifactFailure(failures, fileName, "innerList", {
+      message: "7z l（app payload）失败",
+      stderr: innerListResult.stderr?.slice(-2000),
+    });
+    return { checks, failures };
+  }
+  const listing = sevenZipListingHasEntries(innerListResult.stdout, requiredEntries);
   checks.requiredEntries = { missing: listing.missing, listedCount: listing.listedCount };
   if (listing.missing.length > 0) {
     artifactFailure(failures, fileName, "requiredEntries", { missing: listing.missing });
   }
 
   // 定向解出插件闭包做深度断言（koffi.node 非空 + 清单内容）。
-  const extractArgs = ["x", filePath, `-o${extractDir}`, "-y"];
+  const extractDirInner = join(extractDir, "nsis-inner");
+  const extractArgs = ["x", payloadPath, `-o${extractDirInner}`, "-y"];
   for (const relative of requiredStudioPluginFiles(platformKey)) {
-    extractArgs.push(`${pluginRootPrefix}/${relative}`.replaceAll("/", "\\"));
+    extractArgs.push(sevenZipFilter(`${pluginRootPrefix}/${relative}`));
   }
   const extractResult = await runCapture(sevenZip, extractArgs, { timeoutMs: 300_000 });
   checks.sevenZipExtract = { ok: extractResult.code === 0 };
-  const pluginRoot = join(extractDir, ...pluginRootPrefix.split("/"));
+  const pluginRoot = join(extractDirInner, ...pluginRootPrefix.split("/"));
   if (extractResult.code === 0) {
     await inspectStudioPluginRoot(pluginRoot, platformKey, checks, failures, fileName, {
       expectSourceForm: true,
