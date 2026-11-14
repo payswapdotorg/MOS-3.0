@@ -885,3 +885,30 @@ alone) and the client workstream (B — implemented here):
 Workstream A remains open on the provider; this record does not close Issue #23 (the
 definition of done requires a real server-backed MOS grant, real model execution, and
 ZCode-allocation isolation evidence).
+
+### mos-v3.0.0-rc.3 published (2026-11-14, TL record)
+
+Release `mos-v3.0.0-rc.3` published (prerelease) from main `3832d055` (PR #25 —
+Issue #23 client workstream B):
+https://github.com/payswapdotorg/MOS-3.0/releases/tag/mos-v3.0.0-rc.3 — 18 assets
+(8 installers incl. win-x64 NSIS exe, SHA256SUMS, release-manifest.json, smoke
+evidence ×4, workdir listings ×4). Pipeline run 43613592119 all-green: release gate
+→ 4/4 builds → 4/4 clean-machine smokes (`ok=true`, 11 steps each, upgrade honestly
+skipped again — no prior RC on clean runners). main CI at the merge commit also green
+(run 43613412247).
+
+This RC carries the Issue #23 client fix (negative-preview TTL 24h→5min, true forced
+refresh through both cache layers, notConfigured/noPlan/unavailable state distinction,
+post-claim preview invalidation, refresh button; 7 new engineering tests — see the
+Issue #23 client workstream record above). Provider workstream A remains open on the
+provider; the Start Plan stays honestly unavailable in MOS until the backend ships the
+product-scope contract.
+
+TL independent re-verify before publish: manifest ↔ SHA256SUMS bidirectional match
+8/8; sourceCommit `3832d055` (tag ancestry verified by the release gate);
+zcodeBaseline 3.18.0; attestation generated; unsigned declared; smoke evidence
+`ok=true` on all four platforms. Clean download + SHA-256 recompute of the win-x64
+exe: MATCH (`961ba3eb…8cda54ae`). Consumer contract after publish:
+`/releases/latest` correctly does not serve the RC (API 404, HTML redirect →
+`/releases`); tag endpoint resolves. Issue #23 remains open (workstream A + real
+acceptance evidence pending).
