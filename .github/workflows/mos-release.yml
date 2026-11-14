@@ -317,14 +317,25 @@ jobs:
             --mos-version "${{ needs.release-gate.outputs.mos_version }}" \
             --evidence-out "smoke-evidence-${{ matrix.target.platform }}.json"
 
+      - name: 生成冒烟工作区清单（路径+大小；不上传几百 MB 的安装目录/隔离家目录本体）
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          # BSD find（mac runner）没有 -printf：用 node 保证跨平台一致。
+          node scripts/release-smoke/workdir-listing.mjs mos-release-smoke-work > smoke-workdir-listing.txt || \
+            echo "(mos-release-smoke-work 不存在：冒烟未启动或工作区未创建)" > smoke-workdir-listing.txt
+
       - name: 上传冒烟证据（失败也必须上传：证据是诊断与验收的第一手材料）
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: smoke-evidence-${{ matrix.target.platform }}
+          # 证据 JSON 本身很小；整包工作区（几百 MB 的安装目录/隔离家目录）不该上工件——
+          # run 5 实测每平台 250-490MB。工作区以清单（路径+大小）代替，内容可按 runbook 复现。
           path: |
             smoke-evidence-*.json
-            mos-release-smoke-work/**
+            smoke-workdir-listing.txt
           retention-days: 30
           if-no-files-found: ignore
 

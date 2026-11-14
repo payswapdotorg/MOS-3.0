@@ -46,12 +46,15 @@ import {
   runSessionStartHookCommand,
 } from "./lib/hook-contract.mjs";
 import { runMcpHandshake } from "./lib/mcp-handshake.mjs";
+import { debExpectedVersions } from "./inspect-package.mjs";
 import {
+  buildAgentProcessEnv,
   buildIsolatedEnv,
   defaultWindowsInstallDir,
   electronAppDataDir,
   electronUserDataDir,
   expectedArtifactFileNames,
+  expectedElectronUserDataHome,
   getPlatformSpec,
   mosDataBaseDir,
   MOS_APP_ID,
@@ -164,14 +167,10 @@ async function driveAgentSeed(ctx, { timeoutMs = 120_000 } = {}) {
   if (!(await pathExists(zcodeCjs))) {
     return { ok: false, reason: `安装包缺少 agent bundle：${zcodeCjs}`, zcodeCjs };
   }
-  const mosDataRoot = join(mosDataBaseDir(ctx.home), ".zcode");
+  // 桌面子进程契约镜像（buildAgentProcessEnv）：缺 ZCODE_HOME 时 CLI telemetry 会写 decoy。
   const env = {
-    ...ctx.env,
+    ...ctx.agentEnv,
     ELECTRON_RUN_AS_NODE: "1",
-    ZCODE_DATA_BASE_DIR: mosDataBaseDir(ctx.home),
-    ZCODE_STORAGE_DIR: mosDataRoot,
-    ZCODE_SESSION_DB_PATH: join(mosDataRoot, "cli", "db", "db.sqlite"),
-    ZCODE_LOG_DIR: join(mosDataRoot, "cli", "log"),
   };
   const child = spawn(ctx.agentRunner.binary, [zcodeCjs, "plugins", "list"], {
     cwd: ctx.workdir,
@@ -406,9 +405,9 @@ async function runPipeline(args) {
     },
   });
 
-  /** @type {{ home: string, env: object, decoys: object[], realHome: string, artifacts: object[],
+  /** @type {{ home: string, env: object, agentEnv: object, decoys: object[], realHome: string, artifacts: object[],
    *            installDir: string|null, binaries: object, launches: object[], seededRoot: string,
-   *            markerPath: string, launchDegraded: boolean }} */
+   *            markerPath: string, launchDegraded: boolean, userDataExpectHome: string }} */
   const ctx = {
     spec,
     platformKey: args.platform,
@@ -486,6 +485,10 @@ async function runPipeline(args) {
     if (ctx.selfTest) {
       await mkdir(ctx.realHome, { recursive: true });
     }
+    // Electron userData 的期望家目录（mac 的 appData 解析不跟随 HOME 覆盖，见 platforms.mjs）。
+    ctx.userDataExpectHome = expectedElectronUserDataHome(ctx.platformKey, ctx.home, ctx.realHome);
+    // agent 类子进程（seed/MCP/hook）镜像桌面 buildHostProcessEnv 的 MOS 子进程环境契约。
+    ctx.agentEnv = { ...ctx.env, ...buildAgentProcessEnv(ctx.platformKey, ctx.home) };
 
     // decoy 1：隔离家目录内的 ~/.zcode（MOS 数据根必须是 ~/.mos/.zcode，绝不碰 ~/.zcode）。
     const upstreamDataDecoy = await prepareDecoy(
@@ -504,7 +507,12 @@ async function runPipeline(args) {
       message: "隔离家目录已建；HOME/USERPROFILE/APPDATA/XDG_* 已重定向；上游 decoy 已布防",
       home: ctx.home,
       realHome: ctx.realHome,
-      userDataDir: electronUserDataDir(ctx.platformKey, ctx.home),
+      userDataDir: electronUserDataDir(ctx.platformKey, ctx.userDataExpectHome),
+      userDataExpectHome: ctx.userDataExpectHome,
+      userDataExpectHomeNote:
+        ctx.userDataExpectHome === ctx.home
+          ? "electron 跟随隔离家目录环境（win/linux）"
+          : "darwin Chromium 解析 appData 不跟随 HOME 覆盖，期望落点为真实家目录",
       expectedSeededPluginRoot: ctx.seededRoot,
       decoys: ctx.decoys.map((decoy) => ({ dir: decoy.dir, mode: decoy.mode, note: decoy.note })),
     });
@@ -546,12 +554,16 @@ async function runPipeline(args) {
       if (debs.length === 0) {
         step.failed({ message: "linux 验收需要 deb 产物（--artifact 或同目录兄弟产物）" });
       }
-      // 3a) deb：dpkg -i（root 直接跑，否则 sudo -n）。
+      // 3a) deb：消费者契约路径 `sudo apt install ./MOS-<version>-linux-x64.deb`。
+      // apt 从发行版仓库解析依赖（libnotify4/libsecret-1-0 等 Electron 运行库）；
+      // 裸 dpkg -i 在缺依赖的目标机上会留下 unconfigured 安装（run 5 实测）。
       for (const deb of debs) {
         const isRoot = process.getuid?.() === 0;
-        const command = isRoot ? "dpkg" : "sudo";
-        const dpkgArgs = isRoot ? ["-i", deb.path] : ["-n", "dpkg", "-i", deb.path];
-        const install = await runCapture(command, dpkgArgs, { timeoutMs: 600_000 });
+        const command = isRoot ? "apt-get" : "sudo";
+        const installArgs = isRoot
+          ? ["install", "-y", deb.path]
+          : ["-n", "apt-get", "install", "-y", deb.path];
+        const install = await runCapture(command, installArgs, { timeoutMs: 600_000 });
         const verify = await runCapture("dpkg", ["-s", MOS_LINUX_PACKAGE_NAME], { timeoutMs: 30_000 });
         const verifyLines = {};
         for (const line of verify.stdout.split(/\r?\n/)) {
@@ -568,7 +580,7 @@ async function runPipeline(args) {
           stderr: install.stderr?.slice(-2000),
         });
         if (install.code !== 0) {
-          step.failed({ message: `dpkg -i 失败：${deb.file}`, detail: detail.debs.at(-1) });
+          step.failed({ message: `apt-get install 失败：${deb.file}`, detail: detail.debs.at(-1) });
         } else if (verifyLines.Package !== MOS_LINUX_PACKAGE_NAME || verifyLines.Status?.includes("installed") !== true) {
           step.failed({ message: `dpkg -s ${MOS_LINUX_PACKAGE_NAME} 未确认安装`, detail: detail.debs.at(-1) });
         }
@@ -747,8 +759,10 @@ async function runPipeline(args) {
       if (detail.dpkg.packageName !== MOS_LINUX_PACKAGE_NAME) {
         step.failed({ message: `dpkg 包名必须为 ${MOS_LINUX_PACKAGE_NAME}，实际 ${detail.dpkg.packageName}` });
       }
-      if (detail.dpkg.version !== ctx.mosVersion) {
-        step.failed({ message: `dpkg 版本必须为 ${ctx.mosVersion}，实际 ${detail.dpkg.version}` });
+      if (!debExpectedVersions(ctx.mosVersion).includes(detail.dpkg.version)) {
+        step.failed({
+          message: `dpkg 版本必须匹配 MOS 版本（接受 ${debExpectedVersions(ctx.mosVersion).join(" / ")}，fpm 将 semver 预发布连字符规范化为 Debian ~），实际 ${detail.dpkg.version}`,
+        });
       }
       if (ctx.binaries.deb) {
         detail.debExecutable = {
@@ -843,7 +857,7 @@ async function runPipeline(args) {
     });
     ctx.launches.push(launch);
     const userData = await waitForDirWithFile(
-      electronUserDataDir(ctx.platformKey, ctx.home),
+      electronUserDataDir(ctx.platformKey, ctx.userDataExpectHome),
       timeoutMs,
       "Electron userData (<appData>/MOS) 未出现或为空",
     );
@@ -1048,7 +1062,7 @@ async function runPipeline(args) {
     const handshake = await runMcpHandshake({
       command: server.command,
       args: Array.isArray(server.args) ? server.args : [],
-      env: { ...ctx.env, ...(server.env ?? {}), ...pluginOverlayEnv },
+      env: { ...ctx.agentEnv, ...(server.env ?? {}), ...pluginOverlayEnv },
       cwd: workdir,
     });
     const statusView = handshake.toolCall?.structuredContent ?? null;
@@ -1109,7 +1123,7 @@ async function runPipeline(args) {
         cwd: workdir,
       }),
       cwd: workdir,
-      env: { ...ctx.env, ...pluginOverlayEnv },
+      env: { ...ctx.agentEnv, ...pluginOverlayEnv },
     });
     const invocation = buildHookInvocation(ctx.platformKey, command);
     const detail = {
