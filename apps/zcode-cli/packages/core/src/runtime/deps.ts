@@ -207,6 +207,8 @@ export type {
   BrowserControlPort,
   ExecutionShellSelection,
   FileSystemPort,
+  MuseExecutionPort,
+  MuseExecStreamEvent,
   HttpClientPort,
   ImageProcessorPort,
   PdfDocumentPort,

@@ -8,7 +8,8 @@ import {
   type CommandPayloadMap,
   type CommandType,
 } from "@zcode/shared/zcode-protocol-v4";
-import { uuidv7 } from "@zcode/shared";
+import { uuidv7, isMuseDelegatedModelSelection } from "@zcode/shared";
+import { shouldStampMuseCodeExecutionBackend } from "./museCodeBackendState.js";
 export { uuidv7 } from "@zcode/shared";
 
 const CLIENT_ID_STORAGE_KEY = "zcode-v4-client-id:v1";
@@ -109,12 +110,31 @@ export function createCommandEnvelope<T extends CommandType>(
             `sess_${crypto.randomUUID()}`,
         }
       : input.payload;
+  // 委托执行后端（Issue #24 / ACR-0002；MC-D 按选型路由）：只有 createSession /
+  // sendText 携带；双门控（用户意图 + 本会话 CLI 能力确认）在 museCodeBackendState
+  // 维护，旧 CLI 会静默剥掉该字段并退回普通模型执行，禁止在未确认能力时携带。
+  // MC-D：携带还要求本轮提交选型命中 Muse delegated 模型家族（shared
+  // isMuseDelegatedModelSelection）——普通模型选型绝不改道；载荷未携带选型时
+  // 不携带（CLI 侧按会话常驻选型做同一判定，Studio/续发场景由此覆盖）。
+  const submittedMuseSelection =
+    input.type === "sendText"
+      ? (input.payload as CommandPayloadMap["sendText"]).modelSelection
+      : input.type === "createSession"
+        ? (input.payload as CommandPayloadMap["createSession"]).firstInput?.modelSelection
+        : undefined;
+  const executionBackend =
+    (input.type === "createSession" || input.type === "sendText") &&
+    shouldStampMuseCodeExecutionBackend() &&
+    isMuseDelegatedModelSelection(submittedMuseSelection)
+      ? ("muse-code" as const)
+      : undefined;
   return {
     commandId: uuidv7(),
     clientId: getV4ClientId(),
     sessionId: input.sessionId,
     ...(input.baseRevision !== undefined ? { baseRevision: input.baseRevision } : {}),
     ...(input.baseLogEpoch ? { baseLogEpoch: input.baseLogEpoch } : {}),
+    ...(executionBackend ? { executionBackend } : {}),
     type: input.type,
     payload,
     issuedAt: Date.now(),

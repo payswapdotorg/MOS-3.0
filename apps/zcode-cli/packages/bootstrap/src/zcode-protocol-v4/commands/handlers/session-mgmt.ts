@@ -13,6 +13,7 @@ import { startPromptTurn } from "../prompt-turn.js";
 import { requireRecord } from "../record-access.js";
 import type { V4CommandCoreHost } from "../types.js";
 import { applyRequestedSessionConfig } from "./model-config.js";
+import { shouldRouteMuseDelegatedBySelection } from "../../muse-delegated-routing.js";
 import {
   hasPromptInput,
   resolveSubmittedExecutionState,
@@ -106,6 +107,18 @@ async function createSession(
     const admission = commandAdmissionOf(envelope);
     const durableAdmission =
       (await host.admitInputCommand?.(envelope, sessionId, admission)) ?? null;
+    // MC-D（按选型路由）：首条的有效选型（payload.firstInput.modelSelection ?? 会话
+    // 常驻选型）与 renderer 信封字段同一判定；Host 设置 useAsTaskBackend 打开时，
+    // Muse delegated 家族选型的首条直接走委托执行（新 record 恒为空闲）。
+    const firstInputExecutionState = resolveSubmittedExecutionState(
+      record,
+      payload.firstInput,
+    );
+    const museBackendTurn =
+      envelope.executionBackend === "muse-code" ||
+      (await shouldRouteMuseDelegatedBySelection({
+        selection: firstInputExecutionState.modelSelection,
+      }));
     try {
       const attachments = await mapAttachmentRefsToTurnAttachments(
         record.app,
@@ -115,7 +128,7 @@ async function createSession(
         text: payload.firstInput.text,
         requestedDelivery: "startNow",
         attachmentRefs: payload.firstInput.attachments,
-        ...resolveSubmittedExecutionState(record, payload.firstInput),
+        ...firstInputExecutionState,
         // 首条消息与 sendText 同一来源契约：扩展代建会话时由 Host 注入，随 intent 持久化并投影。
         ...(payload.firstInput.source ? { source: payload.firstInput.source } : {}),
       });
@@ -123,6 +136,9 @@ async function createSession(
         content: payload.firstInput.text,
         inputId: envelope.commandId,
         intent,
+        // 委托执行后端（Issue #24 / ACR-0002；MC-D 按选型路由）：新 record 恒为空闲，
+        // 直接透传；busy/queue 门控在 sendText（delegated 轮不可 steer/queue）。
+        ...(museBackendTurn ? { executionBackend: "muse-code" as const } : {}),
         ...(attachments ? { attachments } : {}),
       });
       firstInput = {

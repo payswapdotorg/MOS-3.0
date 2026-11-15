@@ -15,7 +15,7 @@
  * 提交时由宿主（SessionPane）把冻结选择随 Submission 一起发送。
  * 三件套不能全部门控在 config!==null 上——草稿态会整体不渲染。
  */
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AlarmClockIcon } from "lucide-react";
 import { cn } from "@/components/lib/utils.js";
 import {
@@ -42,6 +42,12 @@ import { ModelConfigSelect, type ModelSelectGroup } from "@/ModelConfigSelect.js
 import type { ComposerModelOptions } from "@/chat-input-toolbar/ComposerModelMenu.js";
 import { Button } from "@/components/ui/button.js";
 import { HighspeedModelIndicator } from "@/highspeed/HighspeedModelIndicator.js";
+import { MuseCodeBackendIndicator } from "@/chat-input-toolbar/MuseCodeBackendIndicator.js";
+import {
+  isMuseDelegatedSelectionActive,
+  shouldStampMuseCodeExecutionBackend,
+  subscribeMuseCodeBackendState,
+} from "@/v4/museCodeBackendState.js";
 import { formatHighspeedRemainingTime } from "@/highspeed/highspeedTime.js";
 import { ChatContextUsage } from "@/chat-input-toolbar/display.js";
 import {
@@ -474,6 +480,15 @@ function V4ComposerModelControlsImpl({
   const { intl, locale } = useZCodeIntl();
   const { openCodingPlanUpgrade } = useCodingPlanUpgradeDialog();
   const displayProvider = provider ?? ZCODE_AGENT_PROVIDER;
+  // 委托 Muse Code 执行后端（PR #27 评审 R6 → MC-D 按选型路由，2026-11-15）：
+  // 模型选择器**不再因后端开启而锁定**——选型是真实路由输入：Muse delegated
+  // 模型家族选型经本机 CLI 订阅执行，普通模型选型零改道。提交点如实区分
+  // 「实际执行后端」与「所选模型」；MOS context usage 对 delegated 轮无意义
+  // （当前选型即走委托时一并隐藏，见 effectiveConfig 之后的 museSelectionDelegated）。
+  const museExecutionActive = useSyncExternalStore(
+    subscribeMuseCodeBackendState,
+    shouldStampMuseCodeExecutionBackend,
+  );
   // 配置面读取：workspace 缺省目录（taskId=null），不读旧会话态。
   const { error: configOptionsError } = useToolbarConfigOptions(
     workspacePath,
@@ -541,6 +556,16 @@ function V4ComposerModelControlsImpl({
   const effectiveConfig = useMemo<SessionConfigState | null>(() => {
     return resolveDraftDisplayedConfig(draftConfig ?? {});
   }, [draftConfig]);
+
+  // 当前草稿/会话选型是否即走委托执行（MC-D 按选型路由）：双门控 + 选型命中
+  // Muse delegated 模型家族。指示器、context usage 隐藏与 data 锚点消费；
+  // 普通模型选型 = false（零改道，选择器保持可用）。
+  const museSelectionDelegated =
+    museExecutionActive &&
+    isMuseDelegatedSelectionActive({
+      providerId: effectiveConfig?.provider,
+      modelId: effectiveConfig?.model,
+    });
 
   const handleOpenStartPlanUpgrade = useCallback(
     (providerId: string) => {
@@ -953,6 +978,8 @@ function V4ComposerModelControlsImpl({
   ]);
   const handleModelValueChange = useCallback(
     (value: string, reasoningLevel?: string) => {
+      // MC-D 按选型路由：选择器不再因后端开启而锁定——Muse delegated 家族选型
+      // 即走委托执行，普通模型选型走普通路径（禁止静默改道）。
       if (modelLocked) return;
       const decoded = decodeCustomModelValue(value);
       // 草稿的点击时可见模型可能只存在于 catalog，或已经被最新 draft
@@ -1285,10 +1312,12 @@ function V4ComposerModelControlsImpl({
         data-plan-enabled={draftConfig?.planEnabled ?? false}
         data-usage-used={usage?.contextWindow?.usedTokens ?? ""}
         data-usage-max={usage?.contextWindow?.maxTokens ?? ""}
+        data-muse-code-execution-active={museSelectionDelegated ? "true" : "false"}
         className="hidden"
       />
-      {/* Highspeed 卡激活即锁定模型；不能等动效交接完成才隐藏，否则 usage 圈圈会短暂闪现。 */}
-      {!modelLocked ? (
+      {/* MC-D：仅当前选型即走委托执行时隐藏 context usage（delegated 轮无 MOS
+          上下文用量语义）；普通模型选型照常展示。 */}
+      {!modelLocked && !museSelectionDelegated ? (
         <ChatContextUsage
           codingPlanUsageRemaining={codingPlanUsageRemaining}
           taskUsage={taskUsage}
@@ -1393,7 +1422,14 @@ function V4ComposerModelControlsImpl({
       {highspeedPresented && highspeedExpiresAt !== undefined ? (
         <HighspeedCountdown expiresAt={highspeedExpiresAt} />
       ) : null}
-      {thoughtOption && (modelLocked || highspeedPresented) ? (
+      {/* 委托 Muse Code 执行后端（Issue #24 / ACR-0002；MC-D）：常驻同步 supported
+          门控位；enabled 时展示，当前选型即走委托时点亮 active。 */}
+      <MuseCodeBackendIndicator
+        workspacePath={workspacePath}
+        delegatedSelectionActive={museSelectionDelegated}
+        {...(workspaceIdentity ? { workspaceIdentity } : {})}
+      />
+      {thoughtOption && (modelLocked || museSelectionDelegated || highspeedPresented) ? (
         <ThoughtLevelCycleControl
           composerCollapsePriority={3}
           labelVisibilityClassName="inline-flex"

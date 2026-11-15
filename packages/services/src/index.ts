@@ -313,6 +313,8 @@ export { ICommandsService } from "./commands/commands.js";
 export { ISettingsSyncService } from "./settings-sync/settingsSync.js";
 
 export { IFeedbackService } from "./feedback/feedback.js";
+export { IMuseCodeService, type MuseCodeBackendView, type MuseCodeLaunchLoginResult } from "./muse-code/museCode.js";
+export { createMuseCodeService } from "./muse-code/museCodeService.js";
 export type { FeedbackUploadProgress } from "./feedback/feedback.js";
 export { IPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransfer.js";
 export type {

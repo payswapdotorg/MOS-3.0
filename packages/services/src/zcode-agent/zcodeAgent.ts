@@ -750,6 +750,12 @@ export interface IZCodeAgentService {
    * renderer 据此决定是否提供选区“批注”入口；未实现（旧 Host / 远端）按不支持处理。
    */
   supportsConversationQuoteComment?(target: ZCodeAgentWorkspaceTarget): Promise<boolean>;
+  /**
+   * 该 workspace 的 CLI 是否在 runtime/capabilities 中声明 executionBackendMuseCode
+   * （delegated 执行后端，Issue #24 / ACR-0002）。renderer 据此决定能否在
+   * createSession / sendText 信封上携带 executionBackend；未实现按不支持处理（fail-closed）。
+   */
+  supportsExecutionBackendMuseCode?(target: ZCodeAgentWorkspaceTarget): Promise<boolean>;
   getTaskTokenUsage(params: ZCodeAgentTaskTokenUsageParams): Promise<ZCodeTaskTokenUsageResult>;
   readSession(params: ZCodeAgentReadSessionParams): Promise<ZCodeSessionStateSnapshot>;
   readSessionMessages(

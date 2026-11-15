@@ -20,6 +20,7 @@ import type {
   ContextSourceSnapshot,
   ExecutionPort,
   FileSystemPort,
+  MuseExecutionPort,
   HookRunner,
   ImageProcessorPort,
   PdfDocumentPort,
@@ -161,6 +162,8 @@ export interface AgentRuntimeInternal
   branchGeneration: number;
   artifactStore?: ToolArtifactStorePort;
   executionPort?: ExecutionPort;
+  /** delegated Muse Code 执行端口（Issue #24 / ACR-0002）；缺省 = 本 runtime 不支持 muse-code 后端。 */
+  museExecutionPort?: MuseExecutionPort;
   fileSystemPort?: FileSystemPort;
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;

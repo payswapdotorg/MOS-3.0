@@ -2201,6 +2201,41 @@ exceptions:
     rule: unmanaged-new-file
     paths: [packages/services/src/zcode-agent/independentPlanSupport.ts]
     reason: 在已存在的 CLI 能力查询入口补充 GenUI 上下文能力检查，防止旧 CLI 静默丢弃状态；保持既有 services/agent 边界，不扩展本次修复为整个 zcode-agent 模块接管。
+  - id: muse-code-delegated-backend-unmanaged-edit
+    rule: unmanaged-new-file
+    paths:
+      - packages/shared/src/muse-code/muse-code-backend.ts
+      - packages/services/src/muse-code/museCode.ts
+      - packages/services/src/muse-code/museCodeService.ts
+      - packages/services/test/museCodeService.test.ts
+      - packages/ui/test/museCodeBackendStamp.test.ts
+      - packages/ui/src/v4/museCodeBackendState.ts
+      - packages/ui/src/chat-input-toolbar/MuseCodeBackendIndicator.tsx
+      - packages/ui/src/settings/MuseCodeSection.tsx
+      - apps/zcode-cli/packages/contracts/src/interfaces/muse-execution.port.ts
+      - apps/zcode-cli/packages/core/src/runtime/methods/delegated-muse-turn.ts
+      - apps/zcode-cli/packages/core/tests/delegated-muse-turn.test.ts
+      - apps/zcode-cli/packages/bootstrap/src/muse-code/muse-code-settings.ts
+      - apps/zcode-cli/packages/bootstrap/src/muse-code/muse-exec-jsonl.ts
+      - apps/zcode-cli/packages/bootstrap/src/muse-code/muse-exec-process.ts
+      - apps/zcode-cli/packages/bootstrap/tests/muse-exec-jsonl.test.ts
+      - apps/zcode-cli/packages/bootstrap/tests/muse-exec-process.test.ts
+      - apps/zcode-cli/packages/bootstrap/tests/fixtures/muse-code/mock-muse-cli.mjs
+    reason: 委托 Muse Code 执行后端（Issue #24 / ACR-0002）的垂直切片：shared 契约（状态/设置 schema 与信封字段）、Host 服务（探测/设置持久化）、UI（设置分区 + Composer 指示器 + 信封双门控）、core 委托轮执行器与 contracts 端口、bootstrap 进程端口与 JSONL 映射。各文件只编排既有边界（provider Registry 不动、权限系统不动、进程纪律对齐 zcodeStdioTransport）；接管整个目录不在本次范围内。
+  - id: muse-code-delegated-backend-revision-unmanaged-edit
+    rule: unmanaged-new-file
+    paths:
+      - apps/zcode-cli/packages/bootstrap/src/muse-code/muse-exec-support.ts
+      - apps/zcode-cli/packages/bootstrap/src/muse-code/muse-execution-port.ts
+      - apps/zcode-cli/packages/bootstrap/src/muse-code/muse-session-protocol.ts
+      - apps/zcode-cli/packages/bootstrap/src/muse-code/muse-session-store.ts
+      - apps/zcode-cli/packages/bootstrap/tests/muse-session-protocol.test.ts
+    reason: PR #27 评审修订（R1–R7；ACR-0002 Revision 2，工作包 MC-B）在已准入的 muse-code 委托执行端口目录内新增四个编排文件：muse-execution-port.ts（双执行面装配入口：显式设置覆盖 > 版本门控，回退 exec 面）、muse-exec-support.ts（可执行入口解析 / workspace 收敛校验 / 版本探针，exec 与 MSP 两面共用）、muse-session-protocol.ts（官方 `muse serve` + @muse-code/sdk 适配器：fail-closed 审批拒绝、resumeSession 续接、workspaceRoot 边界、token 与订阅用量）、muse-session-store.ts（MOS↔muse 会话持久映射），以及对应契约测试。文件只编排既有边界（单一工具执行环、凭据红线、无新 provider/权限权威）；接管整个 zcode-cli 目录不在本次范围内。
+  - id: muse-code-selection-routing-unmanaged-edit
+    rule: unmanaged-new-file
+    paths:
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/muse-delegated-routing.ts
+    reason: MC-D（ACR-0002 Revision 4，工作包 MC-D；评审 pivot 2026-11-15）在已准入的 zcode-protocol-v4 v4 命令层内新增一个纯决策文件：muse-delegated-routing.ts（按会话模型选型路由委托 Muse Code 后端——shared isMuseDelegatedModelSelection 家族判定 + 与执行端口/Host 服务同一设置文件的 useAsTaskBackend 门控；sendText / createSession.firstInput 两个 handler 消费，信封 executionBackend 显式字段语义不变）。文件只编排既有边界（单一决策函数、无进程/凭据/provider 接触；接管整个 zcode-cli 目录不在本次范围内）。
   - id: connection-log-secret-token-unmanaged-edit
     rule: unmanaged-new-file
     paths: [packages/shared/src/source-server/connectionLog.ts]
