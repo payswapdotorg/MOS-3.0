@@ -1,12 +1,14 @@
 import {
   MuseClient,
   type ApprovalHandler,
-  type ModelListResult,
   type MuseClientSpawnOptions,
   type ResumeSessionOptions,
   type StartSessionOptions,
   type TurnOutcome,
 } from "@muse-code/sdk";
+
+/** `model/list` 结果类型（barrel 未导出 ModelListResult；从官方 client 方法面推导，随 SDK 类型同步）。 */
+type MuseModelListResult = Awaited<ReturnType<MuseClient["listModels"]>>;
 
 import type {
   MuseExecutionPort,
@@ -204,16 +206,16 @@ export function createMuseSessionProtocolPort(
         // 不能沿用 let 的流分析收窄，绑定到收窄后的 const。
         const activeClient: MuseClient = client;
 
-          // 模型钉住前置核实（MC-D 验证轮）：请求携带精确模型 id 时，先经官方
+        // 模型钉住前置核实（MC-D 验证轮）：请求携带精确模型 id 时，先经官方
         // `model/list` 确认该 id 在目录里（绝不虚构 id；目录不含该 id = 可见失败，
         // 绝不静默换模型）。目录查询也在启动门控内（挂起 = 可见失败 + host 收口）。
         if (request.modelId) {
-          let catalog: ModelListResult;
+          let catalog: MuseModelListResult;
           try {
             catalog = await startupTimeoutGate(
               "listing the model catalog (model/list)",
               startupTimeoutMs,
-              () => client.listModels(),
+              () => activeClient.listModels(),
               () => undefined,
             );
           } catch (error) {
