@@ -22,8 +22,15 @@ export interface MuseSessionMapping {
   museSessionId: string;
   /** 建立映射时使用的执行面（诊断用）。 */
   surface: MuseExecutionSurface;
-  /** 建立映射时的 workspace 根（resume 侧 workspace mismatch 的对账线索）。 */
+  /** 建立映射时的 workspace 根（记录时的请求原串；诊断用，resume 门控不依赖它）。 */
   workspaceRoot: string;
+  /**
+   * 建立映射时的 **canonical 物理根**（realpath 解析；验证轮修正 A）：resume
+   * 门控（canResumeMuseSessionMapping）用它与当前请求根的**实时物理解析结果**
+   * 比较——每次续接都重新解析（同串也可能已被 symlink retarget 重定向）；
+   * 空串 = 记录时不可解析或旧版映射 → 拒绝续接（fail-closed）。
+   */
+  canonicalWorkspaceRoot: string;
   updatedAt: string;
 }
 
@@ -70,11 +77,16 @@ export function sanitizeSessionMap(parsed: unknown): MuseSessionMap {
       entry.surface === "session-protocol" ? "session-protocol" : "muse-exec";
     const workspaceRoot =
       typeof entry.workspaceRoot === "string" ? entry.workspaceRoot.slice(0, 1024) : "";
+    // canonical 物理根（验证轮修正 A）：缺失（旧映射）= 空串 → resume 门控拒绝续接。
+    const canonicalWorkspaceRoot =
+      typeof entry.canonicalWorkspaceRoot === "string"
+        ? entry.canonicalWorkspaceRoot.slice(0, 1024)
+        : "";
     const updatedAt =
       typeof entry.updatedAt === "string" && entry.updatedAt.length > 0
         ? entry.updatedAt
         : new Date().toISOString();
-    result[key] = { museSessionId, surface, workspaceRoot, updatedAt };
+    result[key] = { museSessionId, surface, workspaceRoot, canonicalWorkspaceRoot, updatedAt };
   }
   return result;
 }
@@ -98,10 +110,11 @@ export function recordMuseSessionMapping(
 }
 
 /**
- * 读取某 MOS 会话的既有映射（缺失 = undefined，不猜测）。resume 门控（评审
- * rev. 3）用完整条目：调用方必须比对条目的 workspaceRoot 与当前请求根
- * （isSameMuseWorkspaceRoot，词法 + realpath 别名解析）；不一致 = 不续接
- * （当前根内开新会话），绝不跨 workspace 边界续接。
+ * 读取某 MOS 会话的既有映射（缺失 = undefined，不猜测）。resume 门控（验证轮
+ * 修正 A）用完整条目：调用方必须以 canResumeMuseSessionMapping 比较——条目的
+ * canonicalWorkspaceRoot（记录时 realpath 解析的物理根）与当前请求根的**实时
+ * 物理解析结果**；不一致/缺 canonical/不可解析 = 不续接（当前根内开新会话），
+ * 绝不跨 workspace 边界续接。词法同串不再是捷径（symlink retarget 防护）。
  */
 export function lookupMuseSessionMapping(
   map: MuseSessionMap,

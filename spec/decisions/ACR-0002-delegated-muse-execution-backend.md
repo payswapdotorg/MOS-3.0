@@ -209,9 +209,60 @@ No boundary changes: Muse Code remains a delegated execution backend (never a pr
 the single-tool-execution-loop and credentials red lines stand, and the Revision 2 roadmap
 guardrail is unaffected.
 
+## Revision 4 (2026-11-15, PR #27 external verification round 3 — three safety corrections)
+
+The TL verification round on the rev. 3 head sent back three safety findings on the
+resume/containment/startup machinery. All three corrections are delivered on PR #27 with
+regression tests (mapping: finding A → resume gate, finding B → containment, finding C →
+MSP startup):
+
+- **A — workspace symlink retargeting closes the resume gate's lexical shortcut.** The rev. 3
+  gate compared the stored root string against the current request root with a lexical
+  equality shortcut before any physical resolution, so a mapping created through a symlink
+  kept resuming the old Muse session after the symlink was **retargeted** to a different
+  physical workspace (identical path strings, different physical roots). The durable mapping
+  now persists a **canonical physical root** (`canonicalWorkspaceRoot`, realpath-resolved at
+  mapping time; unresolvable-at-record → empty → resume refused), and every resume
+  re-resolves the **current** request root physically and compares it against the stored
+  canonical root — `canResumeMuseSessionMapping` has **no lexical same-string shortcut**
+  (identical strings can hide a retarget). Legacy mappings without a canonical root are
+  refused (fail-closed: fresh session inside the current root, `sessionWorkspaceMismatch`
+  reported). Regression tests on **both** surfaces create a mapping through a symlink,
+  retarget the symlink, and verify the old session is refused (MSP: no `resumeSession`,
+  `sessionWorkspaceMismatch: true`; exec: no `--session-id` in argv, mismatch reported).
+- **B — unresolvable workspace boundaries are rejected before spawn (no lexical fallback).**
+  The rev. 3 containment check treated a **failed** physical containment check as a pass on
+  the lexical verdict alone ("resolution unavailable → lexical fallback"). A boundary that
+  cannot be physically resolved cannot be verified, and both official surfaces require an
+  existing, resolvable root (MSP `session/start` `workspaceRoots` are "canonical existing
+  directory paths"; exec `--workspace <root>` needs the directory to exist) — so **no narrow
+  exception is justified**: ENOENT (missing cwd or root) and EACCES (inaccessible boundary)
+  now reject with the distinct stable issue code `workspaceUnresolvable` before any spawn,
+  with the failure visible to the user. Contract tests cover both arms on real filesystems
+  (ENOENT) and via injected realpath failures (EACCES, deterministic under root-run CI).
+- **C — a late-resolving MSP client is shut down; the startup phases are gated.** The rev. 3
+  startup timeout raced `spawnClient` against a bare `Promise.race`: when the timeout fired
+  first, a client that resolved **after** the timeout was never assigned and never closed —
+  a leaked `muse serve` process tree. The SDK's `MuseClientSpawnOptions` has no `signal`
+  member (verified against the installed `@muse-code/sdk@1.4.20` typings), so cancellable
+  startup is not natively supported; the new `startupTimeoutGate` is the cancellation: on
+  timeout it rejects visibly (same `spawnFailed` startup error, phase-named message) and
+  **closes the late-resolving client** when it eventually resolves (SDK `close()` drains with
+  the 5s bound and escalates to SIGTERM/SIGKILL — no process remains). The gate now also
+  covers the **session-open phase** (`startSession`/`resumeSession`), which previously had
+  no startup bound; on that phase's timeout the already-assigned client is closed by the
+  outer `finally`. `startupTimeoutMs` is injectable for tests. Contract tests: a fake SDK
+  client resolving after the timeout is closed (observed) and the run fails visibly; a
+  hanging session open fails visibly with the client closed and no turn submitted.
+
+No boundary changes: Muse Code remains a delegated execution backend (never a provider),
+the single-tool-execution-loop and credentials red lines stand, and the Revision 2 roadmap
+guardrail is unaffected. MC-D (explicit model selection) remains the separately-stacked
+work package per Revision 3.
+
 ## Approval
 
-- TL: payswapdotorg（TL-authored vertical slice; rev. 2 revisions and rev. 3 verification-round corrections TL-authored after external review/verification）
-- Required domain/security reviewers: 待评审（rev. 3 修正后需在推送 head 上重新评审）
+- TL: payswapdotorg（TL-authored vertical slice; rev. 2 revisions, rev. 3 and rev. 4 verification-round corrections TL-authored after external review/verification）
+- Required domain/security reviewers: 待评审（rev. 4 修正后需在推送 head 上重新评审）
 - Commit / PR that updates architecture lock and module registry: PR #27（policy admission：`muse-code-delegated-backend-unmanaged-edit`）
 

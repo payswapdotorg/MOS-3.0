@@ -9,8 +9,13 @@ Issue #24 / ACR-0002. Evidence vocabulary follows AGENTS.md §7 strictly.
   installed official `@muse-code/sdk@1.4.20` package's exported/type surface verified
   against the adapter's usage, on-machine in this repository; rev. 3: verification-round
   corrections — documented `--workspace` flag on the exec surface, exact lockstep version
-  gate, workspace-root enforcement on session resume — all with regression tests; a real
-  signed-in `muse` CLI binary is still not present in this environment).
+  gate, workspace-root enforcement on session resume — all with regression tests; rev. 4:
+  safety corrections — canonical physical workspace root persisted in the session mapping
+  with per-resume physical re-resolution (symlink retarget refused on both surfaces),
+  unresolvable workspace boundaries rejected before spawn (no lexical fallback; ENOENT/
+  EACCES contract-tested), and the MSP startup timeout closing late-resolving clients with
+  the session-open phase gated — all with regression tests; a real signed-in `muse` CLI
+  binary is still not present in this environment).
 - Real provider execution (real Muse Code CLI task on the user's Windows machine): **planned**
   — checklist in §4 must be executed on the target machine and its evidence appended here
   before any status may be raised to `integrated` or `verified`.
@@ -20,8 +25,12 @@ Issue #24 / ACR-0002. Evidence vocabulary follows AGENTS.md §7 strictly.
   addressed; see ACR-0002 §Revision 2. **Rev. 3 (external verification round 2, 2026-11-15):**
   three code corrections delivered (documented `--workspace` flag, exact lockstep gate,
   resume workspace-root enforcement — see ACR-0002 §Revision 3) plus the scoped follow-up
-  work package MC-D for explicit model/Contributor selection. Merge remains blocked on CI +
-  review of the corrected head (local runs are not CI evidence).
+  work package MC-D for explicit model/Contributor selection. **Rev. 4 (external verification
+  round 3 / TL correction round, 2026-11-15):** three safety corrections delivered (A:
+  canonical-root resume gate with symlink-retarget regression on both surfaces; B:
+  unresolvable-boundary spawn rejection with ENOENT/EACCES tests; C: late-resolving MSP
+  clients closed under a gated startup — see ACR-0002 §Revision 4). Merge remains blocked
+  on CI + review of the corrected head (local runs are not CI evidence).
 
 ## 1. Provider identity and official documentation
 
@@ -53,6 +62,31 @@ Issue #24 / ACR-0002. Evidence vocabulary follows AGENTS.md §7 strictly.
     deliberately not consumed by this PR.
   - `--disable-approval` (documented unattended-approval flag; sandbox stays on) — only for
     the opt-in `unattended-sandboxed` posture.
+- **Rev. 4 safety corrections (external verification round 3 / TL correction round,
+  2026-11-15; ACR-0002 §Revision 4):**
+  - **A (resume gate):** the durable session mapping now persists a **canonical physical
+    workspace root** (`canonicalWorkspaceRoot`, realpath-resolved at mapping time) and every
+    resume re-resolves the **current** request root physically against it
+    (`canResumeMuseSessionMapping` in `muse-exec-support.ts`) — **no lexical same-string
+    shortcut** remains (a symlink retarget keeps the string but changes the physical root);
+    a mismatch or an unresolvable current root refuses the resume (fresh session inside the
+    current root, `sessionWorkspaceMismatch: true`), and legacy mappings without a canonical
+    root are refused too. Regression tests on both surfaces: mapping created through a
+    symlink → symlink retargeted → old session refused (MSP: no `resumeSession`; exec: no
+    `--session-id` in argv).
+  - **B (containment):** `assertMuseWorkspaceContainment` no longer treats a **failed**
+    physical resolution as a pass on the lexical verdict — ENOENT (missing cwd/root) and
+    EACCES (inaccessible boundary) both reject **before spawn** with the stable issue code
+    `workspaceUnresolvable` (narrow exceptions were evaluated and none justified: both
+    official surfaces require an existing, resolvable root — MSP `workspaceRoots` are
+    "canonical existing directory paths", exec `--workspace` needs the directory).
+  - **C (MSP startup):** `startupTimeoutGate` replaces the bare `Promise.race` — a client
+    resolving **after** the startup timeout is closed (SDK `close()`: 5s drain bound, then
+    SIGTERM/SIGKILL escalation — no `muse serve` process remains; the SDK's
+    `MuseClientSpawnOptions` has no `signal` member, so cancellable startup is not natively
+    supported and the gate is the cancellation), and the **session-open phase**
+    (`startSession`/`resumeSession`) is now gated too (timeout → visible failure + client
+    closed by the outer `finally`; `startupTimeoutMs` is test-injectable).
 - Official SDK surface verification (2026-11-14 UTC, `@muse-code/sdk@1.4.20` installed from
   the npm registry into this repo; `dist/src/*.d.ts` inspected, no local mocking): the
   adapter's usage was verified member-by-member against the shipped typings —
@@ -234,6 +268,18 @@ merge-blocking authority. The rev. 2 chunked local run (§2a) plus the 43-file p
 selection and the targeted regressions above cover the rev. 3 delta (additive result field,
 muse-module-internal changes, exact-gate decision rule shared with the services preview).
 
+### 2c. Safety-correction regression coverage (rev. 4 head, 2026-11-15 UTC)
+
+On the rev. 4 corrected head, the muse contract suites all pass:
+`tests/muse-exec-jsonl.test.ts` (8), `tests/muse-exec-process.test.ts` (24, including the
+retarget/legacy-mapping resume refusals), `tests/muse-session-protocol.test.ts` (20,
+including the retarget refusal, the unresolvable-boundary rejection, the late-client close
+and the hanging session-open), `tests/muse-exec-support.test.ts` (14, including
+`canResumeMuseSessionMapping` retarget/alias/legacy/ENOENT/EACCES and containment
+ENOENT/EACCES) — **66/66 PASS**; core `tests/delegated-muse-turn.test.ts` — **8/8 PASS**.
+(The full `verify:pre-push` chain and GitHub CI re-run on the final pushed head remain the
+merge-blocking authority, per this record's standing rule.)
+
 ## 3. Known limitations (honest boundaries; rev. 2)
 
 - The exact JSONL event schema of the installed `muse exec --json` build has **not** been
@@ -305,13 +351,21 @@ results with UTC timestamps (sanitize all samples: no tokens, no env dumps).
 4. **Rev. 2 (R2):** send a second turn in the same MOS session; confirm from the log line
    that `resumedMuseSession: true` and the Muse session id is unchanged; restart MOS and
    repeat — the mapping file (`~/.zcode/v2/muse-code-sessions.json`) must keep the
-   continuity across restarts. **Rev. 3:** re-open the same MOS session against a different
+   continuity across restarts (each entry now also carries `canonicalWorkspaceRoot`, the
+   realpath-resolved root at mapping time). **Rev. 3:** re-open the same MOS session against a different
    workspace root and confirm the turn runs with `resumedMuseSession: false` +
    `sessionWorkspaceMismatch: true` in the completed-turn log line (fresh Muse session inside
    the new root; continuity reset is visible, not silent). Optionally repeat with the same
    physical root reached through a symlink/junction alias and confirm continuity is kept.
+   **Rev. 4 (A):** create the mapping through a symlink/junction, retarget that link to a
+   different physical workspace, and send the next turn **through the identical path
+   string** — confirm the old Muse session is refused (`resumedMuseSession: false` +
+   `sessionWorkspaceMismatch: true`) and a fresh session runs inside the (new) current root.
 5. Press Stop mid-task; confirm the turn settles as interrupted (TurnComplete cancelled)
-   and the CLI process tree is gone (no orphan `muse`/`muse serve` processes).
+   and the CLI process tree is gone (no orphan `muse`/`muse serve` processes). **Rev. 4 (C):**
+   also confirm no orphaned `muse serve` remains after any failed/hung startup (e.g. an
+   aborted connect or a version-mismatched CLI that stalls the Session Protocol handshake):
+   a late- or never-starting host must be closed by MOS, not leaked.
 6. Confirm MOS Studio mission linkage still attaches (mission sidecar SessionStart hook) and
    the session transcript survives an app restart (cold resume renders the delegated turn).
 7. **Rev. 2 (R3):** with the default `fail-closed` posture, run a task that would require a
@@ -325,7 +379,10 @@ results with UTC timestamps (sanitize all samples: no tokens, no env dumps).
    documented `--workspace <workspace-root>` argument (e.g. via the CLI's own argv-debug
    facility or a wrapper) pinned to the same policy root, and that a working directory that
    is lexically inside the root but resolves (symlink / junction) outside is rejected before
-   spawn.
+   spawn. **Rev. 4 (B):** confirm a working directory or workspace root that **cannot be
+   physically resolved** (deleted mid-session, inaccessible) is rejected **before spawn**
+   with the "could not resolve the workspace boundary physically" message — it must never
+   fall back to a lexical pass.
 9. **Rev. 2 (R5):** with the backend enabled, run a task and confirm the CLI child process
    environment contains no host integration secrets (spot-check on the target machine with
    the CLI's own env-debug facility or a wrapper; MOS never passes them).

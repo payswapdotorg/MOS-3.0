@@ -28,7 +28,8 @@ import { readMuseCodeBackendSettings } from "./muse-code-settings.js";
 import {
   MuseExecStartupError,
   assertMuseWorkspaceContainment,
-  isSameMuseWorkspaceRoot,
+  canResumeMuseSessionMapping,
+  resolveMuseWorkspaceRootPhysical,
   resolveMuseExecutableEntry,
 } from "./muse-exec-support.js";
 import {
@@ -46,9 +47,9 @@ type MuseApprovalRequest = Parameters<ApprovalHandler>[0];
 // MUSE_CODE_SDK_PINNED_VERSION；SDK 与 CLI 锁步发版且为**精确配对**——仅当 CLI
 // 版本与 pin 完全一致时 auto 门控才选择本面，任何偏离回退 exec 面）。
 // 相比 `muse exec --json` 的差异化能力（全部来自官方 SDK/protocol 文档）：
-// - 会话恢复：startSession/resumeSession（R2；rev. 3 resume 门控：映射根与当前
-//   请求根不一致（词法 + realpath 别名解析）= 不续接，当前根内开新会话），
-//   映射持久化跨 MOS 重启。
+// - 会话恢复：startSession/resumeSession（R2；验证轮修正 A resume 门控：映射持久
+//   canonical 物理根，每次续接都与当前请求根的实时物理解析结果比较——无词法同串
+//   捷径，symlink retarget 后不再续接，当前根内开新会话），映射持久化跨 MOS 重启。
 // - 审批回调：fail-closed 姿态注册 deny 处理器（只选服务端 offered 的拒绝选项，
 //   绝不 auto-approve）；unattended-sandboxed = startSession approvalMode
 //   "allowAll"（sandbox 独立生效，绝无 `--yolo` 语义）。（R3）
@@ -59,7 +60,8 @@ type MuseApprovalRequest = Parameters<ApprovalHandler>[0];
 // 生命周期纪律：每轮一个 host（spawn → open/resume session → 单 turn → close）。
 // 不做跨轮常驻 host：取消/超时语义与 exec 面对齐（进程收口），无后台进程残留；
 // 会话连续性由 resume 保证，不依赖常驻连接。SDK host 排空上限 5s
-// （shutdownTimeoutMs），杜绝关不死的 linger。
+// （shutdownTimeoutMs），杜绝关不死的 linger。启动阶段（spawn 握手 / 会话打开）
+// 受启动超时门控约束；超时后晚到的 client 被 close（验证轮修正 C），无进程残留。
 //
 // 已知边界（诚实记录）：MSP 的 turn/start 没有 `--max-model-steps` 等价成员——
 // request.maxModelSteps 在本面被忽略（exec 面继续生效）；步数失控由总超时收口。
@@ -78,6 +80,8 @@ export interface MuseSessionProtocolDeps {
   spawnClient?: (options: MuseClientSpawnOptions) => Promise<MuseClient>;
   /** 测试注入：写映射失败时的告警出口。 */
   onSessionMapWriteError?: (error: unknown) => void;
+  /** 测试注入：启动阶段（spawn 握手 / 会话打开）超时；缺省 60s。 */
+  startupTimeoutMs?: number;
 }
 
 /** MSP 面端口实现（`muse serve` + @muse-code/sdk）。 */
@@ -88,6 +92,11 @@ export function createMuseSessionProtocolPort(
   const readSettings = deps.readSettings ?? readMuseCodeBackendSettings;
   const sessionStore = deps.sessionStore ?? createFileMuseSessionStore(env);
   const spawnClient = deps.spawnClient ?? ((options) => MuseClient.spawn(options));
+  // 启动超时（验证轮修正 C；测试注入可缩短）：spawn 握手与会话打开两个启动阶段共用。
+  const startupTimeoutMs =
+    deps.startupTimeoutMs && deps.startupTimeoutMs > 0
+      ? deps.startupTimeoutMs
+      : HOST_STARTUP_TIMEOUT_MS;
 
   return {
     async runMuseExec(
@@ -157,8 +166,15 @@ export function createMuseSessionProtocolPort(
       combinedSignal.addEventListener("abort", onCombinedAbort, { once: true });
 
       try {
-        client = await withStartupTimeout(
-          spawnClient({
+        // 启动门控（验证轮修正 C）：spawn 握手 / 会话打开都受启动超时约束；超时后
+        // **晚到的 client 必须被 close**（close 排空上限 5s，必要时 SIGTERM/SIGKILL
+        // 升级——进程树不残留）。SDK 的 MuseClientSpawnOptions 没有 signal 成员
+        // （已核对 1.4.20 类型面），无原生可取消启动——超时门控 + 晚到关闭是可用的收口。
+        client = await startupTimeoutGate(
+          "the Session Protocol handshake",
+          startupTimeoutMs,
+          () =>
+            spawnClient({
             museBin: executable,
             args: ["serve"],
             cwd: request.workingDirectory,
@@ -175,16 +191,21 @@ export function createMuseSessionProtocolPort(
               stderrTail = trimStderr(stderrTail + chunk);
             },
           }),
+          (lateClient) => {
+            // 晚到的 client：超时已对外报告失败，进程树必须收口。
+            void lateClient.close().catch(() => undefined);
+          },
         );
 
-        // 会话映射（R2；rev. 3 resume 门控）：既有映射且 workspaceRoot 与当前请求
-        // 根一致（词法 + realpath 别名解析，isSameMuseWorkspaceRoot）→ resumeSession；
-        // 根不一致/无映射 → startSession（fail-closed 连续性：绝不跨 workspace 边界
-        // 续接旧会话；sessionWorkspaceMismatch 如实回传 core 归因）。
+        // 会话映射（R2；验证轮修正 A resume 门控）：既有映射且 canonical 物理根
+        // 与当前请求根的实时物理解析结果一致（canResumeMuseSessionMapping——每次
+        // 续接都重新 realpath，无词法同串捷径）→ resumeSession；不一致/缺 canonical/
+        // 不可解析/无映射 → startSession（fail-closed 连续性：绝不跨 workspace
+        // 边界续接旧会话；sessionWorkspaceMismatch 如实回传 core 归因）。
         const sessionMap = await sessionStore.read().catch(() => ({}) as Awaited<ReturnType<MuseSessionStore["read"]>>);
         const existingMapping = lookupMuseSessionMapping(sessionMap, request.sessionId);
         const resumeRootMatches = existingMapping
-          ? await isSameMuseWorkspaceRoot(existingMapping.workspaceRoot, request.workspaceRoot)
+          ? await canResumeMuseSessionMapping(existingMapping, request.workspaceRoot)
           : false;
         const existingMuseSessionId = resumeRootMatches
           ? existingMapping?.museSessionId
@@ -206,19 +227,34 @@ export function createMuseSessionProtocolPort(
             : undefined;
 
         const session = resumedMuseSession
-          ? await client.resumeSession({
-              sessionId: existingMuseSessionId,
-              ...(denyApproval
-                ? { onApproval: denyApproval, onApprovalError: () => undefined }
-                : {}),
-            } satisfies ResumeSessionOptions)
-          : await client.startSession(buildStartSessionOptions(request, approvalPosture));
+          ? await startupTimeoutGate(
+              "resuming the Muse session",
+              startupTimeoutMs,
+              () =>
+                client.resumeSession({
+                  sessionId: existingMuseSessionId,
+                  ...(denyApproval
+                    ? { onApproval: denyApproval, onApprovalError: () => undefined }
+                    : {}),
+                } satisfies ResumeSessionOptions),
+              () => undefined,
+            )
+          : await startupTimeoutGate(
+              "opening a Muse session",
+              startupTimeoutMs,
+              () => client.startSession(buildStartSessionOptions(request, approvalPosture)),
+              () => undefined,
+            );
         if (!resumedMuseSession && denyApproval) {
           session.onApproval(denyApproval);
         }
 
-        // 映射回写（R2）：拿到 session id 即持久化（首轮失败也可下轮续接）。
+        // 映射回写（R2；验证轮修正 A）：拿到 session id 即持久化（首轮失败也可下轮
+        // 续接）；canonical 物理根记录时 realpath 解析（不可解析 = 空串 → 下轮拒绝
+        // 续接，fail-closed）。
         const museSessionId = session.sessionId;
+        const canonicalWorkspaceRoot =
+          (await resolveMuseWorkspaceRootPhysical(request.workspaceRoot)) ?? "";
         try {
           await sessionStore.write(
             recordMuseSessionMapping(
@@ -228,6 +264,7 @@ export function createMuseSessionProtocolPort(
                 museSessionId,
                 surface: "session-protocol",
                 workspaceRoot: request.workspaceRoot,
+                canonicalWorkspaceRoot,
               },
             ),
           );
@@ -614,19 +651,54 @@ function trimStderr(value: string): string {
   return value.slice(-STDERR_LIMIT);
 }
 
-async function withStartupTimeout<T>(promise: Promise<T>): Promise<T> {
-  return await Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
-      const timer = setTimeout(() => {
-        reject(
-          new MuseExecStartupError(
-            "spawnFailed",
-            `Muse Code CLI (muse serve) did not complete the Session Protocol handshake within ${HOST_STARTUP_TIMEOUT_MS / 1000}s. Check that the installed CLI version exactly matches the pinned SDK version (${MUSE_CODE_SDK_PINNED_VERSION}) and the execution surface setting in Model Settings.`,
-          ),
-        );
-      }, HOST_STARTUP_TIMEOUT_MS);
-      timer.unref?.();
-    }),
-  ]);
+/**
+ * 启动阶段超时门控（验证轮修正 C，替代旧 withStartupTimeout 的裸 Promise.race）：
+ * - 正常 resolve/reject → 原样传递（超时定时器取消）。
+ * - 超时先到 → 对外 reject（MuseExecStartupError spawnFailed，消息携带阶段描述与
+ *   SDK pin）；**晚到的 resolve 必须经 onLate 收口**（spawn 阶段 = close 晚到
+ *   client，杜绝残留的 `muse serve` 进程树）；晚到的 reject 静默吞掉（超时错误
+ *   已是对外事实，不覆盖）。
+ * - 会话打开阶段超时 → reject 后由外层 finally close client（此时 client 已赋值）。
+ */
+function startupTimeoutGate<T>(
+  phase: string,
+  timeoutMs: number,
+  start: () => Promise<T>,
+  onLate: (lateValue: T) => void,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      void promise.then(
+        (lateValue) => {
+          onLate(lateValue);
+        },
+        () => undefined,
+      );
+      reject(
+        new MuseExecStartupError(
+          "spawnFailed",
+          `Muse Code CLI (muse serve) did not finish ${phase} within ${Math.round(timeoutMs / 1000)}s. Check that the installed CLI version exactly matches the pinned SDK version (${MUSE_CODE_SDK_PINNED_VERSION}) and the execution surface setting in Model Settings.`,
+        ),
+      );
+    }, timeoutMs);
+    timer.unref?.();
+    const promise = start();
+    promise.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }

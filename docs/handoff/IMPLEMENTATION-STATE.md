@@ -1202,3 +1202,33 @@ PR #27 (ACR-0002 §Revision 3; work package MC-C; evidence record rev. 3):
   SDK. Full repo gate chain (`verify:pre-push`) on the corrected head recorded in evidence
   §2b. GitHub CI + external re-review of the corrected head remain merge-blocking; Issue #24
   stays open pending the §4 on-machine Windows acceptance.
+
+### PR #27 safety corrections (A/B/C), branch tl/muse-code-delegated-backend (2026-11-15, TL correction round)
+
+External verification round 3 (TL correction round) returned three safety findings; all
+delivered with regression tests (ACR-0002 §Revision 4; evidence rev. 4 §1 + §2c):
+
+- **A (symlink retargeting)**: the durable session mapping now persists a
+  `canonicalWorkspaceRoot` (realpath at mapping time) and every resume re-resolves the
+  current request root physically against it (`canResumeMuseSessionMapping`) — the lexical
+  same-string shortcut is gone; a retargeted symlink (identical string, different physical
+  root) refuses the old Muse session on **both** surfaces (fresh session inside the current
+  root, `sessionWorkspaceMismatch: true`); legacy mappings without a canonical root are
+  refused. Regression tests create a mapping through a symlink, retarget it, and verify the
+  refusal on both the MSP and exec surfaces.
+- **B (realpath failure)**: `assertMuseWorkspaceContainment` no longer passes on the lexical
+  verdict when physical resolution fails — ENOENT/EACCES reject **before spawn** with the
+  new stable issue code `workspaceUnresolvable` (no narrow exception is justified: both
+  official surfaces require an existing, resolvable root). Contract tests cover both arms
+  (real-filesystem ENOENT; injected EACCES, deterministic under root-run CI).
+- **C (MSP startup timeout)**: `startupTimeoutGate` replaces the bare `Promise.race` — a
+  client resolving **after** the startup timeout is closed (no leaked `muse serve` tree; the
+  SDK's spawn options carry no `signal` member, so the gate is the cancellation), and the
+  session-open phase (`startSession`/`resumeSession`) is gated too; `startupTimeoutMs` is
+  test-injectable. Fake-SDK tests: late-resolving client closed + visible failure; hanging
+  session open fails visibly with the client closed and no turn submitted.
+- Verification on the corrected head: muse suites green — bootstrap JSONL 8/8, process
+  24/24, MSP 20/20, support 14/14 (**66/66**), core delegated-turn 8/8; evidence §2c.
+  GitHub CI + external re-review of the corrected head remain merge-blocking; Issue #24
+  stays open pending the §4 on-machine Windows acceptance (steps 4/5/8 extended with the
+  retarget / no-orphaned-host / unresolvable-boundary checks).

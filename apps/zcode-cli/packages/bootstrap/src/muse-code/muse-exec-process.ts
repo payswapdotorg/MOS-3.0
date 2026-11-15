@@ -21,7 +21,8 @@ import { readMuseCodeBackendSettings } from "./muse-code-settings.js";
 import {
   MuseExecStartupError,
   assertMuseWorkspaceContainment,
-  isSameMuseWorkspaceRoot,
+  canResumeMuseSessionMapping,
+  resolveMuseWorkspaceRootPhysical,
   resolveMuseExecutableEntry,
 } from "./muse-exec-support.js";
 import {
@@ -47,11 +48,11 @@ import {
 // - 环境隔离（R5）：子进程环境经 buildMuseChildEnv 允许清单，Host 集成凭据不外流。
 // - 审批姿态（R3）：fail-closed（缺省）不传任何审批旗标；unattended-sandboxed 附加
 //   documented `--disable-approval`（sandbox 保持开启）。`--yolo` 永不出现在 argv。
-// - 会话连续性（R2；评审 rev. 3 加严）：优先续接持久映射的 muse 会话（documented
-//   `--session-id`）——但映射记录的 workspaceRoot 必须与当前请求根一致（词法 +
-//   realpath 别名解析，isSameMuseWorkspaceRoot）；不一致 = 放弃续接、当前根内开新
-//   会话（sessionWorkspaceMismatch 如实回传），绝不跨 workspace 边界续接旧会话；
-//   信封级候选 session id 从 JSONL 捕获并回写映射。
+// - 会话连续性（R2；验证轮修正 A 加严）：优先续接持久映射的 muse 会话（documented
+//   `--session-id`）——但映射持久化 canonical 物理根，每次续接都与当前请求根的
+//   **实时物理解析结果**比较（无词法同串捷径，symlink retarget 防护）；不一致 =
+//   放弃续接、当前根内开新会话（sessionWorkspaceMismatch 如实回传），绝不跨
+//   workspace 边界续接旧会话；信封级候选 session id 从 JSONL 捕获并回写映射。
 // - abort/超时 → 进程树终止（POSIX 进程组 SIGTERM→SIGKILL；Windows taskkill /T /F）。
 // - stderr 只保留尾部 64KB 诊断窗口；stdout 逐行 JSONL，超长行按 unknown 计数。
 
@@ -90,13 +91,15 @@ export function createMuseExecProcessPort(deps: MuseExecProcessDeps = {}): MuseE
           `Muse Code CLI executable "${settings.executablePath?.trim() || "muse"}" was not found. Install the CLI or set an absolute executable path in MOS Model Settings.`,
         );
       }
-      // 会话映射（R2；rev. 3 resume 门控）：映射的 workspaceRoot 与当前请求根一致
-      // （词法 + realpath 别名解析）才续接 documented `--session-id`；不一致 = 当前
-      // 根内开新会话（fail-closed 连续性，绝不跨 workspace 续接）。
+      // 会话映射（R2；验证轮修正 A resume 门控）：映射的 canonical 物理根与当前
+      // 请求根的实时物理解析结果一致（canResumeMuseSessionMapping——每次续接都
+      // 重新 realpath，无词法同串捷径，symlink retarget 后不再续接）才续接
+      // documented `--session-id`；不一致 = 当前根内开新会话（fail-closed 连续性，
+      // 绝不跨 workspace 续接）。
       const sessionMap = await sessionStore.read().catch(() => ({} as Record<string, never>));
       const existingMapping = lookupMuseSessionMapping(sessionMap, request.sessionId);
       const resumeRootMatches = existingMapping
-        ? await isSameMuseWorkspaceRoot(existingMapping.workspaceRoot, request.workspaceRoot)
+        ? await canResumeMuseSessionMapping(existingMapping, request.workspaceRoot)
         : false;
       return runMuseExecChild(executable, request, settings, handlers, env, {
         existingMuseSessionId: resumeRootMatches ? existingMapping?.museSessionId : undefined,
@@ -297,11 +300,16 @@ async function runMuseExecChild(
     if (capturedMuseSessionId) {
       try {
         const map = await continuity.sessionStore.read();
+        // canonical 物理根（验证轮修正 A）：记录时 realpath 解析；不可解析 = 空串
+        // → 下轮拒绝续接（fail-closed）。
+        const canonicalWorkspaceRoot =
+          (await resolveMuseWorkspaceRootPhysical(request.workspaceRoot)) ?? "";
         await continuity.sessionStore.write(
           recordMuseSessionMapping(map, request.sessionId, {
             museSessionId: capturedMuseSessionId,
             surface: "muse-exec",
             workspaceRoot: request.workspaceRoot,
+            canonicalWorkspaceRoot,
           }),
         );
       } catch (error) {

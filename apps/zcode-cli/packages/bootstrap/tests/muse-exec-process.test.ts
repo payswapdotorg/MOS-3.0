@@ -272,7 +272,7 @@ describe("createMuseExecProcessPort", () => {
     expect(argv).not.toContain("--session-id");
   });
 
-  it("starts a fresh session instead of resuming when the stored workspace root differs (R2/R4 rev. 3)", async () => {
+  it("starts a fresh session instead of resuming when the stored workspace root differs (R2/R4)", async () => {
     const otherRoot = await mkdtemp(join(tmpdir(), "muse-other-root-"));
     cleanups.push(() => rm(otherRoot, { force: true, recursive: true }));
     const ctx = await prepareFixture();
@@ -281,6 +281,7 @@ describe("createMuseExecProcessPort", () => {
         museSessionId: "muse-fixture-session-1",
         surface: "muse-exec",
         workspaceRoot: otherRoot,
+        canonicalWorkspaceRoot: otherRoot,
         updatedAt: "2026-11-14T00:00:00.000Z",
       },
     });
@@ -298,6 +299,7 @@ describe("createMuseExecProcessPort", () => {
         museSessionId: "muse-fixture-session-1",
         surface: "muse-exec",
         workspaceRoot: otherRoot,
+        canonicalWorkspaceRoot: otherRoot,
         updatedAt: "2026-11-14T00:00:00.000Z",
       },
     });
@@ -309,7 +311,7 @@ describe("createMuseExecProcessPort", () => {
     expect(argv).not.toContain("--session-id");
   });
 
-  it("keeps resume continuity across symlinked workspace-root aliases (R2/R4 rev. 3)", async () => {
+  it("keeps resume continuity across symlinked workspace-root aliases (R2/R4)", async () => {
     const parent = await mkdtemp(join(tmpdir(), "muse-alias-"));
     cleanups.push(() => rm(parent, { force: true, recursive: true }));
     const realRoot = join(parent, "real-root");
@@ -317,12 +319,14 @@ describe("createMuseExecProcessPort", () => {
     await mkdir(realRoot);
     await symlink(realRoot, alias);
     const ctx = await prepareFixture({ MUSE_FIXTURE_MODE: "argv-audit" });
-    // 映射记录的是真实根；当前请求根是它的 symlink 别名（同一物理目录）。
+    // 映射记录的是真实根（canonical = 物理根）；当前请求根是它的 symlink 别名
+    // （同一物理目录）→ 续接保持。
     const store = createMemorySessionStore({
       sess_muse_test: {
         museSessionId: "muse-fixture-session-1",
         surface: "muse-exec",
         workspaceRoot: realRoot,
+        canonicalWorkspaceRoot: realRoot,
         updatedAt: "2026-11-14T00:00:00.000Z",
       },
     });
@@ -338,6 +342,67 @@ describe("createMuseExecProcessPort", () => {
     const argv = await readFile(join(alias, "muse-fixture-argv.txt"), "utf8");
     expect(argv).toContain("--session-id");
     expect(argv).toContain("muse-fixture-session-1");
+  });
+
+  it("refuses the old session after the workspace symlink is retargeted, even with the identical path string (验证轮修正 A)", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "muse-retarget-"));
+    cleanups.push(() => rm(parent, { force: true, recursive: true }));
+    const firstRoot = join(parent, "ws-one");
+    const secondRoot = join(parent, "ws-two");
+    const link = join(parent, "link");
+    await mkdir(firstRoot);
+    await mkdir(secondRoot);
+    await symlink(firstRoot, link);
+    // 映射经 symlink 建立：记录原串 = link，canonical 物理根 = ws-one。
+    const store = createMemorySessionStore({
+      sess_muse_test: {
+        museSessionId: "muse-fixture-session-old",
+        surface: "muse-exec",
+        workspaceRoot: link,
+        canonicalWorkspaceRoot: firstRoot,
+        updatedAt: "2026-11-14T00:00:00.000Z",
+      },
+    });
+    // retarget：link → ws-two（同一路径串，物理目标已换）。
+    await rm(link);
+    await symlink(secondRoot, link);
+    const ctx = await prepareFixture({ MUSE_FIXTURE_MODE: "argv-audit" });
+    const result = await runPort({
+      ...ctx,
+      workdir: link,
+      workspaceRoot: link,
+      sessionStore: store,
+    }).run;
+    expect(result.exitCode).toBe(0);
+    // 词法同串不再是捷径：旧 muse 会话必须被拒绝（不传 --session-id），当前
+    // （新）根内开新会话，mismatch 如实回传。
+    expect(result.resumedMuseSession).toBe(false);
+    expect(result.sessionWorkspaceMismatch).toBe(true);
+    const argv = await readFile(join(link, "muse-fixture-argv.txt"), "utf8");
+    expect(argv).not.toContain("--session-id");
+    expect(argv).not.toContain("muse-fixture-session-old");
+    // argv-audit fixture 不申报 session id：映射回写发生在下一个申报 id 的真实轮
+    // （MSP 面的 retarget 回归测试已覆盖映射自愈）。
+  });
+
+  it("refuses resume for legacy mappings without a canonical root (fail-closed)", async () => {
+    const ctx = await prepareFixture({ MUSE_FIXTURE_MODE: "argv-audit" });
+    // 旧版映射（无 canonicalWorkspaceRoot）→ 拒绝续接，当前根内开新会话。
+    const store = createMemorySessionStore({
+      sess_muse_test: {
+        museSessionId: "muse-fixture-session-old",
+        surface: "muse-exec",
+        workspaceRoot: ctx.workdir,
+        canonicalWorkspaceRoot: "",
+        updatedAt: "2026-11-14T00:00:00.000Z",
+      },
+    });
+    const result = await runPort({ ...ctx, sessionStore: store }).run;
+    expect(result.exitCode).toBe(0);
+    expect(result.resumedMuseSession).toBe(false);
+    expect(result.sessionWorkspaceMismatch).toBe(true);
+    // argv-audit fixture 不申报 session id：canonical 回写发生在下一个申报 id 的
+    // 真实轮（缺 canonical 的旧条目在此之前持续 fail-closed 拒绝续接）。
   });
 
   it("surfaces approval requests and user questions as visible events with counts (R3)", async () => {
