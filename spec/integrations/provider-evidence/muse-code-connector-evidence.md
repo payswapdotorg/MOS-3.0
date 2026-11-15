@@ -208,6 +208,32 @@ involved). Zero engineering failures relate to PR #27's changed files. One chunk
 `@zcode/e2e-report` workspace package built first (unbuilt-workspace environment issue, not a
 code failure; the chunk was re-run green after `pnpm --filter @zcode/e2e-report... build`).
 
+### 2b. Verification chain on the rev. 3 corrected head (2026-11-15 UTC, `d8ff2bf`)
+
+Full `pnpm run verify:pre-push` on the committed correction head (with the pre-push hook
+stdin `refs/heads/tl/muse-code-delegated-backend d8ff2bf… 843ac58e…`), exit green end to
+end: push-worktree check; e2e-remote-targets check; `pnpm lint` (oxlint +
+session-control-boundary) PASS; stale-doc-phrase check PASS; SQLite schema contract check
+PASS; architecture governance tests **61/61 PASS**; `architecture:check -- --changed`
+(merge-base `origin/main`) **0 violations (baseline 0, new 0)**; affected engineering
+selection for the push range (`843ac58e..d8ff2bf`) — **43/237 files selected by the official
+source-graph, 279 passed + 2 intentional skips, 0 failed**; release tests **51/51 PASS**.
+
+Additional local regression on the corrected head (beyond the muse suites in §2): the
+bootstrap v4 command-suite family — `tests/v4-*` (27 files, 711 tests) plus
+`command-inbox` + `session-resident-pool` (2 files, 81 tests) = **29 files / 792 tests,
+all PASS**; core turn suites (`turn-*` + delegated-muse-turn) — **6 files / 52 tests
+PASS**; `tsc --noEmit` clean for `@zcode/core` and `@zcode/bootstrap` (test files included);
+`pnpm --filter @zcode/bootstrap... build` clean against the installed real
+`@muse-code/sdk@1.4.20`.
+
+The full 237-file engineering selection for the PR diff vs `main` (the CI affected-selection
+that rev. 2 recorded chunked locally) is on this round validated by GitHub CI on the pushed
+head — per this record's standing rule, local runs are not CI evidence and CI remains the
+merge-blocking authority. The rev. 2 chunked local run (§2a) plus the 43-file push-range
+selection and the targeted regressions above cover the rev. 3 delta (additive result field,
+muse-module-internal changes, exact-gate decision rule shared with the services preview).
+
 ## 3. Known limitations (honest boundaries; rev. 2)
 
 - The exact JSONL event schema of the installed `muse exec --json` build has **not** been
