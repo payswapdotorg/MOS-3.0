@@ -1,8 +1,8 @@
 # Architecture Change Record — ACR-0002
 
-**Status:** accepted (rev. 2 — PR #27 external review revisions R1–R7; rev. 3 — verification-round corrections)
+**Status:** accepted (rev. 2 — PR #27 external review revisions R1–R7; rev. 3 — verification-round corrections; rev. 4 — MC-D selection-driven routing)
 **Owner:** TL (payswapdotorg)
-**Date:** 2026-11-14 (rev. 2: 2026-11-14; rev. 3: 2026-11-15)
+**Date:** 2026-11-14 (rev. 2: 2026-11-14; rev. 3/rev. 4: 2026-11-15)
 **Related PR / issue:** Issue #24 (P0, Integrate Muse Code Contributor CLI into MOS New Task); PR #27（rev. 2 随附）
 **Affected modules/contracts:** packages/shared（muse-code 契约、v4 信封字段、runtime capability、channel）、packages/services（IMuseCodeService）、packages/client、packages/ui（设置分区/Composer 指示器/信封门控）、apps/zcode-cli/packages/contracts（MuseExecutionPort）、apps/zcode-cli/packages/core（delegated turn 执行器 + turn 路由）、apps/zcode-cli/packages/bootstrap（执行端口（双面）+ JSONL 映射 + MSP 会话端口 + 会话映射存储 + capability + v4 命令门控）
 
@@ -260,9 +260,67 @@ the single-tool-execution-loop and credentials red lines stand, and the Revision
 guardrail is unaffected. MC-D (explicit model selection) remains the separately-stacked
 work package per Revision 3.
 
+## Revision 5 (2026-11-15, MC-D — selection-driven delegated routing for the existing Contributor model)
+
+External verification round 3 on the installed MOS RC3 (built from `3832d055`, **before** PR
+#27) established: the Composer already carries a Muse Spark Contributor selection
+(`meta/muse-spark-1.3-contributor`), its HTTP endpoint is **blocked by the account's
+training-policy** ("0/1 endpoints eligible" — no successful inference), and seeing the model
+in RC3 does not connect it to the delegated backend. The ordered work: trace the entry, make
+the **existing** selection usable through the authenticated CLI subscription (no second
+catalog entry, no OpenRouter, no separately billed API key, no privacy-setting changes),
+cover New Task **and** Studio, and preserve the account's training-policy restrictions.
+
+**Trace conclusion (evidence rev. 5 §1).** This repository's builtin catalog ships exactly
+one Muse model — `muse-spark-1.2-contributor-free` under the `opencode-zen-chat` template
+(OpenCode Zen, api-key, `https://opencode.ai/zen/v1`) — identical at RC3's commit
+`3832d055`. `meta/muse-spark-1.3-contributor` is **not** in this repository's catalog at
+either commit: it is a user-side provider configuration, and its endpoint eligibility is
+governed by the account-policy layer **outside this repository** (no repo source contains
+that wording). MOS leaves both the policy and the entry untouched.
+
+**Discovery (MSP model surface, `@muse-code/sdk@1.4.20` typings).** The official MSP model
+surface is `SessionStartParams.modelId` (initial model; server default when omitted),
+`MuseClient.listModels` (`model/list` — the host's `ModelCatalogEntry` vocabulary), and
+`Session.setModel` (`session/setModel` — durable per-session selection). There is **no
+contributor-mode member** anywhere in the SDK. The exec surface documents `--model` and
+`--contributor-mode on|off`. Consequence: MOS passes **no** model id or mode by default —
+the delegated path runs under the CLI's own authenticated configuration (the user's
+Contributor subscription sign-in), because the CLI-side model-id vocabulary is not
+verifiable offline and inventing one would risk `invalidParams` rejections.
+
+**Routing decision (MC-D).** A turn routes through the delegated backend when the envelope
+carries `executionBackend: "muse-code"` (explicit, unchanged) **or** the turn's effective
+model selection matches the shared Muse delegated model family
+(`isMuseDelegatedModelSelection` — bare `muse-spark-<version>-contributor`; the OpenCode
+Zen `-free` variant is deliberately excluded) **and** the Host setting `useAsTaskBackend`
+is enabled (the CLI reads the same settings file the ports and Host service share;
+tolerant read, default off = zero behavior change). The CLI-side rule is computed at v4
+admission from `resolveSubmittedExecutionState` (payload selection ?? session standing
+selection), so it covers **every** submission surface by construction — New Task Composer,
+Studio mission-linked sessions, cold-resumed sessions — while the renderer's envelope
+stamping applies the same family rule to the payload's selection (explicit wire intent,
+old-CLI fail-safe unchanged).
+
+**Semantic change of the toggle (recorded).** `useAsTaskBackend` previously meant "all New
+Task turns delegate, model selector locked". Under MC-D it means "Muse delegated family
+selections execute through the local CLI subscription; the selector stays genuinely
+usable". The R6 lock-reason behavior is superseded: model selection is now the routing
+input, the indicator shows active only when the current selection routes delegated, and
+per-model honesty is preserved (ordinary selections run the ordinary path). No catalog
+entry is added; no provider/endpoint configuration changes; no credential is read, copied
+or created; the account's training-policy restrictions (and the blocked HTTP endpoint
+failure) remain exactly as-is — the delegated path is the only compliant execution route
+for the Contributor selection, using the CLI's own subscription sign-in.
+
+Studio parity: Studio has no model picker of its own (its missions ride on zcode
+sessions); the CLI-side selection-driven routing makes the Contributor selection work in
+Studio-linked sessions by construction, and this is recorded as the Studio coverage
+mechanism.
+
 ## Approval
 
-- TL: payswapdotorg（TL-authored vertical slice; rev. 2 revisions, rev. 3 and rev. 4 verification-round corrections TL-authored after external review/verification）
-- Required domain/security reviewers: 待评审（rev. 4 修正后需在推送 head 上重新评审）
-- Commit / PR that updates architecture lock and module registry: PR #27（policy admission：`muse-code-delegated-backend-unmanaged-edit`）
+- TL: payswapdotorg（TL-authored vertical slice; rev. 2–rev. 5 revisions TL-authored after external review/verification）
+- Required domain/security reviewers: 待评审（rev. 4/rev. 5 修正后需在推送 head 上重新评审）
+- Commit / PR that updates architecture lock and module registry: PR #27（policy admission：`muse-code-delegated-backend-unmanaged-edit`）；MC-D 随附 PR #30（stacked on #27，policy admission：`muse-code-selection-routing-unmanaged-edit`）
 

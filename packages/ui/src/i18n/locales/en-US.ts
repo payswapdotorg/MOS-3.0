@@ -9079,7 +9079,7 @@ const enUS: Record<string, string> = {
   ...requestSecurityMessagesEnUS,
   // Meta Muse Code 本地执行后端（Issue #24 / ACR-0002）
   "settings.museCode.title": "Meta Muse Code (local CLI)",
-  "settings.museCode.description": "Run New Task through your locally installed, signed-in Muse Code CLI. Uses your Muse Code subscription sign-in on this machine; not OpenRouter, not the pay-as-you-go Meta Model API.",
+  "settings.museCode.description": "Run Muse Spark Contributor model selections through your locally installed, signed-in Muse Code CLI. Uses your Muse Code subscription sign-in on this machine; not OpenRouter, not the pay-as-you-go Meta Model API. Other models keep the standard path.",
   "settings.museCode.serviceUnavailable": "The Muse Code backend service is not available in this connection.",
   "settings.museCode.checking": "Checking CLI…",
   "settings.museCode.installed": "Installed (v{version})",
@@ -9098,8 +9098,8 @@ const enUS: Record<string, string> = {
   "settings.museCode.loginLaunched": "Muse Code sign-in launched. Complete it in the CLI window, then press Recheck.",
   "settings.museCode.loginCommandNotConfigured": "Sign-in command is not configured. Check the documented login command via 'muse --help' and set it under Advanced, or sign in from your terminal, then press Recheck.",
   "settings.museCode.loginLaunchFailed": "Failed to launch the Muse Code sign-in command.",
-  "settings.museCode.toggle.title": "Use Muse Code as the New Task backend",
-  "settings.museCode.toggle.description": "When enabled, new tasks in idle sessions are executed by the local Muse Code CLI and its events stream into the normal New Task view. Requires an idle session with immediate delivery; queued or running turns keep using the standard model path.",
+  "settings.museCode.toggle.title": "Enable Muse Code for Contributor model selections",
+  "settings.museCode.toggle.description": "When enabled, selecting a Muse Spark Contributor model (e.g. muse-spark-1.3-contributor) runs the task on your local, signed-in Muse Code CLI subscription — no OpenRouter, no pay-as-you-go API key. Other models keep running on the standard model path and the model selector stays fully usable. Requires an idle session with immediate delivery; queued or running turns keep using the standard model path.",
   "settings.museCode.billing.title": "Billing",
   "settings.museCode.billing.description": "This backend uses your existing Muse Code CLI subscription sign-in. MOS never reads or copies CLI credentials.",
   "settings.museCode.billing.note": "No OpenRouter. No separately billed Meta Model API key. The optional Meta Model API provider remains available under Model settings and is billed pay-as-you-go by Meta.",
@@ -9124,10 +9124,10 @@ const enUS: Record<string, string> = {
   "settings.museCode.surfaceSetting.auto": "Auto — by CLI version (default)",
   "settings.museCode.surfaceSetting.muse-exec": "muse exec --json (compatibility fallback)",
   "settings.museCode.surfaceSetting.session-protocol": "Session Protocol (muse serve + SDK)",
-  "chat.toolbar.museCode.modelInactive": "Tasks will run on Muse Code (your local CLI subscription session). The selected model is not used while this backend is enabled.",
   "chat.toolbar.museCode.label": "Muse Code",
-  "chat.toolbar.museCode.active": "New Task runs on the local Muse Code CLI backend (subscription sign-in).",
-  "chat.toolbar.museCode.unavailable": "Muse Code backend enabled but not available for this workspace; tasks fall back to the standard model path.",
+  "chat.toolbar.museCode.active": "The selected Muse Spark Contributor model runs on your local Muse Code CLI subscription.",
+  "chat.toolbar.museCode.available": "Muse Code backend ready — selecting a Muse Spark Contributor model runs the task on your local CLI subscription; other models run normally.",
+  "chat.toolbar.museCode.unavailable": "Muse Code backend enabled but not available for this workspace; Muse Spark Contributor selections run on the standard model path.",
 };
 
 export default enUS;

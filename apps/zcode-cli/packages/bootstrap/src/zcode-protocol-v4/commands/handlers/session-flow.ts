@@ -27,6 +27,7 @@ import {
 import { requireRecord } from "../record-access.js";
 import type { V4CommandCoreHost, V4SessionRecordView, V4TurnExecution } from "../types.js";
 import { V4CommandNoopError } from "../../v4-gateway.js";
+import { shouldRouteMuseDelegatedBySelection } from "../../muse-delegated-routing.js";
 
 /** 等 idle 轮询参数：25ms 间隔、5s 超时。 */
 const IDLE_POLL_INTERVAL_MS = 25;
@@ -92,10 +93,17 @@ async function sendText(
     });
   const routingMode = host.getInputRoutingMode?.(envelope.sessionId ?? "") ?? null;
   const forceStartNow = payload.requestedDelivery === "startNow";
-  // 委托执行后端（Issue #24 / ACR-0002）：delegated 轮不可 steer/queue——普通 admission
-  // 在 busy 时会把输入排队，提升路径不会携带 executionBackend，随后静默退回普通模型
-  // 执行（禁止静默改道）。fail-closed：busy / queue / guide / choice / 抢占一律 ACK 前拒绝。
-  const museBackendTurn = envelope.executionBackend === "muse-code";
+  // 委托执行后端（Issue #24 / ACR-0002；MC-D 按选型路由）：显式信封字段（renderer
+  // 双门控携带）**或**本轮有效选型命中 Muse delegated 模型家族 + Host 设置
+  // useAsTaskBackend（CLI 读同一设置文件）→ 该轮委托执行。delegated 轮不可
+  // steer/queue——普通 admission 在 busy 时会把输入排队，提升路径不会携带
+  // executionBackend，随后静默退回普通模型执行（禁止静默改道）。fail-closed：
+  // busy / queue / guide / choice / 抢占一律 ACK 前拒绝。
+  const museBackendTurn =
+    envelope.executionBackend === "muse-code" ||
+    (await shouldRouteMuseDelegatedBySelection({
+      selection: submittedExecutionState.modelSelection,
+    }));
   if (museBackendTurn && isDelegatedMuseTurnInadmissible(host, record, routingMode, forceStartNow)) {
     throw new V4InputAdmissionRejectedError(
       "fault.command.inputRejected",

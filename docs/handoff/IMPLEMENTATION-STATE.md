@@ -1232,3 +1232,54 @@ delivered with regression tests (ACR-0002 §Revision 4; evidence rev. 4 §1 + §
   GitHub CI + external re-review of the corrected head remain merge-blocking; Issue #24
   stays open pending the §4 on-machine Windows acceptance (steps 4/5/8 extended with the
   retarget / no-orphaned-host / unresolvable-boundary checks).
+
+### MC-D: selection-driven delegated routing for the existing Contributor model (2026-11-15)
+
+External verification round 3 (installed RC3, built from `3832d055` — before PR #27): the
+Composer already carries `meta/muse-spark-1.3-contributor` (user-side provider config; its
+HTTP endpoint is blocked by the account's training-policy — "0/1 endpoints eligible"), and
+seeing the model in RC3 does not connect it to the delegated backend. Ordered work: trace
+the entry, make the **existing** selection usable through the authenticated CLI subscription
+(no second catalog entry, no OpenRouter, no separately billed API key, no privacy-setting
+changes), cover New Task **and** Studio, preserve the training-policy restrictions. Delivered
+on branch `tl/muse-code-mc-d-selection` (stacked on PR #27 head `49731c12`; separate PR;
+ACR-0002 §Revision 4; evidence record rev. 4; work package MC-D):
+
+- **Trace (evidence §1)**: this repo's builtin catalog ships exactly one Muse model —
+  `muse-spark-1.2-contributor-free` under `opencode-zen-chat` (OpenCode Zen, api-key,
+  `https://opencode.ai/zen/v1`); identical at RC3's commit. `meta/muse-spark-1.3-contributor`
+  is not in the repo catalog — user-side provider config; endpoint eligibility is governed by
+  an account-policy layer outside this repo. Entry/policy/credentials all left untouched.
+- **MSP discovery**: official model surface is `SessionStartParams.modelId` +
+  `model/list` + `session/setModel`; **no contributor-mode member** in the SDK. The delegated
+  path passes no model id/mode by default (the CLI runs under its own authenticated
+  Contributor sign-in); per-run `--model`/`modelId` pinning deliberately deferred to the
+  on-machine step 13 (no invented ids).
+- **Selection-driven routing**: shared `isMuseDelegatedModelSelection`
+  (`^muse-spark-\d[\w.]*-contributor$`, modelId only; the `-free` Zen variant excluded) +
+  CLI-side v4 admission routing (`shouldRouteMuseDelegatedBySelection`: effective selection
+  from `resolveSubmittedExecutionState` + the shared settings file's `useAsTaskBackend`;
+  envelope `executionBackend` field unchanged and still authoritative when present) +
+  renderer model-aware envelope stamping (payload selection must match the family). Covers
+  every submission surface by construction — New Task, Studio mission-linked sessions, cold
+  resumes.
+- **Composer UX**: selector unlocked (selection is the routing input; the R6 lock-reason
+  behavior is superseded — recorded in ACR-0002 §Revision 4); indicator shows active only
+  when the current selection routes delegated (`active`/`available`/`unavailable` states);
+  context usage hidden only for delegated selections; en-US/zh-CN copy updated (toggle
+  semantics: "enable Muse Code for Contributor model selections").
+- **Training-policy preservation**: no account-policy/privacy changes, no provider/endpoint
+  config changes, no credentials; the blocked HTTP endpoint failure stays the honest status
+  quo when the backend is off.
+- Verification (fresh-environment rebuild after a sandbox reset: re-clone at `49731c12`,
+  fresh `pnpm install --ignore-scripts`, husky installed): muse suites green — bootstrap
+  JSONL 8/8, process 20/20, MSP 16/16, support 11/11, **delegated routing 5/5 (new)**, core
+  delegated-turn 8/8, services **10/10** (+3 family matcher), ui stamping **6/6**
+  (rewritten) — **84/84**; regressions green (bootstrap v4 suite 711/711; command-inbox +
+  session-resident-pool + queue-input-fidelity + create-session-command-fact 88/88; core
+  turn suites 52/52); builds green (`tsc -b` shared/services/client/ui — ui needed
+  `NODE_OPTIONS=--max-old-space-size=3000` on this 4 GB host, environment note only;
+  `pnpm --filter @zcode/bootstrap... build` clean). Full `verify:pre-push` on the MC-D head
+  recorded in evidence §2b (rev. 4 paragraph). GitHub CI + external re-review remain
+  merge-blocking; Issue #24 stays open pending the §4 on-machine Windows acceptance
+  (checklist now 13 steps — step 13 covers the selection-driven routing).

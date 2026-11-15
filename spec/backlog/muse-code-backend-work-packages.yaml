@@ -206,41 +206,71 @@ work_packages:
   - id: MC-D
     name: Explicit Muse model / Contributor-mode selection (New Task + Studio)
     owner: tl
-    status: planned
+    status: delivered
     paths:
       - packages/shared/src/muse-code/muse-code-backend.ts
-      - packages/ui/src/settings/MuseCodeSection.tsx
-      - packages/ui/src/chat-input-toolbar/MuseCodeBackendIndicator.tsx
-      - packages/ui/src/v4/composer/V4ComposerToolbar.tsx
       - packages/ui/src/v4/commandFactory.ts
+      - packages/ui/src/v4/museCodeBackendState.ts
+      - packages/ui/src/v4/composer/V4ComposerToolbar.tsx
+      - packages/ui/src/chat-input-toolbar/MuseCodeBackendIndicator.tsx
       - packages/ui/src/i18n/locales/en-US.ts
       - packages/ui/src/i18n/locales/zh-CN.ts
-      - apps/zcode-cli/packages/contracts/src/interfaces/muse-execution.port.ts
-      - apps/zcode-cli/packages/core/src/runtime/methods/delegated-muse-turn.ts
-      - apps/zcode-cli/packages/bootstrap/src/muse-code/**
+      - packages/ui/test/museCodeBackendStamp.test.ts
+      - packages/services/test/museCodeService.test.ts
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/muse-delegated-routing.ts
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/handlers/session-flow.ts
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/handlers/session-mgmt.ts
+      - apps/zcode-cli/packages/bootstrap/tests/muse-delegated-routing.test.ts
     forbidden_paths:
       - spec/architecture/**
       - packages/provider/**
       - packages/provider-node/**
       - config/provider/**
+      - config/provider/zcode-builtin.json
     tasks:
       - 调研（前置，阻断后续实现）：MSP 路由上选择模型/Contributor 模式的官方支持方式
         （@muse-code/sdk startSession/protocol 能力面）——绝不假设 `muse exec` 的
         `--model` / `--contributor-mode on|off` 旗标对 MSP 会话生效；结论回填
-        ACR-0002（新 Revision）与 evidence。
-      - exec 面：per-run 模型/Contributor 选择经 documented `--model` +
-        `--contributor-mode on|off` 传入（MuseExecRequest additive 字段；缺省 = CLI 自身
-        配置，行为不变）。
-      - UI：New Task 的模型选择体验对齐 Start Plan 选择 GLM-5.3 的方式（替换当前
-        「后端激活即禁用选择 + 锁定原因」为显式 Muse 模型选择）；MOS Studio 同步覆盖。
-      - 契约测试（exec 旗标传递、MSP 官方机制、信封 additive 字段、UI 门控）+ 证据更新。
+        ACR-0002（新 Revision）与 evidence。✅ 已完成（ACR-0002 §Revision 4：
+        SessionStartParams.modelId / model/list / session/setModel 为官方面；SDK 无
+        contributor 成员；缺省不传任何 model id/mode）。
+      - 评审 pivot（2026-11-15，装机 RC3 验证）：Composer 已有既有选型
+        （meta/muse-spark-1.3-contributor，用户侧 provider 配置，HTTP 端点被账号
+        training-policy 排除）；**不新增第二个 catalog 条目**，改为把既有选型接到
+        已认证 CLI 订阅。✅ 按修订范围交付。
+      - 追溯：既有条目来源与端点配置（evidence §1 MC-D trace：本仓库 catalog 只有
+        opencode-zen 的 muse-spark-1.2-contributor-free；meta/1.3 条目不在仓库 catalog，
+        端点资格由仓库外的账号策略层裁决）。✅ 已完成。
+      - 选型驱动路由（核心交付）：shared isMuseDelegatedModelSelection 家族判定
+        （裸 muse-spark-<version>-contributor；-free 免费变体排除）+ CLI 侧 v4 准入
+        （resolveSubmittedExecutionState 有效选型 + Host 设置 useAsTaskBackend 同一
+        设置文件）+ renderer 信封携带同规则（载荷选型命中才携带）；Composer 选择器
+        解锁（选型即路由输入），指示器按「当前选型即走委托」点亮。✅ 已交付。
+      - Studio 覆盖：Studio 无独立模型选择器（mission 挂 zcode 会话）；CLI 侧按会话
+        有效选型路由使 Studio 关联会话同规则受益（ACR-0002 §Revision 4 记录该机制）。
+        ✅ 按构造覆盖。
+      - training-policy 保留：不改账号策略/隐私设置，不改用户侧 provider 条目，不增
+        凭据；被策略阻断的 HTTP 端点失败保持原状（后端关闭时的诚实现状）。✅ 保留。
+      - per-run --model/--contributor-mode 旗标传递：**不缺省传递**（CLI 侧 model id
+        词表不可离线核实；SDK 无 contributor 成员）——待在机 §4 步骤 13 的 model/list
+        样本后再定（evidence §3 边界记录）。⏳ 有意推迟，非缺口。
+      - 契约测试 + 证据更新（ACR-0002 rev. 4、evidence rev. 4、IMPLEMENTATION-STATE）。
+        ✅ 已交付。
     deliverables:
       - msp_selection_mechanism_finding
-      - per_run_model_contributor_selection
-      - new_task_and_studio_selector_parity
+      - selection_driven_delegated_routing
+      - existing_selection_trace
+      - unlocked_selector_with_honest_indicator
+      - studio_coverage_by_construction
+      - training_policy_preservation
       - contract_tests_and_evidence
     acceptance:
-      - MSP 官方机制先核实后使用（未核实 = 只落地 exec 面，MSP 面保持现状并记录边界）。
-      - 缺省路径零行为变化（不选 = CLI 自身配置）。
-      - New Task 与 Studio 的选择体验一致；选择结果逐轮归因可见。
-      - 独立 PR 交付（不并入 PR #27）；ACR-0002 新 Revision 记录裁决。
+      - 既有选型（不新增 catalog 条目）经 CLI 订阅可用；不经 OpenRouter、不经按量计费
+        API key、不改账号策略/隐私设置、不增凭据。
+      - 缺省路径零行为变化（设置开关默认关；普通模型选型零改道；-free 免费变体保持
+        免费 HTTP 路径）。
+      - New Task 与 Studio 的选择体验一致（CLI 侧同规则路由）；选择结果逐轮归因
+        可见（result.surface + 指示器 + 信封字段）。
+      - 独立 PR 交付（stacked on PR #27）；ACR-0002 §Revision 4 记录裁决。
+      - muse 契约套件全绿（84/84：JSONL 8 + process 20 + MSP 16 + support 11 +
+        routing 5 + core 8 + services 10 + ui 6）。

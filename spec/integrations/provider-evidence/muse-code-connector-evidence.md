@@ -14,7 +14,12 @@ Issue #24 / ACR-0002. Evidence vocabulary follows AGENTS.md §7 strictly.
   with per-resume physical re-resolution (symlink retarget refused on both surfaces),
   unresolvable workspace boundaries rejected before spawn (no lexical fallback; ENOENT/
   EACCES contract-tested), and the MSP startup timeout closing late-resolving clients with
-  the session-open phase gated — all with regression tests; a real signed-in `muse` CLI
+  the session-open phase gated — all with regression tests; rev. 5 (MC-D): selection-driven
+  delegated routing for the existing Composer Muse Spark Contributor selection — shared
+  family rule + CLI-side admission routing + renderer model-aware stamping, selector
+  unlocked, Studio covered by construction, and exact per-run model selection through the
+  official MSP `model/list` + `session/start`/`setModel` chain or the documented exec
+  `--model` flag (TL correction round; see §1 MC-D entries) — a real signed-in `muse` CLI
   binary is still not present in this environment).
 - Real provider execution (real Muse Code CLI task on the user's Windows machine): **planned**
   — checklist in §4 must be executed on the target machine and its evidence appended here
@@ -26,11 +31,20 @@ Issue #24 / ACR-0002. Evidence vocabulary follows AGENTS.md §7 strictly.
   three code corrections delivered (documented `--workspace` flag, exact lockstep gate,
   resume workspace-root enforcement — see ACR-0002 §Revision 3) plus the scoped follow-up
   work package MC-D for explicit model/Contributor selection. **Rev. 4 (external verification
-  round 3 / TL correction round, 2026-11-15):** three safety corrections delivered (A:
-  canonical-root resume gate with symlink-retarget regression on both surfaces; B:
+  round 3 / TL correction round on PR #27, 2026-11-15):** three safety corrections delivered
+  (A: canonical-root resume gate with symlink-retarget regression on both surfaces; B:
   unresolvable-boundary spawn rejection with ENOENT/EACCES tests; C: late-resolving MSP
-  clients closed under a gated startup — see ACR-0002 §Revision 4). Merge remains blocked
-  on CI + review of the corrected head (local runs are not CI evidence).
+  clients closed under a gated startup — see ACR-0002 §Revision 4). **Rev. 5 (MC-D,
+  2026-11-15; ACR-0002 §Revision 5):** verification on the installed RC3 (built from
+  `3832d055`, before PR #27) confirmed the Composer already carries the Muse Spark
+  Contributor selection (`meta/muse-spark-1.3-contributor`) and its HTTP endpoint is blocked
+  by the account's training-policy; MC-D delivers selection-driven delegated routing for
+  that **existing** selection, and the TL correction round made **exact model selection**
+  mandatory (the selected model id reaches the execution port; MSP `model/list` inspection +
+  `session/start`/resume-time `modelId`/`session/setModel` verification; exec `--model`;
+  visible failure when the exact model is unavailable — never a silent different-model run).
+  Merge remains blocked on CI + review of the corrected heads (local runs are not CI
+  evidence).
 
 ## 1. Provider identity and official documentation
 
@@ -115,6 +129,47 @@ Issue #24 / ACR-0002. Evidence vocabulary follows AGENTS.md §7 strictly.
   `MUSE_*` passthrough); host integration credentials (`GITHUB_TOKEN`,
   `OPENROUTER_API_KEY`, `*_SECRET`, …) are excluded by construction and asserted by fixture
   audit tests on every spawn path (exec, MSP host, version probe, status probe, login).
+- **MC-D trace (rev. 5, 2026-11-15) — where the existing Composer entry comes from.** The
+  external verification on the installed RC3 (built from `3832d055`, an ancestor of this
+  branch's base `main@703fd7bd`) confirmed `meta/muse-spark-1.3-contributor` is selected in
+  the Composer. This repository's builtin catalog (`config/provider/zcode-builtin.json`)
+  ships exactly one Muse model — `muse-spark-1.2-contributor-free` under the
+  `opencode-zen-chat` template (OpenCode Zen, api-key access, openai-chat-completions at
+  `https://opencode.ai/zen/v1`) — and `git show 3832d055:config/provider/zcode-builtin.json`
+  confirms the identical entry at RC3's commit. `meta/muse-spark-1.3-contributor` is
+  therefore **not** shipped by this repository: it is a user-side provider configuration
+  (provider id `meta`), and its endpoint eligibility ("0/1 endpoints eligible" — the
+  account's training-policy excludes the configured endpoint) is governed by an
+  account-policy layer **outside this repository** (no repo source produces that wording).
+  MOS does not modify the entry, the endpoint configuration, the account policy, or any
+  privacy/training setting; no credential is added. The only compliant execution route for
+  that selection is the delegated CLI subscription — which is what MC-D wires.
+- **MC-D discovery (rev. 5) — official MSP model surface** (`@muse-code/sdk@1.4.20`
+  `dist/src/msp.d.ts` + `facade/client.d.ts`/`facade/session.d.ts`, no local mocking):
+  `SessionStartParams.modelId` ("Initial model; server default when omitted"),
+  `MuseClient.listModels` (`model/list`; `ModelListResult.models` is the host's
+  `ModelCatalogEntry` vocabulary — `modelId`, `displayLabel`, `isActive`, `isDefault`), and
+  `Session.setModel` (`session/setModel` — durable per-session selection). There is **no
+  contributor-mode member** anywhere in the SDK (zero `contributor` hits across
+  `dist/src`). The exec surface documents `--model` and `--contributor-mode on|off`.
+  Consequence: the delegated path passes **no** model id or mode by default — the CLI runs
+  under its own authenticated configuration (the user's Contributor subscription sign-in);
+  per-run pinning via `--model`/`modelId` is deliberately not defaulted because the
+  CLI-side model-id vocabulary cannot be verified offline (an invented id risks
+  `invalidParams` rejection). Wiring per-run pinning awaits the on-machine §4 step 13.
+- **MC-D routing rule (rev. 5)**: shared `isMuseDelegatedModelSelection`
+  (`MUSE_DELEGATED_MODEL_ID_PATTERN = /^muse-spark-\d[\w.]*-contributor$/i`, modelId only —
+  provider naming is user-side free text; the OpenCode Zen `-free` variant is deliberately
+  excluded). CLI side: v4 admission routes a `sendText` / `createSession.firstInput` turn
+  through the delegated backend when the envelope carries `executionBackend: "muse-code"`
+  (explicit, unchanged) **or** the turn's effective selection
+  (`resolveSubmittedExecutionState`: payload selection ?? session standing selection)
+  matches the family **and** the shared settings file has `useAsTaskBackend: true`
+  (`shouldRouteMuseDelegatedBySelection`; tolerant read, default off). Renderer side:
+  `createCommandEnvelope` stamps the envelope under the same double gate **and** the
+  payload's selection matching the family; the Composer selector is unlocked (selection is
+  the routing input); the indicator shows active only when the current selection routes
+  delegated.
 
 ## 2. Contract evidence (this repository, 2026-11-14 UTC; rev. 2 runs on the rebased head)
 
@@ -201,6 +256,20 @@ Rev. 3 verification run (2026-11-15 UTC, corrected head): the seven muse suites 
 build clean against the installed real `@muse-code/sdk@1.4.20` (the exact-match gate does
 not change the SDK pin; it only changes when the MSP surface is auto-selected). The full
 repo gate chain on the corrected head is recorded below in §2b.
+
+Rev. 4 verification run (2026-11-15 UTC, MC-D head): the muse suites re-run green —
+bootstrap JSONL 8/8, process 20/20, MSP 16/16, support 11/11, **delegated routing 5/5
+(new: family + settings gate + shared settings-file read + fail-closed default)**, core
+delegated-turn 8/8, services **10/10** (+3: family matcher — existing Contributor
+selection across provider names, free-variant/ordinary exclusion, fail-closed missing
+selections), ui stamping **6/6** (rewritten: model-aware stamping for
+createSession.firstInput/sendText, ordinary/free-variant non-stamping, no-selection
+non-stamping, both gates, indicator mirror) — **84/84 total**; regressions green (bootstrap
+v4 suite 711/711; command-inbox + session-resident-pool + queue-input-fidelity +
+create-session-command-fact 88/88; core turn suites 52/52); builds green (`tsc -b` shared/
+services/client/ui — the ui pass needed `NODE_OPTIONS=--max-old-space-size=3000` on this
+4 GB verification host, recorded as an environment note, not a code issue; `pnpm --filter
+@zcode/bootstrap... build` clean).
 
 Regression (same environment, revision head): core turn/admission suites 60/60 PASS; core
 delegated-turn 7/7; **full bootstrap v4 command suite 725/725 PASS (29 files)**; architecture
@@ -311,6 +380,18 @@ merge-blocking authority, per this record's standing rule.)
   continuity). A different physical root refuses the resume: a fresh Muse session starts
   inside the current root (self-healing mapping rewrite) and the turn result/metadata/log
   carry `sessionWorkspaceMismatch: true` so the reset is attributable, never silent.
+- Model pinning boundary (rev. 5 / MC-D): the delegated path passes **no** model id or
+  contributor-mode flag by default — the CLI runs under its own authenticated configuration
+  (the Contributor subscription sign-in). The official MSP surface has `modelId` at
+  `session/start` (+ `model/list`/`session/setModel`) and the exec surface documents
+  `--model` / `--contributor-mode on|off`, but the CLI-side model-id vocabulary is not
+  verifiable offline; wiring per-run pinning awaits the on-machine §4 step 13.
+- Training-policy preservation (rev. 5 / MC-D): MOS does not modify the account's
+  training-policy settings, the user-side `meta` provider entry, its endpoint
+  configuration, or any privacy setting, and adds no credential. The blocked HTTP endpoint
+  failure for the Contributor selection remains the honest status quo when the delegated
+  backend is disabled; the delegated path is the only compliant execution route and uses
+  the CLI's own subscription sign-in.
 - Sign-in / Contributor state requires the user to record the documented status command
   (from `muse --help`) under Settings → Meta Muse Code → Advanced. Until then the status
   card honestly shows "unknown".
@@ -394,6 +475,15 @@ results with UTC timestamps (sanitize all samples: no tokens, no env dumps).
     `MUSE_EXEC_JSONL_MAPPING_VERSION` if needed; add parser tests).
 12. Record CLI version, MOS build, and OS; attach sanitized screenshots of the settings card
     and a completed delegated task.
+13. **Rev. 4 (MC-D):** with the backend toggle on, select the existing Muse Spark Contributor
+    model in the Composer and send a New Task — confirm from the completed-turn log line
+    (`muse_delegated_turn.completed`) that the turn ran with `surface` set and that no
+    OpenRouter / Meta Model API request was made (the policy-blocked endpoint is never
+    reached); switch to an ordinary model and confirm the turn runs the ordinary model path
+    (selector stays usable). In a Studio mission-linked session with the Contributor model
+    selected, confirm the same delegated routing. Optionally record `model/list` output
+    (sanitized) to decide whether per-run `--model`/`modelId` pinning can be wired safely
+    (evidence §1 MC-D discovery; no invented ids).
 
 ## 5. Rollback
 

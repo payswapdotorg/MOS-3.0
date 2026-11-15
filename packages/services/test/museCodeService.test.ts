@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { MuseCodeCliStatus } from "@zcode/shared";
+import { isMuseDelegatedModelSelection } from "@zcode/shared";
 import { createMuseCodeService } from "../src/muse-code/museCodeService.js";
 // IMuseCodeService 契约测试（Issue #24 / ACR-0002）：
 // 探针注入（不 spawn 真实进程）验证状态探测纪律（fail-closed、凭据零接触、未知即未知）、
@@ -31,6 +32,38 @@ function okProbe(stdout: string): () => Promise<never> {
   };
 }
 void okProbe;
+
+describe("isMuseDelegatedModelSelection (MC-D 模型家族识别)", () => {
+  it("recognizes the existing Composer Contributor selections across provider names", () => {
+    // 装机确认的既有选型（evidence rev. 4 §1 trace）：provider 命名是用户侧自由文本，
+    // 判定只看 modelId。
+    expect(
+      isMuseDelegatedModelSelection({ providerId: "meta", modelId: "muse-spark-1.3-contributor" }),
+    ).toBe(true);
+    expect(
+      isMuseDelegatedModelSelection({ providerId: "anything", modelId: "muse-spark-1.4-contributor" }),
+    ).toBe(true);
+    expect(isMuseDelegatedModelSelection({ modelId: "Muse-Spark-1.3-Contributor" })).toBe(true);
+  });
+
+  it("excludes the free OpenCode Zen variant and ordinary models (no silent rerouting)", () => {
+    expect(
+      isMuseDelegatedModelSelection({
+        providerId: "opencode-zen-chat",
+        modelId: "muse-spark-1.2-contributor-free",
+      }),
+    ).toBe(false);
+    expect(isMuseDelegatedModelSelection({ providerId: "openrouter", modelId: "glm-5.3" })).toBe(false);
+    expect(isMuseDelegatedModelSelection({ providerId: "meta", modelId: "muse-spark-contributor" })).toBe(false);
+  });
+
+  it("fails closed on missing selections (never guesses)", () => {
+    expect(isMuseDelegatedModelSelection(undefined)).toBe(false);
+    expect(isMuseDelegatedModelSelection(null)).toBe(false);
+    expect(isMuseDelegatedModelSelection({ providerId: "meta" })).toBe(false);
+    expect(isMuseDelegatedModelSelection({ modelId: "" })).toBe(false);
+  });
+});
 
 describe("createMuseCodeService status probing", () => {
   it("reports installed with the parsed version", async () => {

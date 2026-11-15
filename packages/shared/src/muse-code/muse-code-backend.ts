@@ -105,6 +105,30 @@ export function selectMuseExecutionSurface(input: {
 export const executionBackendSchema = z.literal(MUSE_CODE_EXECUTION_BACKEND);
 export type ExecutionBackendSelection = z.infer<typeof executionBackendSchema>;
 
+/**
+ * Muse delegated 模型家族识别（MC-D，评审 pivot 2026-11-15）。
+ *
+ * 事实基础（evidence rev. 4 §1 trace）：
+ * - Composer 里既有的 Muse Spark Contributor 选型（如在装机上确认的
+ *   `meta/muse-spark-1.3-contributor`——用户侧 provider 配置）应经委托后端
+ *   （本机已认证 CLI 订阅）执行，而不是被账号 training-policy 排除的 HTTP 端点。
+ * - builtin catalog 的 `muse-spark-1.2-contributor-free`（OpenCode Zen 免费路径）
+ *   是显式免费 HTTP 选型，**不属于**该家族（保持原语义，绝不静默改道）。
+ *
+ * 判定只看 modelId（provider 命名是用户侧自由文本）：裸 `muse-spark-<version>-contributor`
+ * （版本号数字开头，无 `-free` 等后缀）视为委托家族成员。未来命名变化由
+ * `MUSE_DELEGATED_MODEL_ID_PATTERN` 单点维护。
+ */
+export const MUSE_DELEGATED_MODEL_ID_PATTERN = /^muse-spark-\d[\w.]*-contributor$/i;
+
+/** 选型是否属于 Muse delegated 模型家族（缺选/无 modelId = false，不猜测）。 */
+export function isMuseDelegatedModelSelection(
+  selection: { providerId?: string; modelId?: string } | undefined | null,
+): boolean {
+  if (!selection?.modelId) return false;
+  return MUSE_DELEGATED_MODEL_ID_PATTERN.test(selection.modelId.trim());
+}
+
 /** CLI 安装探测结果。auth/contributor 只能来自已验证的探针命令输出，不允许凭空推断。 */
 export const museCodeCliStatusSchema = z
   .object({
