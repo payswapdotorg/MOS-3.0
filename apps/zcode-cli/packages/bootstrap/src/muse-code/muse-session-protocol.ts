@@ -196,6 +196,9 @@ export function createMuseSessionProtocolPort(
             void lateClient.close().catch(() => undefined);
           },
         );
+        // spawn 门控已 resolve：client 必然已赋值；闭包（启动门控的 start 回调）
+        // 不能沿用 let 的流分析收窄，绑定到收窄后的 const。
+        const activeClient: MuseClient = client;
 
         // 会话映射（R2；验证轮修正 A resume 门控）：既有映射且 canonical 物理根
         // 与当前请求根的实时物理解析结果一致（canResumeMuseSessionMapping——每次
@@ -231,7 +234,7 @@ export function createMuseSessionProtocolPort(
               "resuming the Muse session",
               startupTimeoutMs,
               () =>
-                client.resumeSession({
+                activeClient.resumeSession({
                   sessionId: existingMuseSessionId,
                   ...(denyApproval
                     ? { onApproval: denyApproval, onApprovalError: () => undefined }
@@ -242,7 +245,7 @@ export function createMuseSessionProtocolPort(
           : await startupTimeoutGate(
               "opening a Muse session",
               startupTimeoutMs,
-              () => client.startSession(buildStartSessionOptions(request, approvalPosture)),
+              () => activeClient.startSession(buildStartSessionOptions(request, approvalPosture)),
               () => undefined,
             );
         if (!resumedMuseSession && denyApproval) {
