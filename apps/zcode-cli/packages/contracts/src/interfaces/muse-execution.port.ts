@@ -68,6 +68,15 @@ export interface MuseExecRequest {
   maxModelSteps?: number;
   /** 显式可执行入口覆盖（Host 设置）；缺省 = 实现 PATH 解析。 */
   executablePath?: string;
+  /**
+   * **精确模型 id**（MC-D 验证轮加严，TL correction round 2026-11-15）：本轮
+   * 有效选型（用户提交的选型，绝不虚构）命中 Muse delegated 模型家族时携带
+   * ——MSP 面经 `model/list` 核实后用官方 `session/start`/resume-time `modelId`
+   * （或 `session/setModel`）选中；exec 面传 documented `--model <id>`。
+   * 缺省 = CLI 自身已认证配置（行为不变）。**绝不传 `--contributor-mode`**
+   * （用户 CLI 配置由 CLI 自治；MOS 绝不自动开启 Contributor 模式）。
+   */
+  modelId?: string;
 }
 
 export interface MuseExecHandlers {
@@ -129,6 +138,30 @@ export interface MuseExecRunResult {
   subscriptionUsage?: MuseSubscriptionUsageSnapshot;
   /** 本轮生效的审批姿态（设置决定；core 用于失败信息与日志归因）。 */
   approvalPosture: MuseExecApprovalPosture;
+  /**
+   * 本轮请求的精确模型 id（MC-D 验证轮）：present = 按选型钉住（用户提交的
+   * 选型，绝非虚构）；缺省 = 未钉住（CLI 自身配置）。归因/证据用。
+   */
+  requestedModelId?: string;
+  /**
+   * 执行面申报的**实际生效**模型 id（MC-D 验证轮）：MSP 面 = 会话回读
+   * （session/start/resume 结果的 `session.modelId`）或 `session/setModel`
+   * 准入后的钉住值；exec 面不申报（该面无可观测回读——CLI 拒绝未知模型时
+   * 以非零退出 + stderr 可见失败）。缺省 = 未申报，绝不虚构。
+   */
+  effectiveModelId?: string;
+  /**
+   * 钉住机制（MC-D 验证轮）：MSP 新会话 = `session-start`（startSession
+   * modelId + 回读核实）；MSP 续接 = `session-resume-override`（resume-time
+   * modelId + 回读核实）；MSP 回读未申报时 = `session-setmodel`（官方
+   * model-picker 手势 + model/list 预核实）；exec 面 = `exec-model-flag`
+   * （documented `--model`，回读不可观测）。缺省 = 未钉住。
+   */
+  modelPinMechanism?:
+    | "session-start"
+    | "session-resume-override"
+    | "session-setmodel"
+    | "exec-model-flag";
 }
 
 export interface MuseExecutionPort {

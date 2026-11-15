@@ -74,6 +74,14 @@ function createFakeSdk(input: {
   spawnDelayMs?: number;
   /** startSession 永不 resolve（验证轮修正 C：会话打开阶段挂起）。 */
   startSessionHang?: boolean;
+  /** model/list 返回的目录（MC-D 验证轮）；listModels 调用被记录。 */
+  modelCatalog?: string[];
+  /** listModels 抛错（目录不可读 → modelUnavailable 可见失败）。 */
+  listModelsError?: Error;
+  /** 会话回读的生效模型（Session.opening wire `session.modelId`；null = 未申报）。 */
+  sessionModelId?: string | null;
+  /** session/setModel 抛错（回读未申报时的钉住失败 → modelUnavailable）。 */
+  setModelError?: Error;
 } = {}) {
   const state = {
     spawnOptions: undefined as MuseClientSpawnOptions | undefined,
@@ -85,6 +93,8 @@ function createFakeSdk(input: {
     closed: false,
     turnInput: undefined as { type: string; text: string }[] | undefined,
     resolveCompleted: undefined as ((outcome: TurnOutcome) => void) | undefined,
+    listModelsCalls: 0,
+    setModelCalls: [] as { modelId: string }[],
   };
   let settled = false;
   const complete = (outcome: TurnOutcome) => {
@@ -104,12 +114,36 @@ function createFakeSdk(input: {
         return new Promise<never>(() => undefined);
       }
       state.startOptions = options ?? {};
-      return createFakeSession();
+      return createFakeSession("session/start");
     },
     async resumeSession(options: ResumeSessionOptions) {
       state.resumeOptions = options;
       state.resumeApprovalHandler = options.onApproval;
-      return createFakeSession();
+      return createFakeSession("session/resume");
+    },
+    async listModels() {
+      state.listModelsCalls += 1;
+      if (input.listModelsError) throw input.listModelsError;
+      return {
+        models: (input.modelCatalog ?? ["muse-spark-1.3-contributor", "muse-spark-1.4-contributor"]).map(
+          (modelId) => ({
+            modelId,
+            displayLabel: modelId,
+            isActive: false,
+            isDefault: false,
+            providerId: "meta",
+            profileId: null,
+            description: null,
+            contextLimit: null,
+            cost: null,
+            outputLimit: null,
+            releaseDate: null,
+          }),
+        ),
+        profileId: null,
+        providerId: "meta",
+        source: "providerCatalog",
+      };
     },
     async readUsage() {
       return input.subscriptionUsage ?? {};
@@ -122,11 +156,27 @@ function createFakeSdk(input: {
       } as unknown as TurnOutcome);
     },
   } as unknown as MuseClient;
-  const createFakeSession = () => {
+  const createFakeSession = (verb: "session/start" | "session/resume") => {
     const session = {
       sessionId: input.museSessionId ?? "muse-session-fake-1",
+      // wire 回读面（MC-D 验证轮）：Session.opening 携带 start/resume 结果的
+      // `session.modelId`（"The winning metadata fold's model"；null = 未申报）。
+      opening: {
+        verb,
+        result: {
+          session: {
+            sessionId: input.museSessionId ?? "muse-session-fake-1",
+            modelId: input.sessionModelId ?? null,
+          },
+        },
+      },
       onApproval(handler: ApprovalHandler) {
         state.approvalHandler = handler;
+      },
+      async setModel(model: { modelId: string }) {
+        state.setModelCalls.push({ modelId: model.modelId });
+        if (input.setModelError) throw input.setModelError;
+        return { commandId: "cmd-set-model", status: "accepted" };
       },
       events: async function* ({ signal }: { signal?: AbortSignal } = {}) {
         for (const frame of input.frames ?? []) {
@@ -207,6 +257,7 @@ function buildRequest(input: {
   timeoutMs?: number;
   signal?: AbortSignal;
   maxModelSteps?: number;
+  modelId?: string;
 } = {}): MuseExecRequest {
   const workdir = input.workdir ?? "/workspace/fixture-unresolved";
   return {
@@ -217,6 +268,7 @@ function buildRequest(input: {
     workspaceRoot: input.workspaceRoot ?? workdir,
     ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
     ...(input.maxModelSteps !== undefined ? { maxModelSteps: input.maxModelSteps } : {}),
+    ...(input.modelId !== undefined ? { modelId: input.modelId } : {}),
   };
 }
 
@@ -575,6 +627,139 @@ describe("createMuseSessionProtocolPort", () => {
     // client 已赋值 → finally close（host 收口，无残留进程）。
     expect(fake.state.closed).toBe(true);
     expect(fake.state.turnInput).toBeUndefined();
+  });
+
+  it("pins the exact requested model through model/list + startSession modelId with read-back verification (MC-D)", async () => {
+    const root = await workspaceFixture();
+    const fake = createFakeSdk({ sessionModelId: "muse-spark-1.3-contributor" });
+    const { run } = runPort({
+      fake,
+      request: buildRequest({ workdir: root, workspaceRoot: root, modelId: "muse-spark-1.3-contributor" }),
+    });
+    const runPromise = run.then((r) => r);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    fake.complete(completedOutcome());
+    const result = await runPromise;
+    // 前置核实：model/list 必须被查询，且目录包含请求 id（绝不虚构）。
+    expect(fake.state.listModelsCalls).toBe(1);
+    // 官方选型成员：startSession modelId（"Initial model; server default when omitted"）。
+    expect(fake.state.startOptions?.modelId).toBe("muse-spark-1.3-contributor");
+    // 回读核实：生效模型 == 请求模型；归因字段如实回传。
+    expect(result.requestedModelId).toBe("muse-spark-1.3-contributor");
+    expect(result.effectiveModelId).toBe("muse-spark-1.3-contributor");
+    expect(result.modelPinMechanism).toBe("session-start");
+    // 回读已核实：不需要 setModel 补钉。
+    expect(fake.state.setModelCalls).toHaveLength(0);
+  });
+
+  it("pins the exact requested model on resume through the resume-time modelId override (MC-D)", async () => {
+    const root = await workspaceFixture();
+    const fake = createFakeSdk({
+      museSessionId: "muse-session-resumed-9",
+      sessionModelId: "muse-spark-1.4-contributor",
+    });
+    const store = createMemorySessionStore({
+      sess_muse_test: {
+        museSessionId: "muse-session-resumed-9",
+        surface: "session-protocol",
+        workspaceRoot: root,
+        canonicalWorkspaceRoot: root,
+        updatedAt: "2026-11-14T00:00:00.000Z",
+      },
+    });
+    const { run } = runPort({
+      fake,
+      store,
+      request: buildRequest({ workdir: root, workspaceRoot: root, modelId: "muse-spark-1.4-contributor" }),
+    });
+    const runPromise = run.then((r) => r);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    fake.complete(completedOutcome());
+    const result = await runPromise;
+    // 官方 resume-time override（"a model string the caller supplies at resume time"）。
+    expect(fake.state.resumeOptions?.modelId).toBe("muse-spark-1.4-contributor");
+    expect(result.requestedModelId).toBe("muse-spark-1.4-contributor");
+    expect(result.effectiveModelId).toBe("muse-spark-1.4-contributor");
+    expect(result.modelPinMechanism).toBe("session-resume-override");
+  });
+
+  it("pins via session/setModel when the session read-back is unreported (MC-D)", async () => {
+    const root = await workspaceFixture();
+    const fake = createFakeSdk({ sessionModelId: null });
+    const { run } = runPort({
+      fake,
+      request: buildRequest({ workdir: root, workspaceRoot: root, modelId: "muse-spark-1.3-contributor" }),
+    });
+    const runPromise = run.then((r) => r);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    fake.complete(completedOutcome());
+    const result = await runPromise;
+    // 回读未申报（null）→ 官方 model-picker 手势（model/list 已预核实）补钉。
+    expect(fake.state.setModelCalls).toEqual([{ modelId: "muse-spark-1.3-contributor" }]);
+    expect(result.modelPinMechanism).toBe("session-setmodel");
+    expect(result.effectiveModelId).toBe("muse-spark-1.3-contributor");
+  });
+
+  it("fails visibly when the requested model is not in the model/list catalog (never a silent fallback)", async () => {
+    const root = await workspaceFixture();
+    const fake = createFakeSdk({ modelCatalog: ["muse-spark-1.4-contributor"] });
+    await expect(
+      runPort({
+        fake,
+        request: buildRequest({ workdir: root, workspaceRoot: root, modelId: "muse-spark-1.3-contributor" }),
+      }).run,
+    ).rejects.toMatchObject({ issueCode: "modelUnavailable", name: "MuseExecStartupError" });
+    // 目录不含请求 id → 不开任何会话、不提交任何 turn；host 收口。
+    expect(fake.state.startOptions).toBeUndefined();
+    expect(fake.state.turnInput).toBeUndefined();
+    expect(fake.state.closed).toBe(true);
+  });
+
+  it("fails visibly when the model catalog cannot be listed (unverified model = unavailable)", async () => {
+    const root = await workspaceFixture();
+    const fake = createFakeSdk({ listModelsError: new Error("catalog unavailable") });
+    await expect(
+      runPort({
+        fake,
+        request: buildRequest({ workdir: root, workspaceRoot: root, modelId: "muse-spark-1.3-contributor" }),
+      }).run,
+    ).rejects.toMatchObject({ issueCode: "modelUnavailable" });
+    expect(fake.state.startOptions).toBeUndefined();
+    expect(fake.state.closed).toBe(true);
+  });
+
+  it("fails visibly when the session read-back reports a different model (refuses to run on another model)", async () => {
+    const root = await workspaceFixture();
+    const fake = createFakeSdk({ sessionModelId: "muse-spark-1.2-contributor" });
+    await expect(
+      runPort({
+        fake,
+        request: buildRequest({ workdir: root, workspaceRoot: root, modelId: "muse-spark-1.3-contributor" }),
+      }).run,
+    ).rejects.toMatchObject({ issueCode: "modelMismatch", name: "MuseExecStartupError" });
+    // host 把会话留在另一个模型上 → 绝不跑轮、绝不静默放行；host 收口。
+    expect(fake.state.turnInput).toBeUndefined();
+    expect(fake.state.setModelCalls).toHaveLength(0);
+    expect(fake.state.closed).toBe(true);
+  });
+
+  it("keeps zero model behavior when no model is requested (CLI-default path unchanged)", async () => {
+    const root = await workspaceFixture();
+    const fake = createFakeSdk({ sessionModelId: "whatever-host-default" });
+    const { run } = runPort({
+      fake,
+      request: buildRequest({ workdir: root, workspaceRoot: root }),
+    });
+    const runPromise = run.then((r) => r);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    fake.complete(completedOutcome());
+    const result = await runPromise;
+    // 不查询目录、不传任何 modelId、无钉住字段——CLI 自身配置（缺省路径零变化）。
+    expect(fake.state.listModelsCalls).toBe(0);
+    expect(fake.state.startOptions?.modelId).toBeUndefined();
+    expect(result.requestedModelId).toBeUndefined();
+    expect(result.effectiveModelId).toBeUndefined();
+    expect(result.modelPinMechanism).toBeUndefined();
   });
 
   it("answers approvals with an offered deny choice only, never approving (R3)", async () => {

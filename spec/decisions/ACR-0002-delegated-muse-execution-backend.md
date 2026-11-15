@@ -281,13 +281,50 @@ that wording). MOS leaves both the policy and the entry untouched.
 
 **Discovery (MSP model surface, `@muse-code/sdk@1.4.20` typings).** The official MSP model
 surface is `SessionStartParams.modelId` (initial model; server default when omitted),
-`MuseClient.listModels` (`model/list` — the host's `ModelCatalogEntry` vocabulary), and
-`Session.setModel` (`session/setModel` — durable per-session selection). There is **no
-contributor-mode member** anywhere in the SDK. The exec surface documents `--model` and
-`--contributor-mode on|off`. Consequence: MOS passes **no** model id or mode by default —
-the delegated path runs under the CLI's own authenticated configuration (the user's
-Contributor subscription sign-in), because the CLI-side model-id vocabulary is not
-verifiable offline and inventing one would risk `invalidParams` rejections.
+`ResumeSessionParams.modelId` (the explicit resume-time model override — "when present it
+wins over the retained binding's recorded origin … a model the host refuses … leaves the
+session on its recorded model, which `session.modelId` reports"), `MuseClient.listModels`
+(`model/list` — the host's `ModelCatalogEntry` vocabulary; "List the models the host
+accepts in `Session.setModel`"), `Session.setModel` (`session/setModel` — "the
+model-picker gesture. The selection is durable and applies to subsequent model calls"),
+and the `Session.opening` result's wire `Session.modelId` ("The winning metadata fold's
+model; `null` when that record omits it") as the effective-model read-back. There is
+**no contributor-mode member** anywhere in the SDK. The exec surface documents `--model`
+and `--contributor-mode on|off`.
+
+**Exact model selection (mandatory; TL correction round 2026-11-15 — supersedes the
+earlier "pass no model id by default" consequence of this revision).** Selection-driven
+delegated turns must make the **selected** Contributor model actually execute — routing to
+Muse alone does not imply the right model, and the model-id vocabulary no longer needs
+offline verification because MOS passes the **user's submitted selection id** (never an
+invented one) and **fails visibly** when the exact model is unavailable (never a silent
+different-model run):
+
+- **Core**: `executeTurnCommand` freezes the admitted effective selection
+  (`options.intent.modelSelection ?? … ?? session standing`) and passes it to
+  `runDelegatedMuseTurn`; `museDelegatedModelPinOf` applies the same shared family rule
+  (`isMuseDelegatedModelSelection` — the free `-free` variant and ordinary selections pin
+  nothing) and puts the selected `modelId` into the port request. The explicit-envelope
+  path with an ordinary selection pins nothing (CLI's own authenticated configuration —
+  PR #27 behavior unchanged).
+- **MSP surface**: `model/list` **pre-verification** (catalog must contain the requested
+  id; a missing id or an unreadable catalog = visible `modelUnavailable` startup failure);
+  official selection member — `session/start` `modelId` for new sessions, the resume-time
+  `modelId` override for resumes; **read-back verification** via `Session.opening`'s wire
+  `session.modelId` (equal = verified; unreported `null` = pin via the official
+  `session/setModel` gesture, admission = pinned; a different non-null model = visible
+  `modelMismatch` failure — the run is refused, never silently executed on another
+  model). Result evidence: `requestedModelId` / `effectiveModelId` / `modelPinMechanism`.
+- **exec surface**: the documented `--model <id>` flag (listed on the same Meta
+  configuration documentation page as `--workspace`/`--session-id`, both since verified
+  on-machine). The surface has no observable model read-back, so `effectiveModelId` stays
+  unreported (never invented); a CLI that rejects the model id exits nonzero with stderr —
+  the visible-failure path (contract-tested with the mock CLI's unknown-model rejection).
+- **Contributor mode**: **never `--contributor-mode`** and no SDK equivalent exists — the
+  user's CLI-side Contributor-mode configuration is authoritative and is never modified
+  by MOS (`contributorModePolicy: "cli-default"` recorded in the sanitized execution
+  evidence). No OpenRouter, no separately billed Meta Model API, no account-policy or
+  endpoint or credential changes (training/privacy preferences preserved).
 
 **Routing decision (MC-D).** A turn routes through the delegated backend when the envelope
 carries `executionBackend: "muse-code"` (explicit, unchanged) **or** the turn's effective
@@ -300,7 +337,13 @@ admission from `resolveSubmittedExecutionState` (payload selection ?? session st
 selection), so it covers **every** submission surface by construction — New Task Composer,
 Studio mission-linked sessions, cold-resumed sessions — while the renderer's envelope
 stamping applies the same family rule to the payload's selection (explicit wire intent,
-old-CLI fail-safe unchanged).
+old-CLI fail-safe unchanged). Handler-level tests prove the chain end to end: sendText
+with an explicit Contributor selection, sendText with the session's standing selection,
+createSession.firstInput, and a Studio mission-linked submission shape all deliver
+`executionBackend: "muse-code"` **and** the exact selection into Core's sendInput options
+(the id that `museDelegatedModelPinOf` pins into the port request — asserted at the core
+and port levels), while ordinary selections and the `-free` variant keep their ordinary
+paths.
 
 **Semantic change of the toggle (recorded).** `useAsTaskBackend` previously meant "all New
 Task turns delegate, model selector locked". Under MC-D it means "Muse delegated family

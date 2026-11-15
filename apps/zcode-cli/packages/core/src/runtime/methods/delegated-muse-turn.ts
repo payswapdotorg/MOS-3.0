@@ -13,10 +13,12 @@ import { SessionEventType, TurnMachineImpl, createMessageId, createPartId, creat
 // - 归因诚实：assistant 消息标注 muse-code/muse-exec（实际执行者），绝不冒用
 //   会话常驻 provider Model 的名义。
 import type { MessageId, SessionEvent, TraceContext, TurnId } from "../deps.js";
+import type { ModelSelection } from "../deps.js";
 import { emptyTokenUsageInfo, throwIfTurnAborted } from "../helpers/index.js";
 import { isTurnCancellationError } from "../helpers/index.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { createModelId, createModelProviderId } from "@zcode/contracts";
+import { isMuseDelegatedModelSelection } from "@zcode/shared";
 import { buildProjectionAnchor } from "./projection-anchor.js";
 import { persistTextBlockParts } from "./message-persistence.js";
 import { emitModelStreamingEvent } from "./model-streaming-event.js";
@@ -25,6 +27,19 @@ import { emitModelStreamingEvent } from "./model-streaming-event.js";
 export const MUSE_EXEC_TURN_UNAVAILABLE_CODE = "ZCODE_MUSE_EXEC_UNAVAILABLE";
 export const MUSE_EXEC_TURN_TIMEOUT_CODE = "ZCODE_MUSE_EXEC_TIMEOUT";
 export const MUSE_EXEC_TURN_EXIT_CODE = "ZCODE_MUSE_EXEC_EXIT";
+
+/**
+ * 委托轮的精确模型钉住（MC-D 验证轮，TL correction round 2026-11-15）：本轮有效
+ * 选型命中 Muse delegated 模型家族（shared isMuseDelegatedModelSelection——用户
+ * 提交的选型，绝不虚构/改写 id）时，把该 modelId 钉给执行端口；普通选型/缺选 =
+ * 不钉（CLI 自身已认证配置；显式信封字段路径的既有行为不变）。
+ */
+export function museDelegatedModelPinOf(
+  selection: ModelSelection | undefined | null,
+): string | undefined {
+  if (!selection || !isMuseDelegatedModelSelection(selection)) return undefined;
+  return selection.modelId;
+}
 
 /** 诚实归因：本地 Muse Code CLI，而非任何 Registry provider。 */
 const DELEGATED_MUSE_PROVIDER_ID = createModelProviderId("muse-code");
@@ -36,6 +51,12 @@ export interface DelegatedMuseTurnParams {
   userMessageId: MessageId;
   turnId: TurnId;
   inputId?: string;
+  /**
+   * 本轮准入时冻结的有效选型（MC-D 验证轮）：命中 Muse delegated 模型家族时
+   * 其 modelId 钉给执行端口（museDelegatedModelPinOf；普通选型不钉）。与
+   * bootstrap 侧选型驱动路由同一判定（shared isMuseDelegatedModelSelection）。
+   */
+  modelSelection?: ModelSelection;
   turnMachine: TurnMachineImpl;
   turnAbortSignal: AbortSignal;
   turnTraceContext: TraceContext;
@@ -157,6 +178,10 @@ export async function runDelegatedMuseTurn(
   );
 
   let runResult;
+  // 精确模型钉住（MC-D 验证轮）：有效选型命中家族时把选中的 modelId 交给端口
+  // （用户提交的选型，绝不虚构）；端口按执行面用官方机制选中并在结果里如实回报
+  // requested/effective（不可用时可见失败，绝不静默换模型）。
+  const pinModelId = museDelegatedModelPinOf(params.modelSelection);
   try {
     runResult = await port.runMuseExec(
       {
@@ -165,6 +190,7 @@ export async function runDelegatedMuseTurn(
         sessionId: this.sessionId,
         workingDirectory: this.workingDirectory,
         workspaceRoot: this.workspaceRoot,
+        ...(pinModelId ? { modelId: pinModelId } : {}),
       },
       {
         onEvent: async (event) => {
@@ -351,6 +377,20 @@ export async function runDelegatedMuseTurn(
         ...(runResult.subscriptionUsage
           ? { subscriptionUsage: runResult.subscriptionUsage }
           : {}),
+        // 模型钉住归因（MC-D 验证轮）：requested = 本轮选型钉住的 id；effective =
+        // 执行面申报的实际生效模型（MSP 回读/setModel 准入；exec 面缺省 = 未申报，
+        // 绝不虚构）。Contributor 模式由用户 CLI 自治——MOS 绝不传
+        // --contributor-mode（SDK 无 contributor 成员），策略事实如实入证据。
+        ...(runResult.requestedModelId
+          ? { requestedModelId: runResult.requestedModelId }
+          : {}),
+        ...(runResult.effectiveModelId
+          ? { effectiveModelId: runResult.effectiveModelId }
+          : {}),
+        ...(runResult.modelPinMechanism
+          ? { modelPinMechanism: runResult.modelPinMechanism }
+          : {}),
+        contributorModePolicy: "cli-default" as const,
       },
     };
     await persistTextBlockParts(
@@ -407,6 +447,16 @@ export async function runDelegatedMuseTurn(
       usageReporting: reportedUsage ? "reported" : "unreported",
       ...(runResult.subscriptionUsage
         ? { subscriptionWindowUsedPercent: runResult.subscriptionUsage.windowUsedPercent }
+        : {}),
+      // 模型钉住归因（MC-D 验证轮；在机 §4 步骤 13 的核对字段）。
+      ...(runResult.requestedModelId
+        ? { requestedModelId: runResult.requestedModelId }
+        : {}),
+      ...(runResult.effectiveModelId
+        ? { effectiveModelId: runResult.effectiveModelId }
+        : {}),
+      ...(runResult.modelPinMechanism
+        ? { modelPinMechanism: runResult.modelPinMechanism }
         : {}),
       toolCallCount: startedToolCallIds.size,
       unknownEventCount: runResult.unknownEventCount,

@@ -858,6 +858,11 @@ export async function executeTurnCommand(
               userMessageId: userMessageId ?? createMessageId(),
               turnId,
               ...(options?.inputId ? { inputId: options.inputId } : {}),
+              // 精确模型钉住（MC-D 验证轮）：准入时冻结的有效选型随参数下发——
+              // 命中 Muse delegated 模型家族时其 modelId 钉给执行端口（选型驱动的
+              // 委托轮即被路由的那份选型；显式信封字段路径的普通选型不钉，
+              // CLI 自身配置不变）。
+              modelSelection: admittedModelSelection ?? undefined,
               turnMachine,
               turnAbortSignal,
               turnTraceContext,

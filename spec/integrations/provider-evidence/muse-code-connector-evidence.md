@@ -147,16 +147,42 @@ Issue #24 / ACR-0002. Evidence vocabulary follows AGENTS.md §7 strictly.
 - **MC-D discovery (rev. 5) — official MSP model surface** (`@muse-code/sdk@1.4.20`
   `dist/src/msp.d.ts` + `facade/client.d.ts`/`facade/session.d.ts`, no local mocking):
   `SessionStartParams.modelId` ("Initial model; server default when omitted"),
-  `MuseClient.listModels` (`model/list`; `ModelListResult.models` is the host's
-  `ModelCatalogEntry` vocabulary — `modelId`, `displayLabel`, `isActive`, `isDefault`), and
-  `Session.setModel` (`session/setModel` — durable per-session selection). There is **no
-  contributor-mode member** anywhere in the SDK (zero `contributor` hits across
-  `dist/src`). The exec surface documents `--model` and `--contributor-mode on|off`.
-  Consequence: the delegated path passes **no** model id or mode by default — the CLI runs
-  under its own authenticated configuration (the user's Contributor subscription sign-in);
-  per-run pinning via `--model`/`modelId` is deliberately not defaulted because the
-  CLI-side model-id vocabulary cannot be verified offline (an invented id risks
-  `invalidParams` rejection). Wiring per-run pinning awaits the on-machine §4 step 13.
+  `ResumeSessionParams.modelId` (the explicit resume-time model override — "when present
+  it wins over the retained binding's recorded origin … a model the host refuses, a blank
+  one included, leaves the session on its recorded model, which `session.modelId`
+  reports"), `MuseClient.listModels` (`model/list`; "List the models the host accepts in
+  `Session.setModel`"; `ModelListResult.models` is the host's `ModelCatalogEntry`
+  vocabulary — `modelId`, `displayLabel`, `isActive`, `isDefault`), `Session.setModel`
+  (`session/setModel` — "the model-picker gesture. The selection is durable and applies
+  to subsequent model calls"), and the facade `Session.opening` result's wire
+  `Session.modelId` ("The winning metadata fold's model; `null` when that record omits
+  it") as the effective-model read-back. There is **no contributor-mode member** anywhere
+  in the SDK (zero `contributor` hits across `dist/src`). The exec surface documents
+  `--model` and `--contributor-mode on|off`.
+- **MC-D exact model selection (rev. 5, TL correction round 2026-11-15 — mandatory;
+  supersedes the earlier "pass no model id by default" deferral).** Selection-driven
+  delegated turns now pin the **user's submitted selection id** (never an invented one)
+  end to end: core freezes the admitted effective selection and
+  `museDelegatedModelPinOf` (shared family rule) puts the selected `modelId` into the
+  port request (ordinary selections / the `-free` variant / the explicit-envelope path
+  with an ordinary selection pin nothing — PR #27 behavior unchanged). MSP surface:
+  `model/list` pre-verification (requested id must be in the catalog; missing id or an
+  unreadable catalog = visible `modelUnavailable` startup failure), official selection
+  member (`session/start` `modelId` / resume-time `modelId` override), and read-back
+  verification via the wire `Session.modelId` (equal = verified; unreported `null` = pin
+  via the official `session/setModel` gesture, admission = pinned; a different non-null
+  model = visible `modelMismatch` failure — the run is refused, never silently executed
+  on another model). exec surface: the documented `--model <id>` flag (same Meta
+  configuration documentation page that lists `--workspace`/`--session-id`, both since
+  verified on-machine); no observable read-back exists on this surface, so
+  `effectiveModelId` stays unreported (never invented) and a CLI that rejects the model
+  exits nonzero with stderr — the visible-failure path (contract-tested via the mock
+  CLI's unknown-model rejection). **Never `--contributor-mode`** (and no SDK equivalent
+  exists): the user's CLI-side Contributor-mode configuration is authoritative
+  (`contributorModePolicy: "cli-default"` in the sanitized execution evidence). Result
+  evidence per turn: `requestedModelId` / `effectiveModelId` / `modelPinMechanism`
+  (message metadata + the `muse_delegated_turn.completed` log line; the §4 step 13
+  on-machine check fields).
 - **MC-D routing rule (rev. 5)**: shared `isMuseDelegatedModelSelection`
   (`MUSE_DELEGATED_MODEL_ID_PATTERN = /^muse-spark-\d[\w.]*-contributor$/i`, modelId only —
   provider naming is user-side free text; the OpenCode Zen `-free` variant is deliberately
@@ -384,19 +410,28 @@ merge-blocking authority, per this record's standing rule.)
 - MSP-surface boundary: `session/start` has no `--max-model-steps` equivalent member —
   `request.maxModelSteps` is ignored on the MSP surface (the exec surface still honors it);
   runaway steps are bounded by the overall timeout.
-- Session continuity is workspace-scoped (rev. 3): the durable map records the workspace
-  root used when the mapping was established; a resume is attempted only when the stored
-  root and the current request root are the same — lexically, or through realpath alias
-  resolution (symlinks / Windows junctions pointing at the same physical directory keep
-  continuity). A different physical root refuses the resume: a fresh Muse session starts
-  inside the current root (self-healing mapping rewrite) and the turn result/metadata/log
-  carry `sessionWorkspaceMismatch: true` so the reset is attributable, never silent.
-- Model pinning boundary (rev. 5 / MC-D): the delegated path passes **no** model id or
-  contributor-mode flag by default — the CLI runs under its own authenticated configuration
-  (the Contributor subscription sign-in). The official MSP surface has `modelId` at
-  `session/start` (+ `model/list`/`session/setModel`) and the exec surface documents
-  `--model` / `--contributor-mode on|off`, but the CLI-side model-id vocabulary is not
-  verifiable offline; wiring per-run pinning awaits the on-machine §4 step 13.
+- Session continuity is workspace-scoped (rev. 3; tightened in rev. 4 / finding A): the
+  durable map records the workspace root used when the mapping was established **and its
+  canonical physical root** (`canonicalWorkspaceRoot`, realpath-resolved at mapping time);
+  a resume is attempted only when the stored canonical root and the **live physical
+  resolution of the current request root** are the same — re-resolved on every resume,
+  with **no lexical same-string shortcut** (a symlink/junction retarget keeps the string
+  but changes the physical root; both surfaces refuse the old session, `sessionWorkspaceMismatch:
+  true`), and legacy mappings without a canonical root refuse the resume too. A different
+  physical root refuses the resume: a fresh Muse session starts inside the current root
+  (self-healing mapping rewrite) and the turn result/metadata/log carry
+  `sessionWorkspaceMismatch: true` so the reset is attributable, never silent.
+- Model pinning (rev. 5 / MC-D, TL correction round — delivered, no longer deferred):
+  selection-driven delegated turns pin the user's submitted model id end to end (MSP:
+  `model/list` pre-verification + official `session/start`/resume-time `modelId` /
+  `session/setModel` with read-back verification; exec: documented `--model <id>`);
+  unavailable exact models fail visibly (`modelUnavailable` / `modelMismatch` / nonzero
+  exit + stderr) — never a silent different-model run. **Never `--contributor-mode`**
+  (no SDK equivalent exists): the user's CLI-side Contributor-mode configuration is
+  authoritative (`contributorModePolicy: "cli-default"`). The exec surface has no
+  observable model read-back, so `effectiveModelId` stays unreported there (never
+  invented); the on-machine §4 step 13 verifies the real CLI's `--model` behavior and the
+  requested/effective fields in the completed-turn log line.
 - Training-policy preservation (rev. 5 / MC-D): MOS does not modify the account's
   training-policy settings, the user-side `meta` provider entry, its endpoint
   configuration, or any privacy setting, and adds no credential. The blocked HTTP endpoint
@@ -486,15 +521,26 @@ results with UTC timestamps (sanitize all samples: no tokens, no env dumps).
     `MUSE_EXEC_JSONL_MAPPING_VERSION` if needed; add parser tests).
 12. Record CLI version, MOS build, and OS; attach sanitized screenshots of the settings card
     and a completed delegated task.
-13. **Rev. 4 (MC-D):** with the backend toggle on, select the existing Muse Spark Contributor
-    model in the Composer and send a New Task — confirm from the completed-turn log line
-    (`muse_delegated_turn.completed`) that the turn ran with `surface` set and that no
+13. **Rev. 5 (MC-D, TL correction round — mandatory, no longer optional):** with the
+    backend toggle on, select the existing Muse Spark Contributor model in the Composer
+    and send a New Task — confirm from the completed-turn log line
+    (`muse_delegated_turn.completed`) that the turn ran with `surface` set,
+    **`requestedModelId` = the selected Contributor model id, and (Session Protocol
+    surface) `effectiveModelId` = the same id with a `modelPinMechanism` of
+    `session-start`/`session-resume-override`/`session-setmodel`**, and that no
     OpenRouter / Meta Model API request was made (the policy-blocked endpoint is never
-    reached); switch to an ordinary model and confirm the turn runs the ordinary model path
-    (selector stays usable). In a Studio mission-linked session with the Contributor model
-    selected, confirm the same delegated routing. Optionally record `model/list` output
-    (sanitized) to decide whether per-run `--model`/`modelId` pinning can be wired safely
-    (evidence §1 MC-D discovery; no invented ids).
+    reached). Record a sanitized `model/list` sample for the record (the catalog MOS
+    verified against). Verify the **real CLI's `--model` behavior** by forcing the
+    `muse-exec` surface once: confirm the child receives `--model <selected id>` (argv
+    spot-check) and that an intentionally unknown model id fails visibly (nonzero exit,
+    stderr surfaced) rather than silently running another model. Switch to an ordinary
+    model and confirm the turn runs the ordinary model path with **no** `requestedModelId`
+    in the log line (selector stays usable); confirm the OpenCode Zen `-free` variant
+    keeps its explicit free HTTP path. In a Studio mission-linked session with the
+    Contributor model selected, confirm the same delegated routing and the same
+    requested/effective fields. Confirm Contributor mode was **never** auto-enabled
+    (`contributorModePolicy: "cli-default"` in the metadata; the CLI's own mode setting
+    unchanged).
 
 ## 5. Rollback
 

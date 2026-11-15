@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // 模拟 muse CLI（Issue #24 契约测试专用；不是真实 Meta CLI）。
-// 解析 documented 调用形状（评审 rev. 3 增加 --workspace）：`exec --json
-// --workspace <path> --prompt-file <file> [--max-model-steps N]
-// [--session-id <uuid>] [--disable-approval]`，
+// 解析 documented 调用形状（评审 rev. 3 增加 --workspace；MC-D 验证轮增加 --model）：
+//   `exec --json --workspace <path> --prompt-file <file> [--model <id>]
+//   [--max-model-steps N] [--session-id <uuid>] [--disable-approval]`，
 // 按 MUSE_FIXTURE_MODE 输出候选 JSONL 事件流：
 //   stream（默认）| exit-fail | error-event | invalid | hang | write-file
 //   | env-audit | argv-audit | approval-event | question-event
@@ -14,7 +14,12 @@
 //   - 审批可见性（R3）：approval-event / question-event 模式发出候选事件。
 //   - 环境隔离（R5）：env-audit 把子进程环境键写盘（只键名，不写值）。
 //   - argv 审计：argv-audit 把收到的 argv 逐行写盘（核对 --workspace /
-//     --disable-approval / --session-id 是否按设置传入）。
+//     --disable-approval / --session-id / --model 是否按设置传入）。
+// MC-D 验证轮（TL correction round 2026-11-15）：
+//   - --model <id> 是 documented 旗标（与 --workspace/--session-id 同页）：present
+//     时按 fixture 目录（muse-spark-1.3-contributor / muse-spark-1.4-contributor）
+//     校验；未知 id → stderr + 非零退出（真实 CLI 拒绝未知模型的可见失败模拟）。
+//   - **绝不解析/接受 --contributor-mode**（MOS 永不传；用户 CLI 配置自治）。
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -33,6 +38,7 @@ const promptFileIndex = argv.indexOf("--prompt-file");
 const workspaceIndex = argv.indexOf("--workspace");
 const maxStepsIndex = argv.indexOf("--max-model-steps");
 const sessionIdIndex = argv.indexOf("--session-id");
+const modelIndex = argv.indexOf("--model");
 if (promptFileIndex === -1) {
   process.stderr.write("fixture: --prompt-file missing\n");
   process.exit(2);
@@ -48,9 +54,21 @@ try {
   process.stderr.write("fixture: cannot read prompt file\n");
   process.exit(2);
 }
+if (argv.includes("--contributor-mode")) {
+  // MOS 绝不传该旗标（用户 CLI 配置自治）；出现即调用方违规。
+  process.stderr.write("fixture: --contributor-mode must never be passed\n");
+  process.exit(2);
+}
 const workspaceRoot = argv[workspaceIndex + 1];
 const maxModelSteps = maxStepsIndex !== -1 ? argv[maxStepsIndex + 1] : undefined;
 const resumeSessionId = sessionIdIndex !== -1 ? argv[sessionIdIndex + 1] : undefined;
+const modelId = modelIndex !== -1 ? argv[modelIndex + 1] : undefined;
+const FIXTURE_MODEL_CATALOG = ["muse-spark-1.3-contributor", "muse-spark-1.4-contributor"];
+if (modelId !== undefined && !FIXTURE_MODEL_CATALOG.includes(modelId)) {
+  // 真实 CLI 拒绝未知模型的可见失败模拟（非零退出 + stderr；端口如实回传）。
+  process.stderr.write(`fixture: unknown model '${modelId}'\n`);
+  process.exit(4);
+}
 const mode = process.env.MUSE_FIXTURE_MODE ?? "stream";
 const emit = (obj) => process.stdout.write(`${JSON.stringify(obj)}\n`);
 
@@ -70,7 +88,7 @@ if (mode === "argv-audit") {
   process.exit(0);
 }
 // 未映射的事件类型：真实 CLI 的 schema 未知，端口必须计数而不是猜测。
-emit({ type: "system", promptFile: true, workspaceRoot, maxModelSteps });
+emit({ type: "system", promptFile: true, workspaceRoot, maxModelSteps, modelId });
 // 会话申报（R2）：候选信封字段；端口负责捕获（未知类型按 unknown 计数）。
 emit(
   resumeSessionId

@@ -1291,3 +1291,55 @@ both records preserved). `tl/muse-code-delegated-backend` rebased → `63adcf74`
 re-run green on each rebased head (architecture 0 violations; release 72/72; affected
 selector chose the entire engineering suite and deferred execution to CI per its design);
 muse suites re-run green on the rebased MC-D head (bootstrap 60, core 8, services 10, ui 6).
+
+### MC-D exact model selection + PR #27 safety corrections (TL correction round, 2026-11-15)
+
+The TL correction round (external verification round 3) made exact model selection
+**mandatory** for MC-D and returned three PR #27 safety findings. All delivered (ACR-0002
+§Revision 4 + §Revision 5; evidence rev. 4 §1/§2c + rev. 5 §1/§3/§4):
+
+- **PR #27 A (symlink retargeting)**: canonical physical root persisted in the session
+  mapping; every resume re-resolves the current root physically (no lexical same-string
+  shortcut); retargeted symlinks refuse the old session on both surfaces; legacy mappings
+  without a canonical root refuse resume. Regression tests on both surfaces.
+- **PR #27 B (realpath failure)**: ENOENT/EACCES boundaries reject before spawn
+  (`workspaceUnresolvable`) — no lexical fallback; both arms contract-tested (real ENOENT;
+  injected EACCES for root-run determinism).
+- **PR #27 C (MSP startup timeout)**: late-resolving clients are closed under the new
+  `startupTimeoutGate` (no leaked `muse serve` tree; the SDK spawn surface has no signal
+  member, so the gate is the cancellation); the session-open phase is gated too;
+  `startupTimeoutMs` is test-injectable; fake-SDK tests cover the late client and the
+  hanging session open.
+- **MC-D exact model selection (mandatory)**: the selected model id now reaches the
+  execution port and actually executes — core freezes the admitted selection and
+  `museDelegatedModelPinOf` (shared family rule; ordinary/`-free`/explicit-envelope-with-
+  ordinary pin nothing) pins the id into the port request; MSP pre-verifies via
+  `model/list` and selects via the official `session/start` `modelId` / resume-time
+  `modelId` override / `session/setModel` (unreported read-back), then verifies the
+  effective model by read-back (different non-null model = visible `modelMismatch`
+  refusal); exec passes the documented `--model <id>` (unknown models fail visibly via
+  nonzero exit + stderr — mock-CLI contract-tested); **never `--contributor-mode`**
+  (`contributorModePolicy: "cli-default"` recorded). Sanitized per-turn evidence:
+  `requestedModelId` / `effectiveModelId` / `modelPinMechanism` in message metadata and
+  the `muse_delegated_turn.completed` log line (the §4 step 13 on-machine check fields).
+- **Handler-level routing proof**: `tests/muse-selection-routing.test.ts` (new, 8 tests) —
+  sendText with an explicit Contributor selection, sendText with the session's standing
+  selection, createSession.firstInput, and a Studio mission-linked submission shape all
+  deliver `executionBackend: "muse-code"` **and** the exact selection into Core's
+  sendInput options (the id that the core test asserts reaches the port request; the port
+  tests assert the MSP selection members and the exec `--model` argv); ordinary
+  selections and the OpenCode Zen `-free` variant keep their ordinary paths; the toggle
+  off means zero rerouting; the explicit envelope field keeps its priority.
+- Stack rebased: `tl/muse-code-delegated-backend` → PR #27 safety corrections;
+  `tl/muse-code-mc-d-selection` rebased on top (ACR/evidence/IMPLEMENTATION-STATE conflict
+  resolution: PR #27 corrections = Revision 4 / evidence rev. 4; MC-D renumbered to
+  Revision 5 / evidence rev. 5).
+- Verification on this corrected stack: muse suites green — bootstrap **89/89** (JSONL 8,
+  process 25, MSP 28, support 14, delegated routing 5, selection routing 8), core
+  delegated-turn **12/12** (+4 model pin), engineering muse **16/16** (services 10, ui 6)
+  = **117/117**; `pnpm lint` green (0 errors); `architecture:check --changed` 0 violations.
+  Full `verify:pre-push` + GitHub CI re-run on the final pushed heads remain merge-blocking;
+  Issue #24 stays open pending the §4 on-machine Windows acceptance (step 13 now mandates
+  real Contributor model verification: requested/effective ids in the log line, real CLI
+  `--model` behavior, unknown-model visible failure, ordinary/`-free` unchanged, Studio
+  linkage, Contributor mode never auto-enabled).

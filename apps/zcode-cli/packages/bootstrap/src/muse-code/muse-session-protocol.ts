@@ -1,6 +1,7 @@
 import {
   MuseClient,
   type ApprovalHandler,
+  type ModelListResult,
   type MuseClientSpawnOptions,
   type ResumeSessionOptions,
   type StartSessionOptions,
@@ -117,9 +118,12 @@ export function createMuseSessionProtocolPort(
             ? settings.timeoutMs
             : DEFAULT_MUSE_CODE_EXEC_TIMEOUT_MS;
 
-      // 进入时已取消：不启动 host，直接返回取消事实。
+      // 进入时已取消：不启动 host，直接返回取消事实（模型钉住字段如实携带请求事实）。
       if (request.signal.aborted) {
-        return emptyResult("cancelled", approvalPosture);
+        return {
+          ...emptyResult("cancelled", approvalPosture),
+          ...(request.modelId ? { requestedModelId: request.modelId } : {}),
+        };
       }
 
       const executable = resolveMuseExecutableEntry(env, settings, request.executablePath);
@@ -200,7 +204,39 @@ export function createMuseSessionProtocolPort(
         // 不能沿用 let 的流分析收窄，绑定到收窄后的 const。
         const activeClient: MuseClient = client;
 
-        // 会话映射（R2；验证轮修正 A resume 门控）：既有映射且 canonical 物理根
+          // 模型钉住前置核实（MC-D 验证轮）：请求携带精确模型 id 时，先经官方
+        // `model/list` 确认该 id 在目录里（绝不虚构 id；目录不含该 id = 可见失败，
+        // 绝不静默换模型）。目录查询也在启动门控内（挂起 = 可见失败 + host 收口）。
+        if (request.modelId) {
+          let catalog: ModelListResult;
+          try {
+            catalog = await startupTimeoutGate(
+              "listing the model catalog (model/list)",
+              startupTimeoutMs,
+              () => client.listModels(),
+              () => undefined,
+            );
+          } catch (error) {
+            throw new MuseExecStartupError(
+              "modelUnavailable",
+              `Muse Code CLI could not list its model catalog to verify the requested model "${request.modelId}"${error instanceof Error ? `: ${error.message}` : ""}. Refusing to run on an unverified model.`,
+              { cause: error },
+            );
+          }
+          const catalogModelIds = (catalog.models ?? [])
+            .map((entry) => entry.modelId)
+            .filter((id) => typeof id === "string" && id.length > 0);
+          if (!catalogModelIds.includes(request.modelId)) {
+            throw new MuseExecStartupError(
+              "modelUnavailable",
+              `The selected Muse model "${request.modelId}" is not available in the local Muse Code CLI catalog (${catalogModelIds.length} model(s) listed: ${
+                catalogModelIds.slice(0, 12).join(", ") || "none"
+              }). Refusing to run on a different model.`,
+            );
+          }
+        }
+
+      // 会话映射（R2；验证轮修正 A resume 门控）：既有映射且 canonical 物理根
         // 与当前请求根的实时物理解析结果一致（canResumeMuseSessionMapping——每次
         // 续接都重新 realpath，无词法同串捷径）→ resumeSession；不一致/缺 canonical/
         // 不可解析/无映射 → startSession（fail-closed 连续性：绝不跨 workspace
@@ -236,6 +272,10 @@ export function createMuseSessionProtocolPort(
               () =>
                 activeClient.resumeSession({
                   sessionId: existingMuseSessionId,
+                  // 官方 resume-time model override（MC-D 验证轮）：present 时胜过
+                  // 会话保留绑定；host 拒绝时会话留在原模型（session.modelId 如实
+                  // 回报，由下方回读核实门控拒绝）。绝不虚构 provider。
+                  ...(request.modelId ? { modelId: request.modelId } : {}),
                   ...(denyApproval
                     ? { onApproval: denyApproval, onApprovalError: () => undefined }
                     : {}),
@@ -250,6 +290,45 @@ export function createMuseSessionProtocolPort(
             );
         if (!resumedMuseSession && denyApproval) {
           session.onApproval(denyApproval);
+        }
+
+        // 模型钉住回读核实（MC-D 验证轮）：官方选型成员（start/resume modelId）
+        // 之后的实际生效模型必须 == 请求模型；回读未申报（null）时用官方
+        // `session/setModel`（model-picker 手势；model/list 已预核实）钉住；
+        // 回读到另一个非 null 模型 = host 把会话留在了别的模型上——可见失败，
+        // 绝不在未请求的模型上跑轮，绝不静默放行。
+        let modelPinMechanism: MuseExecRunResult["modelPinMechanism"];
+        let effectiveModelId: string | undefined;
+        if (request.modelId) {
+          const readBack = readSessionModelId(session);
+          if (readBack === request.modelId) {
+            modelPinMechanism = resumedMuseSession
+              ? "session-resume-override"
+              : "session-start";
+            effectiveModelId = request.modelId;
+          } else if (readBack === null || readBack === undefined) {
+            try {
+              await startupTimeoutGate(
+                "selecting the requested model (session/setModel)",
+                startupTimeoutMs,
+                () => session.setModel({ modelId: request.modelId! }),
+                () => undefined,
+              );
+            } catch (error) {
+              throw new MuseExecStartupError(
+                "modelUnavailable",
+                `The Muse session did not report the requested model "${request.modelId}" and selecting it via session/setModel failed${error instanceof Error ? `: ${error.message}` : ""}. Refusing to run on an unverified model.`,
+                { cause: error },
+              );
+            }
+            modelPinMechanism = "session-setmodel";
+            effectiveModelId = request.modelId;
+          } else {
+            throw new MuseExecStartupError(
+              "modelMismatch",
+              `The Muse session is on model "${readBack}" while "${request.modelId}" was requested; the host refused the model selection. Refusing to run on a different model.`,
+            );
+          }
         }
 
         // 映射回写（R2；验证轮修正 A）：拿到 session id 即持久化（首轮失败也可下轮
@@ -421,6 +500,9 @@ export function createMuseSessionProtocolPort(
             ...(sessionWorkspaceMismatch ? { sessionWorkspaceMismatch: true } : {}),
             approvalRequestsObserved,
             userQuestionsObserved,
+            ...(request.modelId ? { requestedModelId: request.modelId } : {}),
+            ...(effectiveModelId ? { effectiveModelId } : {}),
+            ...(modelPinMechanism ? { modelPinMechanism } : {}),
           };
         }
 
@@ -467,6 +549,9 @@ export function createMuseSessionProtocolPort(
           ...(usage ? { usage: mapTokenUsage(usage) } : {}),
           ...(subscriptionUsage ? { subscriptionUsage } : {}),
           approvalPosture,
+          ...(request.modelId ? { requestedModelId: request.modelId } : {}),
+          ...(effectiveModelId ? { effectiveModelId } : {}),
+          ...(modelPinMechanism ? { modelPinMechanism } : {}),
         };
       } finally {
         combinedSignal.removeEventListener("abort", onCombinedAbort);
@@ -517,21 +602,28 @@ function requireDenyChoice(request: MuseApprovalRequest): string {
 }
 
 /**
- * startSession 选项（R4 + R3）：
+ * startSession 选项（R4 + R3；MC-D 验证轮：初始模型）:
  * - workspace 边界：cwd == 根时传 workspaceRoot（单根，policy-gated root）；
  *   cwd 是子目录时传 workspaceRoots（首个 = CWD，根纳入 `:workspace_roots` 规则集，
  *   并集 ⊆ MOS workspace——workingDirectory 已通过收敛校验）。
  * - unattended-sandboxed：approvalMode "allowAll"（标准 mode 名；sandbox 独立生效）。
  *   fail-closed：不声明 approvalMode（服务端缺省），deny 处理器负责拒绝。
+ * - 精确模型（MC-D 验证轮）：请求携带 modelId 时作为官方 `SessionStartParams.modelId`
+ *   （"Initial model; server default when omitted"）传入；缺省不传（CLI 自身配置）。
+ *   绝不传 `--contributor-mode` 类成员（SDK 无 contributor 成员；MOS 绝不改用户
+ *   CLI 的 Contributor 模式配置）。
  */
 function buildStartSessionOptions(
   request: MuseExecRequest,
   approvalPosture: MuseExecApprovalPosture,
 ): StartSessionOptions {
   const sameRoot = sameNormalizedPath(request.workingDirectory, request.workspaceRoot);
-  const base: StartSessionOptions = sameRoot
-    ? { workspaceRoot: request.workspaceRoot }
-    : { workspaceRoots: [request.workingDirectory, request.workspaceRoot] };
+  const base: StartSessionOptions = {
+    ...(sameRoot
+      ? { workspaceRoot: request.workspaceRoot }
+      : { workspaceRoots: [request.workingDirectory, request.workspaceRoot] }),
+    ...(request.modelId ? { modelId: request.modelId } : {}),
+  };
   return approvalPosture === "unattended-sandboxed"
     ? { ...base, approvalMode: "allowAll" }
     : base;
@@ -543,6 +635,14 @@ function sameNormalizedPath(left: string, right: string): boolean {
     return process.platform === "win32" ? resolved.toLowerCase() : resolved;
   };
   return normalize(left) === normalize(right);
+}
+
+/** 会话回读的生效模型（MC-D 验证轮）：Session.opening 的 start/resume 结果 wire
+ * `Session.modelId`（"The winning metadata fold's model"）；未申报 = null。*/
+function readSessionModelId(session: {
+  opening?: { result: { session: { modelId?: string | null } } };
+}): string | null | undefined {
+  return session.opening?.result.session.modelId ?? null;
 }
 
 function interpretOutcome(outcome: TurnOutcome): {

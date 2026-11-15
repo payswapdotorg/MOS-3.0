@@ -72,6 +72,8 @@ function runPort(input: {
   maxModelSteps?: number;
   executablePath?: string;
   sessionStore?: MuseSessionStore;
+  /** MC-D 验证轮：选型钉住的精确模型 id（documented `--model <id>`）。 */
+  modelId?: string;
   onEvent?: (event: MuseExecStreamEvent) => void;
 }) {
   const port = createMuseExecProcessPort({
@@ -92,6 +94,7 @@ function runPort(input: {
         ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
         ...(input.maxModelSteps !== undefined ? { maxModelSteps: input.maxModelSteps } : {}),
         ...(input.executablePath !== undefined ? { executablePath: input.executablePath } : {}),
+        ...(input.modelId !== undefined ? { modelId: input.modelId } : {}),
       },
       {
         onEvent: async (event) => {
@@ -403,6 +406,57 @@ describe("createMuseExecProcessPort", () => {
     expect(result.sessionWorkspaceMismatch).toBe(true);
     // argv-audit fixture 不申报 session id：canonical 回写发生在下一个申报 id 的
     // 真实轮（缺 canonical 的旧条目在此之前持续 fail-closed 拒绝续接）。
+  });
+
+  it("passes the documented --model flag with the exact selected model id and never --contributor-mode (MC-D)", async () => {
+    const ctx = await prepareFixture({ MUSE_FIXTURE_MODE: "argv-audit" });
+    const result = await runPort({
+      ...ctx,
+      modelId: "muse-spark-1.3-contributor",
+    }).run;
+    expect(result.exitCode).toBe(0);
+    // argv-audit 写入 cwd（= 会话工作目录）。
+    const argvLines = (
+      await readFile(join(ctx.workdir, "muse-fixture-argv.txt"), "utf8")
+    ).split("\n");
+    const modelIndex = argvLines.indexOf("--model");
+    expect(modelIndex).toBeGreaterThan(-1);
+    // 传的是选型钉住的精确模型 id（绝不虚构）。
+    expect(argvLines[modelIndex + 1]).toBe("muse-spark-1.3-contributor");
+    // 用户 CLI 配置自治：绝不传 --contributor-mode（MOS 绝不自动开启 Contributor 模式）。
+    expect(argvLines).not.toContain("--contributor-mode");
+    // 归因字段如实回传：requested + exec 机制；effective 缺省（该面无可观测回读）。
+    expect(result.requestedModelId).toBe("muse-spark-1.3-contributor");
+    expect(result.modelPinMechanism).toBe("exec-model-flag");
+    expect(result.effectiveModelId).toBeUndefined();
+  });
+
+  it("keeps zero model argv when no model is requested (CLI-default path unchanged)", async () => {
+    const ctx = await prepareFixture({ MUSE_FIXTURE_MODE: "argv-audit" });
+    const result = await runPort({ ...ctx }).run;
+    expect(result.exitCode).toBe(0);
+    const argvLines = (
+      await readFile(join(ctx.workdir, "muse-fixture-argv.txt"), "utf8")
+    ).split("\n");
+    expect(argvLines).not.toContain("--model");
+    expect(argvLines).not.toContain("--contributor-mode");
+    expect(result.requestedModelId).toBeUndefined();
+    expect(result.modelPinMechanism).toBeUndefined();
+    expect(result.effectiveModelId).toBeUndefined();
+  });
+
+  it("surfaces the CLI's rejection of an unknown model as a visible nonzero exit (never a silent fallback)", async () => {
+    const ctx = await prepareFixture();
+    // fixture 目录不含 muse-spark-9.9-contributor → stderr + 非零退出（真实 CLI 拒绝
+    // 未知模型的可见失败模拟；端口如实回传，由 core 收口为轮失败）。
+    const result = await runPort({
+      ...ctx,
+      modelId: "muse-spark-9.9-contributor",
+    }).run;
+    expect(result.exitCode).toBe(4);
+    expect(result.stderrTail).toContain("unknown model");
+    expect(result.requestedModelId).toBe("muse-spark-9.9-contributor");
+    expect(result.modelPinMechanism).toBe("exec-model-flag");
   });
 
   it("surfaces approval requests and user questions as visible events with counts (R3)", async () => {

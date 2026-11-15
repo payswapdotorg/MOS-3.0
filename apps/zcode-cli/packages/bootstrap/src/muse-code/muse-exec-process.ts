@@ -189,6 +189,12 @@ async function runMuseExecChild(
       approvalRequestsObserved: 0,
       userQuestionsObserved: 0,
       approvalPosture,
+      ...(request.modelId
+        ? {
+            requestedModelId: request.modelId,
+            modelPinMechanism: "exec-model-flag" as const,
+          }
+        : {}),
     };
   }
 
@@ -205,6 +211,13 @@ async function runMuseExecChild(
       request.workspaceRoot,
       "--prompt-file",
       promptFile,
+      // 精确模型（MC-D 验证轮，TL correction round）：documented `--model <id>`
+      // （Meta 当前配置文档与 --workspace/--session-id 同页列出）传用户提交的选型
+      // id（绝不虚构；缺省不传 = CLI 自身已认证配置，行为不变）。CLI 拒绝未知模型时
+      // 以非零退出 + stderr 可见失败（本端口如实回传，绝不静默换模型）。
+      // **绝不传 `--contributor-mode`**（同页 documented 但保留给用户 CLI 自治——
+      // MOS 绝不自动开启 Contributor 模式、绝不改用户 CLI 配置）。
+      ...(request.modelId ? ["--model", request.modelId] : []),
       ...(maxModelSteps !== undefined ? ["--max-model-steps", String(maxModelSteps)] : []),
       // 会话续接（R2）：documented `--session-id <uuid>`（dev.meta.ai/docs/muse-code/extending
       // "Headless and CI"：headless runs are sessions; continue with the session id）。
@@ -332,6 +345,15 @@ async function runMuseExecChild(
       approvalRequestsObserved,
       userQuestionsObserved,
       approvalPosture,
+      // 模型钉住归因（MC-D 验证轮）：exec 面传 documented `--model <id>`；该面没有
+      // 可观测的生效模型回读（effectiveModelId 缺省 = 未申报，绝不虚构）；CLI 拒绝
+      // 未知模型时以非零退出 + stderr 可见失败（由上层如实裁决）。
+      ...(request.modelId
+        ? {
+            requestedModelId: request.modelId,
+            modelPinMechanism: "exec-model-flag" as const,
+          }
+        : {}),
     };
   } finally {
     combinedSignal.removeEventListener("abort", onCombinedAbort);

@@ -3,14 +3,19 @@ import type { MessageId, SessionEvent, TraceContext, TurnId } from "@zcode/contr
 import { createSessionEvent, SessionEventType } from "@zcode/contracts";
 import { TurnMachineImpl } from "../src/agent/turn-machine.js";
 import type { MessagePart } from "@zcode/contracts";
+import type { ModelSelection } from "../src/runtime/deps.js";
 import type { AgentRuntimeInternal } from "../src/runtime/internal.js";
 import {
   MUSE_EXEC_TURN_UNAVAILABLE_CODE,
+  museDelegatedModelPinOf,
   runDelegatedMuseTurn,
 } from "../src/runtime/methods/delegated-muse-turn.js";
 // 委托 Muse Code turn 执行器的契约测试（Issue #24 / ACR-0002）。
 // 端口用脚本化 fake（mock）：验证事件投影（ModelStreaming / ToolCall*）、
 // assistant 消息与 text part 持久化、取消/失败收口与归因（muse-code/muse-exec）。
+// MC-D 验证轮（TL correction round 2026-11-15）：有效选型命中家族时精确 modelId
+// 钉到端口请求（museDelegatedModelPinOf；普通选型/缺选不钉），requested/effective/
+// contributorModePolicy 归因入 metadata 与结果。
 // 这是 contract-tested 证据，不是真实 CLI 执行证据（AGENTS.md §7）。
 
 interface ScriptedPortRun {
@@ -95,11 +100,13 @@ function baseParams(
   runtime: AgentRuntimeInternal,
   signal: AbortSignal,
   events: SessionEvent[],
+  modelSelection?: ModelSelection,
 ): Parameters<typeof runDelegatedMuseTurn>[1] {
   return {
     input: "fix the failing parser test",
     userMessageId: "msg_user_1" as MessageId,
     turnId: "turn_muse_test" as TurnId,
+    ...(modelSelection ? { modelSelection } : {}),
     // executeTurnCommand 在进入执行分支前已 start 机器；这里镜像同一前置状态。
     ...(() => {
       const created = TurnMachineImpl.create(
@@ -118,7 +125,97 @@ function baseParams(
   };
 }
 
+describe("museDelegatedModelPinOf (MC-D 精确模型钉住)", () => {
+  it("pins the selected family model id verbatim (never invents or rewrites)", () => {
+    expect(
+      museDelegatedModelPinOf({
+        providerId: "meta",
+        modelId: "muse-spark-1.3-contributor",
+      }),
+    ).toBe("muse-spark-1.3-contributor");
+    expect(
+      museDelegatedModelPinOf({
+        providerId: "anything",
+        modelId: "muse-spark-1.4-contributor",
+      }),
+    ).toBe("muse-spark-1.4-contributor");
+  });
+
+  it("does not pin ordinary or free-variant selections (CLI-default path unchanged)", () => {
+    expect(
+      museDelegatedModelPinOf({ providerId: "openrouter", modelId: "glm-5.3" }),
+    ).toBeUndefined();
+    // OpenCode Zen 免费变体保持显式免费 HTTP 路径，绝不钉到 CLI 订阅。
+    expect(
+      museDelegatedModelPinOf({
+        providerId: "opencode-zen-chat",
+        modelId: "muse-spark-1.2-contributor-free",
+      }),
+    ).toBeUndefined();
+    expect(museDelegatedModelPinOf(undefined)).toBeUndefined();
+  });
+});
+
 describe("runDelegatedMuseTurn", () => {
+  it("passes the selected model id into the execution port request and records the pin evidence (MC-D)", async () => {
+    const controller = new AbortController();
+    const port = createScriptedMusePort(async (run) => {
+      await run.handlers.onEvent({ kind: "text_delta", text: "working" });
+      // 选型钉住的精确 modelId 必须到达执行端口（不是只有路由判定为真）。
+      expect(run.request.modelId).toBe("muse-spark-1.3-contributor");
+    }, {
+      requestedModelId: "muse-spark-1.3-contributor",
+      effectiveModelId: "muse-spark-1.3-contributor",
+      modelPinMechanism: "session-start",
+    });
+    const { persistedMessages, runtime } = createStubRuntime(port);
+    const result = await runDelegatedMuseTurn.call(
+      runtime,
+      baseParams(
+        runtime,
+        controller.signal,
+        [],
+        { providerId: "meta", modelId: "muse-spark-1.3-contributor" },
+      ),
+    );
+    expect(result.response).toBe("working");
+    const assistant = persistedMessages.filter((message) => message.role === "assistant").at(-1);
+    const museMetadata = (
+      assistant?.metadata as { museExecution?: Record<string, unknown> } | undefined
+    )?.museExecution;
+    // 请求/实际生效模型与机制如实入 sanitized 证据；Contributor 模式归 CLI 自治。
+    expect(museMetadata?.requestedModelId).toBe("muse-spark-1.3-contributor");
+    expect(museMetadata?.effectiveModelId).toBe("muse-spark-1.3-contributor");
+    expect(museMetadata?.modelPinMechanism).toBe("session-start");
+    expect(museMetadata?.contributorModePolicy).toBe("cli-default");
+  });
+
+  it("keeps the port request model-free for ordinary selections (envelope-explicit path unchanged)", async () => {
+    const controller = new AbortController();
+    const port = createScriptedMusePort(async (run) => {
+      expect(run.request.modelId).toBeUndefined();
+    });
+    const { persistedMessages, runtime } = createStubRuntime(port);
+    await runDelegatedMuseTurn.call(
+      runtime,
+      baseParams(
+        runtime,
+        controller.signal,
+        [],
+        // 显式信封字段路径下的普通选型：不钉（CLI 自身配置；既有行为不变）。
+        { providerId: "openrouter", modelId: "glm-5.3" },
+      ),
+    );
+    const assistant = persistedMessages.filter((message) => message.role === "assistant").at(-1);
+    const museMetadata = (
+      assistant?.metadata as { museExecution?: Record<string, unknown> } | undefined
+    )?.museExecution;
+    expect(museMetadata?.requestedModelId).toBeUndefined();
+    expect(museMetadata?.effectiveModelId).toBeUndefined();
+    expect(museMetadata?.modelPinMechanism).toBeUndefined();
+    expect(museMetadata?.contributorModePolicy).toBe("cli-default");
+  });
+
   it("streams text and tool activity into standard session events and persists them", async () => {
     const controller = new AbortController();
     const port = createScriptedMusePort(async (run) => {

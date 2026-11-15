@@ -28,7 +28,18 @@ export type MuseExecStartupIssueCode =
    * existing directory paths"；exec 的 `--workspace <root>` 需要现存目录），
    * 没有可以安全豁免的窄例外（不可验证的边界 = 不可放行）。
    */
-  | "workspaceUnresolvable";
+  | "workspaceUnresolvable"
+  /**
+   * 请求的精确模型不可用（MC-D 验证轮）：`model/list` 目录不含该 id / 目录
+   * 不可读 / `session/setModel` 被拒。fail-closed 可见失败——绝不静默换模型。
+   */
+  | "modelUnavailable"
+  /**
+   * 执行面把会话留在了**另一个**模型上（MC-D 验证轮）：官方选型成员
+   * （start/resume modelId）之后回读到的生效模型 ≠ 请求模型。拒绝执行——
+   * 绝不在未请求的模型上跑轮。
+   */
+  | "modelMismatch";
 
 export class MuseExecStartupError extends Error {
   constructor(
