@@ -912,3 +912,74 @@ exe: MATCH (`961ba3eb…8cda54ae`). Consumer contract after publish:
 `/releases/latest` correctly does not serve the RC (API 404, HTML redirect →
 `/releases`); tag endpoint resolves. Issue #23 remains open (workstream A + real
 acceptance evidence pending).
+
+### Fresh-install verification fixture record (2026-11-15, TL — Issue #23 evidence tooling)
+
+**Lineage honesty:** a prior-session driver for this verification ("Task 4") stopped at the
+expected `auth_timeout` with no human completing consent; no such driver exists in this
+repository or any branch (verified: clean tree at `703fd7bd`, no stashes/worktrees, no fixture
+under `scripts/`, no task record). The sandbox of that session was recycled, so the fixture
+was REBUILT here from the canonical documents (AGENTS.md, `docs/handoff/START-PLAN-SOURCE-AUDIT.md`,
+`docs/handoff/START-PLAN-PRODUCT-SCOPE-BACKEND-HANDOFF.md`, Issue #23, the CLI wire contract in
+`apps/zcode-cli/packages/adapters/src/auth/cli-oauth.ts`), following the Week-1
+rebuild precedent. Its first live run reproduces the same stop point — that is evidence, not
+regression.
+
+**Deliverable:** `scripts/fresh-install-fixture/` — a driver that certifies one full
+fresh-install cycle against the **live** provider: fresh state → reset → live registration →
+completed consent → credentials land → coding plan grant active. Six legs, single ordered
+pipeline, sanitized evidence JSON (`mos-fresh-install-fixture/run@1`; credentials appear only
+as sha-256 fingerprints, never persisted, never logged). Wire protocol is a same-contract
+port of the real CLI client (init/poll + configs/preview/balance with `X-ZCode-Product-Id`),
+and the product-ownership adjudication is a verbatim port of ACR-0001 P3
+(`isStartPlanRecordOwnedByCurrentProduct`). 18 offline unit tests
+(`scripts/fresh-install-fixture/fresh-install-fixture.test.mjs`, wired into `pnpm run
+test:release`) lock the pure logic; no network in tests.
+
+**Live run (2026-11-15, unattended, product `mos`, provider `zai`, 90 s consent budget —
+exit 3 by design):**
+
+- fresh-state **fresh** (isolated data root: no credential store, no telemetry state, no
+  provider config) · reset **clean**.
+- live-registration **ok** — the real server issued a live flow (flow id fingerprinted
+  `48194d1d3ae6`, authorize URL on `chat.z.ai`, poll interval 2 s, expiry honored; the wire-fidelity
+  of the consent loop mirrors `pollUntilReady`: poll-first order, 1 s minimum interval, transient
+  408/429/5xx/network errors retried at the server interval).
+- consent **auth_timeout** (waited 90.3 s of the 90 s budget) — no human completed the
+  authorization; the expected terminal state of an unattended run, identical to the prior
+  driver's stop point.
+- credentials **not-reached** (cannot land without consent; never fabricated).
+- grant **authentication-required** — live fail-closed evidence: `billing/preview` and
+  `billing/balance` both HTTP 401 without the account JWT, while `client/configs` answers
+  200. Device identity alone authorizes nothing on the billing surface.
+- Product-catalog observation: an **unknown** product id (`unknown-xyz`) is still served
+  HTTP 200 by the live `client/configs` — the fail-closed `400` required by the backend
+  handoff is not implemented yet; provider workstream A has not shipped.
+
+**Gates run on this tree (2026-11-15, fresh clone, dependencies installed):**
+`pnpm run test:release` equivalent bundle 69/69 PASS (incl. the 18 new fixture tests) ·
+`oxlint` 0 errors (fixture files 0 warnings) · `node scripts/architecture/session-control-boundary.mjs`
+PASS · `test:architecture` 61/61 PASS · `architecture:check -- --changed` OK (0 violations) ·
+`docs:stale-phrases:check` clean over 2303 files. The root `prepare` hook (husky + cua build)
+does not run in this environment (no global pnpm on PATH); it is unrelated to this change.
+Typecheck/build were not re-run: the change adds only standalone `scripts/` files, one
+`package.json` test-list line and documentation — no package sources touched.
+
+**Installation identity — definitive statement (deliverable (a)'s missing half):** the
+server keys grant issuance on the **authenticated account `user_id`** (grant identity:
+`authenticated_user_id + registered_product_id + plan_id` — backend handoff §3; "the server
+must resolve the entitlement boundary from authenticated state (JWT), never from the header
+alone"). `deviceMid` is device telemetry (audit §7; claim audit-log metadata only) and the
+keyring cipher key is a client-local at-rest secret that never appears on any request path —
+neither can be the issuance key, because grants must survive reinstall/device change/keyring
+regeneration (acceptance matrix #7). Full statement with per-candidate sources and live
+corroboration: `scripts/fresh-install-fixture/README.md` §Installation identity.
+
+**Status per AGENTS.md §7: blocked.** The full-cycle certification (completed consent →
+credentials land → active MOS grant) is blocked on two external dependencies: (1) a real
+human Z.AI/BigModel account must complete consent — no account exists in this environment and
+consent cannot be scripted; (2) the provider must implement workstream A (MOS product
+registration + grant enablement — live-verified absent above). The fixture is the acceptance
+driver for the moment both unblock: an attended run then walks the whole cycle (exit 0 only
+on a server-issued active MOS grant; anything else stays an honest blocked verdict). No mock,
+relabeling, or local grant fabrication was performed or will be (Issue #23 hard rules).
