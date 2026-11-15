@@ -1159,3 +1159,10 @@ requirements addressed (ACR-0002 §Revision 2; work package MC-B; evidence recor
   SQLite schema contract, release tests green; architecture check: zero new violations vs
   `main` (10 pre-existing, identical sets verified by stash-and-rerun). GitHub CI + review
   on the pushed head remain the merge-blocking authority. Merge stays blocked until both.
+- **Roadmap guardrail (review item 7)**: Muse Code remains an **optional host capability** —
+  opt-in + capability-gated, default paths unchanged; no MOS market-intelligence feature may
+  depend on the CLI's presence, version, or roadmap; delegated execution stays scoped to New
+  Task sessions (no generic-coding-agent trajectory; locked decisions #4/#5 stand); any
+  future extension (market-intelligence dependency, scope beyond New Task, a second
+  delegated backend) requires a new ACR — this record is not precedent (ACR-0002 §Revision 2
+  roadmap guardrail).

@@ -69,7 +69,9 @@ PR 落地顺序：shared 契约（schema/字段/capability/channel）→ contrac
 
 External review verdict on rev. 1: "Do not merge yet — a contract-tested prototype of the
 delegated execution path, not a proven integration of the user's existing Muse Code
-experience." Seven ordered revision requirements, all addressed in this revision:
+experience." Seven ordered revision requirements, all addressed in this revision (numbering
+note: review item 3 maps to R3+R4 below; review item 6 to R7 plus the rebase/CI/evidence
+chain; review item 7 to the roadmap guardrail that closes this section):
 
 - **R1 — official execution surfaces, pinned and contract-tested.** The delegated execution
   port now has **two official surfaces** selected at runtime (`shared
@@ -136,6 +138,20 @@ experience." Seven ordered revision requirements, all addressed in this revision
   tests, architecture check (zero new violations vs `main`), release tests, doc-stale-phrase
   check, and the SQLite schema contract check. GitHub CI + review on the pushed head remain
   required before merge (local runs are not CI evidence).
+- **Roadmap guardrail (review item 7 — normative, forward-looking).** Muse Code remains an
+  **optional host capability**, nothing more:
+  - *Optional by construction*: Settings opt-in + per-session capability gate; the envelope
+    field is absent by default and every default path is unchanged. No MOS feature may
+    require the Muse Code CLI to be installed, signed in, or reachable — market-intelligence
+    functionality in particular must never depend on its presence, version, or roadmap.
+  - *Scoped to New Task*: the delegated backend exists only inside New Task sessions for the
+    user's own coding work. This ACR does not authorize turning MOS into a generic coding
+    agent; locked decisions #4/#5 (no parallel model router / no second generic executor)
+    and the single-tool-execution-loop boundary stand.
+  - *No precedent*: any future proposal that (a) makes a MOS market-intelligence feature
+    depend on Muse Code, (b) extends delegated execution beyond New Task sessions, or
+    (c) adds another delegated-execution backend requires a new ACR with explicit review;
+    this record cannot be cited as precedent for any of them.
 
 No decision in the "Current locked decision" / "Proposed decision" sections above changes:
 Muse Code remains a delegated execution backend (never a provider), the single

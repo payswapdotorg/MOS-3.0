@@ -185,6 +185,10 @@ code failure; the chunk was re-run green after `pnpm --filter @zcode/e2e-report.
 - Subscription usage (`usage/read` window/weekly percentages) is surfaced best-effort from
   the MSP surface only; the exec surface reports no usage, and the turn cost is recorded as
   `null` (unreported) on both surfaces — never `0`.
+- Roadmap guardrail (review item 7): Muse Code is an **optional host capability** — opt-in
+  and capability-gated with default paths unchanged; no market-intelligence feature depends
+  on it; delegated execution stays scoped to New Task sessions. See ACR-0002 §Revision 2
+  (roadmap guardrail) for the normative statement.
 
 ## 4. On-machine verification checklist (Issue #24 §5; blocks any `verified` status)
 
