@@ -18,6 +18,7 @@ import {
 import {
   buildBillingBalanceUrl,
   buildClientConfigsUrl,
+  buildEndpointHeaders,
   classifyGrantState,
   extractOwnedRecords,
   isStartPlanRecordOwnedByCurrentProduct,
@@ -227,6 +228,23 @@ test("URL 构造：configs/preview 带 app_version+platform；balance 只带 app
   );
 });
 
+test("端点头：deviceMid 映射 X-Device-Mid（billing 必填参数）；缺省不发送", () => {
+  const withDevice = buildEndpointHeaders({
+    productId: "mos",
+    appVersion: "3.18.0",
+    platform: "linux-x64",
+    deviceMid: "11111111-2222-3333-4444-555555555555",
+    authorization: "Bearer jwt",
+  });
+  assert.equal(withDevice["X-Device-Mid"], "11111111-2222-3333-4444-555555555555");
+  assert.equal(withDevice["X-ZCode-Product-Id"], "mos");
+  assert.equal(withDevice.Authorization, "Bearer jwt");
+  assert.equal(withDevice["User-Agent"], "ZCode/3.18.0");
+  assert.equal(withDevice["X-Platform"], "linux-x64");
+  const withoutDevice = buildEndpointHeaders({ productId: "mos", appVersion: "3.18.0" });
+  assert.equal("X-Device-Mid" in withoutDevice, false);
+});
+
 // ── cycle 编排（注入 fetch/sleep/now）────────────────────────────────────────
 
 function jsonResponse(status, payload) {
@@ -292,7 +310,9 @@ const READY_PAYLOAD = {
 
 test("cycle：全周期 happy path —— 注册 → ready → 凭据落地 → active grant", async () => {
   const clock = fakeClock();
-  const { fetchImpl } = fakeTransport({
+  const DEVICE_MID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+  const logs = [];
+  const { fetchImpl, calls } = fakeTransport({
     init: {
       payload: {
         code: 0,
@@ -317,10 +337,11 @@ test("cycle：全周期 happy path —— 注册 → ready → 凭据落地 → 
   const evidence = await runFreshInstallCycle({
     dataRoot: mkdtempSync(join(tmpdir(), "fixture-test-")),
     consentWaitMs: 5000,
+    deviceMid: DEVICE_MID,
     fetchImpl,
     now: clock.now,
     sleep: clock.sleep,
-    log: () => {},
+    log: (line) => logs.push(line),
   });
   assert.equal(evidence.verdict, "full-cycle-verified");
   assert.equal(VERDICT_EXIT_CODES[evidence.verdict], 0);
@@ -331,16 +352,50 @@ test("cycle：全周期 happy path —— 注册 → ready → 凭据落地 → 
   assert.equal(legStatuses.consent, "consent-completed");
   assert.equal(legStatuses.credentials, "landed");
   assert.equal(legStatuses.grant, "active-grant");
+  // 有人值守可用性：authorize_url 在 live registration 后立刻打印（等待期间可见）。
+  const urlLogIndex = logs.findIndex((line) => line.includes("https://chat.z.ai/api/oauth/authorize"));
+  const registrationLogIndex = logs.findIndex((line) => line.startsWith("[live-registration] ok"));
+  const consentStatusIndex = logs.findIndex((line) => line.startsWith("[consent] consent-completed"));
+  assert.ok(urlLogIndex > registrationLogIndex);
+  assert.ok(urlLogIndex < consentStatusIndex);
+  // 线保真：三个 grant 端点请求（含产品目录探针）都携带与真实客户端一致的 X-Device-Mid。
+  const grantCalls = calls.filter(
+    (call) =>
+      call.url.includes("/client/configs") ||
+      call.url.includes("/billing/preview") ||
+      call.url.includes("/billing/balance"),
+  );
+  const probeCall = grantCalls.find((call) => call.headers["X-ZCode-Product-Id"] === "unknown-xyz");
+  const realGrantCalls = grantCalls.filter(
+    (call) => call.headers["X-ZCode-Product-Id"] !== "unknown-xyz",
+  );
+  assert.ok(realGrantCalls.length >= 3);
+  for (const call of realGrantCalls) {
+    assert.equal(call.headers["X-Device-Mid"], DEVICE_MID);
+    assert.equal(call.headers["X-ZCode-Product-Id"], "mos");
+    if (call.url.includes("/billing/balance")) {
+      assert.equal(call.headers.Authorization, "Bearer SECRET-JWT-VALUE");
+    }
+  }
+  // 无凭据的目录探针同样携带设备身份（镜像 NodeApiClient 注入），但不带 Authorization。
+  assert.ok(probeCall);
+  assert.equal(probeCall.headers["X-Device-Mid"], DEVICE_MID);
+  assert.equal(probeCall.headers.Authorization, undefined);
+  // 设备身份脱敏：证据只留指纹，绝不落原始 deviceMid（AGENTS.md §4 个人数据不入证据）。
+  assert.equal(evidence.observations.deviceMidMode, "provided");
+  assert.match(evidence.observations.deviceMidFingerprint, /^[0-9a-f]{12} \(len 36\)$/);
   // 脱敏：证据里不得出现任何原始 secret。
   const serialized = JSON.stringify(evidence);
   assert.ok(!serialized.includes("SECRET-JWT-VALUE"));
   assert.ok(!serialized.includes("SECRET-USER-ID"));
   assert.ok(!serialized.includes("SECRET-ACCESS-TOKEN"));
+  assert.ok(!serialized.includes(DEVICE_MID));
   assert.match(evidence.legs[4].jwtFingerprint, /^[0-9a-f]{12} \(len 16\)$/);
 });
 
 test("cycle：无人值守 —— consent 预算耗尽 ⇒ auth_timeout（预期终态，exit 3）", async () => {
   const clock = fakeClock();
+  const logs = [];
   const { fetchImpl } = fakeTransport({
     init: {
       payload: {
@@ -367,7 +422,7 @@ test("cycle：无人值守 —— consent 预算耗尽 ⇒ auth_timeout（预期
     fetchImpl,
     now: clock.now,
     sleep: clock.sleep,
-    log: () => {},
+    log: (line) => logs.push(line),
   });
   assert.equal(evidence.verdict, "blocked-consent-timeout");
   assert.equal(VERDICT_EXIT_CODES[evidence.verdict], 3);
@@ -378,6 +433,47 @@ test("cycle：无人值守 —— consent 预算耗尽 ⇒ auth_timeout（预期
   assert.equal(legStatuses.grant, "authentication-required");
   const balance = evidence.observations.grantEndpoints.find((o) => o.kind === "billing-balance");
   assert.equal(balance.httpStatus, 401);
+  // 无人值守短预算：心跳不应触发（2s < 30s 心跳间隔）。
+  const consentLeg = evidence.legs.find((leg) => leg.leg === "consent");
+  assert.equal(consentLeg.heartbeats, undefined);
+  assert.ok(!logs.some((line) => line.includes("budget left")));
+});
+
+test("cycle：等待心跳 —— 超过 30s 未授权时报告剩余预算，证据记录心跳数", async () => {
+  const clock = fakeClock();
+  const logs = [];
+  const { fetchImpl } = fakeTransport({
+    init: {
+      payload: {
+        code: 0,
+        data: {
+          flow_id: "flow-hb",
+          authorize_url: "https://chat.z.ai/api/oauth/authorize",
+          expires_at: 4000000000,
+          poll_interval_sec: 1,
+        },
+      },
+    },
+    polls: [],
+    grant: {
+      "client-configs": { payload: { code: 0, data: {} } },
+      "billing-preview": { payload: { code: 0, data: { plans: [] } } },
+      "billing-balance": { status: 401, payload: undefined },
+    },
+  });
+  const evidence = await runFreshInstallCycle({
+    dataRoot: mkdtempSync(join(tmpdir(), "fixture-test-")),
+    consentWaitMs: 95_000,
+    fetchImpl,
+    now: clock.now,
+    sleep: clock.sleep,
+    log: (line) => logs.push(line),
+  });
+  assert.equal(evidence.verdict, "blocked-consent-timeout");
+  const consentLeg = evidence.legs.find((leg) => leg.leg === "consent");
+  // 假时钟从 0 起跳：90s 预算里第 30/60/90 秒附近共 3 次心跳。
+  assert.equal(consentLeg.heartbeats, 3);
+  assert.ok(logs.some((line) => line.includes("budget left")));
 });
 
 test("cycle：轮询瞬时错误（5xx）按服务端间隔重试，随后 ready 仍成立", async () => {
@@ -414,6 +510,45 @@ test("cycle：轮询瞬时错误（5xx）按服务端间隔重试，随后 ready
   const legStatuses = Object.fromEntries(evidence.legs.map((leg) => [leg.leg, leg.status]));
   assert.equal(legStatuses.consent, "consent-completed");
   assert.equal(legStatuses.credentials, "landed");
+});
+
+test("cycle：设备身份生成 —— 未注入 deviceMid 时每次运行独立生成（fresh 安装语义）", async () => {
+  const clock = fakeClock();
+  const makeTransport = () => fakeTransport({
+    init: {
+      payload: {
+        code: 0,
+        data: {
+          flow_id: "flow-5",
+          authorize_url: "https://chat.z.ai/api/oauth/authorize",
+          expires_at: 4000000000,
+          poll_interval_sec: 1,
+        },
+      },
+    },
+    polls: [],
+    grant: { "billing-balance": { status: 401, payload: undefined } },
+  });
+  const run = async () => {
+    const transport = makeTransport();
+    const evidence = await runFreshInstallCycle({
+      dataRoot: mkdtempSync(join(tmpdir(), "fixture-test-")),
+      consentWaitMs: 0,
+      fetchImpl: transport.fetchImpl,
+      now: clock.now,
+      sleep: clock.sleep,
+      log: () => {},
+    });
+    return { evidence, deviceMids: transport.calls.map((call) => call.headers["X-Device-Mid"]) };
+  };
+  const first = await run();
+  const second = await run();
+  assert.equal(first.evidence.observations.deviceMidMode, "generated-per-run");
+  assert.ok(first.deviceMids.every((value) => typeof value === "string" && value.length === 36));
+  // 同一周期内共用同一个 deviceMid；跨周期（fresh 安装）重新生成。
+  assert.ok(new Set(first.deviceMids).size === 1);
+  assert.ok(new Set(second.deviceMids).size === 1);
+  assert.notEqual(first.deviceMids[0], second.deviceMids[0]);
 });
 
 test("cycle：reset 段清理已存在的安装面（reinstall 复验入口）", async () => {

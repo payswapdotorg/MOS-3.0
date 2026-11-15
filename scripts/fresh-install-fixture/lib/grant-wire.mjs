@@ -37,12 +37,19 @@ export function isStartPlanRecordOwnedByCurrentProduct(recordProductId, currentP
   return declared === currentProductId;
 }
 
-/** 端点请求头：产品范围 + 来源头（镜像 buildZCodeSourceHeadersFromContext 的子集）。 */
-export function buildEndpointHeaders({ productId, authorization, appVersion, platform }) {
+/**
+ * 端点请求头：产品范围 + 设备身份 + 来源头（镜像 NodeApiClient 注入的 buildZCodeSourceHeaders 子集）。
+ *
+ * X-Device-Mid 是 billing/balance 的必填参数（packages/services/src/node.ts:3594 bug 记录：
+ * 缺它的请求被服务端拒绝为 parameter error/400）——但它是审计元数据，不是授权凭证：
+ * 无账号 JWT 时带上它照样 401（live 证据见 README §Installation identity）。
+ */
+export function buildEndpointHeaders({ productId, authorization, appVersion, platform, deviceMid }) {
   const headers = {
     "User-Agent": `ZCode/${appVersion}`,
     ...(productId ? { "X-ZCode-Product-Id": productId } : {}),
   };
+  if (deviceMid) headers["X-Device-Mid"] = deviceMid;
   if (platform) headers["X-Platform"] = platform;
   if (authorization) headers.Authorization = authorization;
   return headers;

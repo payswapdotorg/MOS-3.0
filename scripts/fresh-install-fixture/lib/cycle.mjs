@@ -3,14 +3,14 @@
 //
 // 与 run-platform-smoke 同一编排纪律：单一有序流水线、逐步落证据、任何一步失败都
 // 继续写出证据并以非零码退出。驱动器（run-fresh-install-verification.mjs）只负责
-// CLI/IO；本模块可注入 fetch/sleep/now 做无网络单测。
+// CLI/IO；本模块可注入 fetch/sleep/now/deviceMid 做无网络单测。
 //
 // 诚实边界（AGENTS.md §7）：consent 段需要真人完成浏览器授权 —— 无人值守运行的
 // 预期终态就是 auth_timeout（exit 3），这不是 fixture 缺陷而是它要证明的事实；
 // grant 段需要提供方启用 MOS 产品（Issue #23 workstream A）。fixture 绝不伪造
 // 授权或凭据，证据里绝不落任何 secret（一律 fingerprint）。
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -113,6 +113,16 @@ export async function runFreshInstallCycle(options = {}) {
   };
 
   try {
+    // ── 安装设备身份（镜像 ensureTelemetryDeviceMid 的生成语义，不落盘）──────────
+    // 真实客户端在 telemetry-state.json 缺 deviceMid 时生成一个 UUID 并写回（
+    // packages/services/src/telemetry/telemetryCore.ts:291-305）。fixture 在内存里生成
+    // 同等身份、绝不写盘：fresh data root 的三个安装面在整周期内保持“未落地”的断言
+    // 语义不变；证据只留指纹。X-Device-Mid 是 billing/balance 的必填参数（node.ts:3594），
+    // 带上它才与真实客户端同线 —— 而它授权不了任何东西（无 JWT 仍 401，README §身份层）。
+    const deviceMid = config.deviceMid ?? randomUUID();
+    evidence.observations.deviceMidMode = config.deviceMid ? "provided" : "generated-per-run";
+    evidence.observations.deviceMidFingerprint = fingerprint(deviceMid);
+
     // ── Leg 1: fresh state ────────────────────────────────────────────────
     const dataRoot = config.dataRoot ?? (await makeTempDataRoot());
     evidence.config.dataRootMode = config.dataRoot ? "provided" : "fixture-temp";
@@ -156,6 +166,7 @@ export async function runFreshInstallCycle(options = {}) {
       productId: config.productId,
       appVersion: config.appVersion,
       platform: config.platform,
+      deviceMid,
     });
     let initData;
     try {
@@ -184,6 +195,11 @@ export async function runFreshInstallCycle(options = {}) {
       note: "server issued a live authorization flow",
     });
     evidence.observations.authorizeUrl = initData.authorizeUrl;
+    // 有人值守可用性：授权 URL 必须在等待期间就可见 —— 驱动器只在结束时打印它的话，
+    // 真人等不到能点的链接（Task 5 修复，README §Running it）。
+    log(
+      `[consent] authorization URL (a human must open this and complete login + approval): ${initData.authorizeUrl}`,
+    );
 
     // 提供方产品目录观察（无凭据、只读）：未知产品 id 是否 fail-closed（handoff 契约）。
     evidence.observations.productCatalog = await probeProductCatalog({
@@ -203,6 +219,9 @@ export async function runFreshInstallCycle(options = {}) {
     let ready = null;
     let consentStatus = "auth_timeout";
     let consentNote = "no human completed the authorization in time (expected unattended)";
+    let heartbeatCount = 0;
+    const HEARTBEAT_MS = 30_000;
+    let lastHeartbeat = now();
     while (now() < effectiveDeadline) {
       let pollData = { status: "pending" };
       try {
@@ -234,10 +253,19 @@ export async function runFreshInstallCycle(options = {}) {
         consentNote = "server reported the authorization flow as failed";
         break;
       }
+      // 有人值守心跳：每 30s 报告剩余预算，让等待授权的真人知道驱动器还活着。
+      if (now() - lastHeartbeat >= HEARTBEAT_MS) {
+        heartbeatCount += 1;
+        lastHeartbeat = now();
+        log(
+          `[consent] still waiting for human authorization — ${Math.max(0, Math.round((effectiveDeadline - now()) / 1000))}s of budget left`,
+        );
+      }
       await sleep(Math.min(pollIntervalMs, Math.max(0, effectiveDeadline - now())));
     }
     record("consent", consentStatus, {
       waitedMs: now() - startedAt,
+      ...(heartbeatCount > 0 ? { heartbeats: heartbeatCount } : {}),
       note: consentNote,
     });
 
@@ -273,6 +301,7 @@ export async function runFreshInstallCycle(options = {}) {
         authorization,
         appVersion: config.appVersion,
         platform: config.platform,
+        deviceMid,
       });
       try {
         const response = await fetchJson(fetchImpl, { url: endpoint.url, method: "GET", headers });

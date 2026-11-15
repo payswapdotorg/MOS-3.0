@@ -6,9 +6,12 @@
 //     node scripts/fresh-install-fixture/run-fresh-install-verification.mjs \
 //       --evidence-out evidence.json [--consent-wait-ms 120000]
 //
-//   有人值守（真人在打印出的 authorize_url 完成授权；后端启用 MOS 后可走完全周期）：
+//   有人值守（真人在 authorize_url 完成授权；后端启用 MOS 后可走完全周期）：
 //     node scripts/fresh-install-fixture/run-fresh-install-verification.mjs \
 //       --evidence-out evidence.json --consent-wait-ms 300000
+//
+// 驱动器在 live registration 成功后立刻打印 authorize_url（真人等待期间就能看到要
+// 打开的链接），等待期间每 30s 打印一次心跳；周期结束时再复述一次。
 //
 // 周期：fresh state → reset → live registration → consent → credentials land →
 // coding plan grant active。证据 JSON 不含任何 secret（凭据只以 sha256 指纹出现），
