@@ -912,3 +912,145 @@ exe: MATCH (`961ba3eb…8cda54ae`). Consumer contract after publish:
 `/releases/latest` correctly does not serve the RC (API 404, HTML redirect →
 `/releases`); tag endpoint resolves. Issue #23 remains open (workstream A + real
 acceptance evidence pending).
+
+### Fresh-install verification fixture record (2026-11-15, TL — Issue #23 evidence tooling)
+
+**Lineage honesty:** a prior-session driver for this verification ("Task 4") stopped at the
+expected `auth_timeout` with no human completing consent; no such driver exists in this
+repository or any branch (verified: clean tree at `703fd7bd`, no stashes/worktrees, no fixture
+under `scripts/`, no task record). The sandbox of that session was recycled, so the fixture
+was REBUILT here from the canonical documents (AGENTS.md, `docs/handoff/START-PLAN-SOURCE-AUDIT.md`,
+`docs/handoff/START-PLAN-PRODUCT-SCOPE-BACKEND-HANDOFF.md`, Issue #23, the CLI wire contract in
+`apps/zcode-cli/packages/adapters/src/auth/cli-oauth.ts`), following the Week-1
+rebuild precedent. Its first live run reproduces the same stop point — that is evidence, not
+regression.
+
+**Deliverable:** `scripts/fresh-install-fixture/` — a driver that certifies one full
+fresh-install cycle against the **live** provider: fresh state → reset → live registration →
+completed consent → credentials land → coding plan grant active. Six legs, single ordered
+pipeline, sanitized evidence JSON (`mos-fresh-install-fixture/run@1`; credentials appear only
+as sha-256 fingerprints, never persisted, never logged). Wire protocol is a same-contract
+port of the real CLI client (init/poll + configs/preview/balance with `X-ZCode-Product-Id`),
+and the product-ownership adjudication is a verbatim port of ACR-0001 P3
+(`isStartPlanRecordOwnedByCurrentProduct`). 18 offline unit tests
+(`scripts/fresh-install-fixture/fresh-install-fixture.test.mjs`, wired into `pnpm run
+test:release`) lock the pure logic; no network in tests.
+
+**Live run (2026-11-15, unattended, product `mos`, provider `zai`, 90 s consent budget —
+exit 3 by design):**
+
+- fresh-state **fresh** (isolated data root: no credential store, no telemetry state, no
+  provider config) · reset **clean**.
+- live-registration **ok** — the real server issued a live flow (flow id fingerprinted
+  `48194d1d3ae6`, authorize URL on `chat.z.ai`, poll interval 2 s, expiry honored; the wire-fidelity
+  of the consent loop mirrors `pollUntilReady`: poll-first order, 1 s minimum interval, transient
+  408/429/5xx/network errors retried at the server interval).
+- consent **auth_timeout** (waited 90.3 s of the 90 s budget) — no human completed the
+  authorization; the expected terminal state of an unattended run, identical to the prior
+  driver's stop point.
+- credentials **not-reached** (cannot land without consent; never fabricated).
+- grant **authentication-required** — live fail-closed evidence: `billing/preview` and
+  `billing/balance` both HTTP 401 without the account JWT, while `client/configs` answers
+  200. Device identity alone authorizes nothing on the billing surface.
+- Product-catalog observation: an **unknown** product id (`unknown-xyz`) is still served
+  HTTP 200 by the live `client/configs` — the fail-closed `400` required by the backend
+  handoff is not implemented yet; provider workstream A has not shipped.
+
+**Gates run on this tree (2026-11-15, fresh clone, dependencies installed):**
+`pnpm run test:release` equivalent bundle 69/69 PASS (incl. the 18 new fixture tests) ·
+`oxlint` 0 errors (fixture files 0 warnings) · `node scripts/architecture/session-control-boundary.mjs`
+PASS · `test:architecture` 61/61 PASS · `architecture:check -- --changed` OK (0 violations) ·
+`docs:stale-phrases:check` clean over 2303 files. The root `prepare` hook (husky + cua build)
+does not run in this environment (no global pnpm on PATH); it is unrelated to this change.
+Typecheck/build were not re-run: the change adds only standalone `scripts/` files, one
+`package.json` test-list line and documentation — no package sources touched.
+
+**Installation identity — definitive statement (deliverable (a)'s missing half):** the
+server keys grant issuance on the **authenticated account `user_id`** (grant identity:
+`authenticated_user_id + registered_product_id + plan_id` — backend handoff §3; "the server
+must resolve the entitlement boundary from authenticated state (JWT), never from the header
+alone"). `deviceMid` is device telemetry (audit §7; claim audit-log metadata only) and the
+keyring cipher key is a client-local at-rest secret that never appears on any request path —
+neither can be the issuance key, because grants must survive reinstall/device change/keyring
+regeneration (acceptance matrix #7). Full statement with per-candidate sources and live
+corroboration: `scripts/fresh-install-fixture/README.md` §Installation identity.
+
+**Status per AGENTS.md §7: blocked.** The full-cycle certification (completed consent →
+credentials land → active MOS grant) is blocked on two external dependencies: (1) a real
+human Z.AI/BigModel account must complete consent — no account exists in this environment and
+consent cannot be scripted; (2) the provider must implement workstream A (MOS product
+registration + grant enablement — live-verified absent above). The fixture is the acceptance
+driver for the moment both unblock: an attended run then walks the whole cycle (exit 0 only
+on a server-issued active MOS grant; anything else stays an honest blocked verdict). No mock,
+relabeling, or local grant fabrication was performed or will be (Issue #23 hard rules).
+
+### Fresh-install fixture — attended-readiness completion record (2026-11-15, second session — Issue #23 Task 5)
+
+**Task:** complete the fixture's final verification mile — one full cycle: fresh state →
+reset → live registration → completed consent → credentials land → coding plan grant active —
+and deliver deliverable (a)'s missing half (the identity layer the server keys grant
+issuance on, stated definitively; the three audit §7 candidates: deviceMid, account user_id,
+keyring cipher key).
+
+**Wire-fidelity gap found and fixed (the attended path would have failed before this):**
+`billing/balance` treats `X-Device-Mid` as a **required parameter** — a request without it
+is rejected as a parameter error (`packages/services/src/node.ts:3594` bug record;
+`packages/server/src/stdioDeviceMid.ts`). The fixture's grant leg previously sent no
+device id, so an attended run holding valid credentials would still have tripped leg 6.
+The fixture now generates a per-run device id in memory (mirroring
+`ensureTelemetryDeviceMid`'s UUID-generation semantics, never persisted — the three fresh
+surfaces stay un-landed for the whole cycle) and sends `X-Device-Mid` on `client/configs`,
+`billing/preview`, `billing/balance` and the product-catalog probe, exactly like the real
+client's `NodeApiClient` injection. Evidence records only its fingerprint (no device ids in
+artifacts, AGENTS.md §4).
+
+**Attended-mode usability fixed:** the driver previously printed the `authorize_url` only
+after the run ended — an attending human could never see the link in time. It now prints
+the URL immediately after live registration succeeds and logs a `still waiting … Ns of
+budget left` heartbeat every 30 s during the consent budget (recorded as `heartbeats` in the
+evidence's consent leg).
+
+**Live run (2026-11-15, this session, product `mos`, provider `zai`, 120 s consent budget,
+exit 3 by design):** fresh-state **fresh** · reset **clean** · live-registration **ok** (new
+flow issued by the real server, authorize URL on `chat.z.ai`, poll interval 2 s) · consent
+**auth_timeout** after the full budget with 3 heartbeats — no human completed authorization ·
+credentials **not-reached** (never fabricated) · grant **authentication-required** —
+`billing/preview` and `billing/balance` both HTTP 401 **with `X-Device-Mid` on the wire**
+(device id present as the required parameter, yet it authorizes nothing; independently
+reproduced by direct probes with and without the device header — both 401), while
+`client/configs` answers 200 · unknown product id (`unknown-xyz`) still served HTTP 200 —
+fail-closed product validation not shipped (workstream A absent).
+
+**Consent-wall browser observation (2026-11-15, headless browser against the live
+authorize_url):** the consent surface redirects to the `chat.z.ai` account login
+(Google / Email / GitHub / phone). Its "Skip for now" path proceeds to the anonymous home
+page and issues **no** OAuth code — there is no consent without an account login. The
+`authorize_url` itself carries only OAuth protocol parameters (`client_id`, `redirect_uri`,
+`state`, `response_type`) — no device id, no product id, no keyring material: consent can
+be completed from any browser on any machine, and what lands is the logged-in account.
+This is direct wire evidence for the identity statement below.
+
+**Installation identity — definitive statement (deliverable (a), re-affirmed and now
+wire-corroborated from the consent surface as well):** the server keys grant issuance on the
+**authenticated account `user_id`** (grant identity `authenticated_user_id +
+registered_product_id + plan_id`, backend handoff §3). `deviceMid` is device telemetry and
+a required billing parameter that authorizes nothing (live 401 with it present);
+the keyring cipher key never appears on any request path. Full statement and per-candidate
+sources: `scripts/fresh-install-fixture/README.md` §Installation identity.
+
+**Gates on this tree (2026-11-15):** `node --test
+scripts/fresh-install-fixture/fresh-install-fixture.test.mjs` **21/21 PASS** (was 18;
+added: endpoint-header deviceMid mapping, wire-fidelity assertions on the full-cycle happy
+path incl. `X-Device-Mid` on all three grant endpoints and the catalog probe, immediate
+authorize-URL log ordering, heartbeat count/`heartbeats` evidence, per-run device-id
+regeneration across cycles, device-id sanitization in evidence).
+
+**Status per AGENTS.md §7: still blocked — now with the fixture fully attended-ready.** The
+two external dependencies are unchanged: (1) no real human Z.AI/BigModel account exists in
+this environment (login-wall observation above); (2) provider workstream A has not shipped
+(unknown product ids still served 200). The offline unit suite certifies the fixture's
+full-cycle logic (contract-tested: ready → credentials land → active grant → exit 0); the
+live wire is certified up to the designed auth_timeout mile plus the fail-closed 401 grant
+surface. When an account holder runs the attended cycle on an acceptance machine after
+workstream A ships, exit 0 testifies a server-issued active grant — and only that. No
+mock, relabeling, or grant fabrication was performed or will be (Issue #23 hard rules).
