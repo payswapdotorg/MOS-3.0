@@ -80,6 +80,14 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     titleId: "settings.modelProviderTitle",
     groupId: "basics",
   },
+  // Meta Muse Code（本地 CLI 执行后端，Issue #24 / ACR-0002）：紧跟「模型供应商」，
+  // 是与 provider 注册表并行的任务执行后端选择，消耗用户已在本机 muse CLI 完成的订阅登录。
+  {
+    id: "museCode",
+    icon: Terminal,
+    titleId: "settings.museCode.title",
+    groupId: "basics",
+  },
   // 个性化（用户自定义指令）是 Agent 能力组的第一项：编辑 ~/.zcode/AGENTS.md，
   // 对所有会话生效（spec：docs/ui/settings-personalization.md）。
   {
@@ -275,6 +283,8 @@ const DESKTOP_ONLY_SETTINGS_SECTIONS = new Set<SettingsSectionId>([
   "remoteDevices",
   "dataSync",
   "shares",
+  // Muse Code 执行后端只在本机 Host 上运行 CLI 子进程；Web / 手机远控不显示。
+  "museCode",
 ]);
 
 export function isSettingsSectionAvailable(

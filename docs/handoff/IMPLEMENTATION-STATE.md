@@ -1054,3 +1054,181 @@ live wire is certified up to the designed auth_timeout mile plus the fail-closed
 surface. When an account holder runs the attended cycle on an acceptance machine after
 workstream A ships, exit 0 testifies a server-issued active grant — and only that. No
 mock, relabeling, or grant fabrication was performed or will be (Issue #23 hard rules).
+## Muse Code delegated backend record (branch tl/muse-code-delegated-backend, 2026-11-14)
+
+Issue #24 (P0) — integrate the user's existing, signed-in Muse Code CLI subscription into
+MOS New Task without OpenRouter and without a separately billed Meta Model API key.
+
+Delivered (TL-owned vertical slice, ACR-0002 `spec/decisions/ACR-0002-delegated-muse-execution-backend.md`;
+work package `spec/backlog/muse-code-backend-work-packages.yaml`):
+
+- **Decision (ACR-0002)**: Muse Code is a **delegated execution backend** (`executionBackend:
+  "muse-code"`, additive v4 envelope field, default absent = unchanged model path), NOT a
+  provider. It never enters the Provider Registry (HTTP-only fail-closed schema preserved;
+  upstream's removal of third-party CLI providers respected). Delegated turns reuse the
+  ordinary turn lifecycle (TurnStarted/TurnComplete, session persistence, cold resume,
+  foreground execution + Stop, SessionStart-hook mission sidecar) and never run MOS's own
+  tool loop on top of the CLI's (tool activity is read-only telemetry projected as standard
+  session events).
+- **Shared**: `packages/shared/src/muse-code/muse-code-backend.ts` (status/settings schemas,
+  backend id), envelope `executionBackend` field, runtime capability
+  `executionBackendMuseCode`, `ServiceChannels.MuseCode`, settings-file path conventions in
+  `shared/node`.
+- **Core (zcode-cli)**: `contracts/src/interfaces/muse-execution.port.ts` (MuseExecutionPort
+  + normalized stream events); `core/src/runtime/methods/delegated-muse-turn.ts` (event
+  projection via ModelStreaming + ToolCallStarted/Result, assistant message/text-part
+  persistence with honest attribution `muse-code`/`muse-exec`, cancellation/timeout/exit
+  settlement); `executeTurnCommand` branch with shared completion block (compact/rewind-style
+  early path; title generation + Memory extraction skipped; usage from events).
+- **Bootstrap (zcode-cli)**: `src/muse-code/muse-exec-process.ts` (child process port: cwd =
+  session workspace, explicit argv, no shell, POSIX process-group / Windows taskkill /T tree
+  termination, 30-min default timeout, stderr + line caps, prompt via documented
+  `--prompt-file`), `muse-exec-jsonl.ts` (versioned tolerant JSONL mapping; unknown lines
+  counted, never guessed), runtime capability advertising, create-app port injection, and
+  fail-closed v4 admission (busy/queue/guide/choice delegated inputs are rejected before ACK
+  — no silent rerouting through queue promotion which drops the backend field).
+- **Host services**: `IMuseCodeService` (channel `muse-code`): version probe, optional
+  user-configured documented status-probe (JSON/text tolerant parse; unknown stays unknown),
+  private settings persistence, login-command launch (guided, never guessed), capability
+  query via zcodeAgentService; registered in `node.ts`, accessor + client wired.
+- **UI**: desktop-only Settings section "Meta Muse Code (local CLI)" (status badges, Recheck,
+  Connect, backend toggle, advanced command slices, honest billing copy), Composer indicator
+  that syncs the session capability gate, envelope stamping double-gated (user intent +
+  per-session CLI capability) in `commandFactory`; en-US + zh-CN strings.
+- Tests (mock, contract-only): bootstrap JSONL 6/6, bootstrap process 10/10 (mock CLI
+  fixture), core delegated turn 5/5, services 6/6, ui stamping 3/3 — registered in
+  `scripts/engineering-test-files.json` where applicable. Regression: core turn/admission
+  63/63, bootstrap v4 commands 81/81, architecture governance 61/61; tsc clean
+  (shared/services/client/ui; core+bootstrap builds). Architecture check: zero new
+  violations vs `main` (10 pre-existing `missing-module-artifact` violations identical on
+  `main`). Evidence: `spec/integrations/provider-evidence/muse-code-connector-evidence.md`.
+
+Status (AGENTS.md §7): backend integration **contract-tested** (mock CLI + the installed
+official `@muse-code/sdk@1.4.20` typings verified member-by-member; real CLI binary not
+present in this environment). Real CLI execution is **planned**: Issue #24 §5 on-machine
+verification (Windows, real signed-in CLI; evidence file §4 rev. 2 checklist covers the new
+MSP/session-continuity/approval/workspace/env surfaces) must run and append sanitized
+evidence before this record or the evidence file may claim `integrated`/`verified`. The
+JSONL mapping remains a versioned candidate (v2) for the exec fallback surface; the primary
+MSP surface does not depend on it. Issue #24 stays open until then.
+
+### PR #27 review revision (R1–R7), branch tl/muse-code-delegated-backend (2026-11-14)
+
+External review verdict on rev. 1: "Do not merge yet." All seven ordered revision
+requirements addressed (ACR-0002 §Revision 2; work package MC-B; evidence record rev. 2):
+
+- **R1 dual official surfaces**: new MSP port (`muse serve` + `@muse-code/sdk`, exact-pinned
+  `1.4.20` per the lockstep rule, auto-selected when the installed CLI ≥ the pinned version
+  via a cached `muse --version` probe — **corrected in rev. 3 to an exact-equality gate**;
+  SDK is developer preview — recorded admission) +
+  `muse exec --json` fallback; shared `selectMuseExecutionSurface` is the single decision
+  rule (explicit setting override for on-machine diagnosis); per-turn `result.surface`
+  attribution. New `muse-execution-port.ts` assembly entry, `muse-exec-support.ts`
+  (executable resolution / workspace containment / version probe), `muse-session-protocol.ts`
+  (SDK adapter: per-turn host lifecycle, fail-closed approval deny handler, resumeSession,
+  workspaceRoot(s), token + subscription usage), `muse-session-store.ts` (durable MOS↔Muse
+  session map, atomic + tolerant + size-capped).
+- **R2 session continuity**: durable mapping file `~/.zcode/v2/muse-code-sessions.json`;
+  MSP resumes via `resumeSession`, exec resumes via documented `--session-id`; envelope-level
+  candidate session-id capture (never invented; missing mapping = fresh session).
+- **R3 approval posture**: setting `approvalPosture` (`fail-closed` default / opt-in
+  `unattended-sandboxed`); fail-closed denies by selecting only server-offered non-approving
+  choices (no such choice → handler throws, approval stays open, timeout bounds the turn);
+  `unattended-sandboxed` = documented `--disable-approval` (exec) / `approvalMode
+  "allowAll"` (MSP) with sandbox always on; approval/question events projected as visible
+  activity rows with reconciled counts; `--yolo` never constructed.
+- **R4 workspace boundary**: `MuseExecRequest.workspaceRoot` + pre-spawn containment
+  validation (`workspaceViolation` fail-closed); MSP passes official
+  `workspaceRoot`/`workspaceRoots`; the rev. 2 record claimed no `--workspace` flag exists —
+  **factually wrong, corrected in rev. 3** (Meta documents `--workspace <path>` as a common
+  flag; the exec surface now passes it with the policy root).
+- **R5 env isolation**: `shared/node buildMuseChildEnv` allowlist applied to every Muse
+  child spawn path (exec, MSP host, version probe, status probes, login); host integration
+  credentials excluded by construction, asserted by fixture audit tests.
+- **R6 honest usage**: delegated turns record `cost: null` (unreported, never 0); protocol
+  schema `cost: number | null`; token usage mapped when the port reports it;
+  `museExecution` message metadata (surface, usageReporting, session id, resume flag,
+  approval/question counts, subscription window snapshot); Composer locks model selection
+  with an explicit reason while the backend is active.
+- **R7 verification on the rebased head**: rebased onto `main@703fd7bd` (RC3 publication
+  entry preserved). Full local chain on the revision head: `pnpm --filter
+  @zcode/bootstrap... build` + `tsc -b` (shared/services/client/ui) green against the
+  installed real SDK; muse contract suites green (bootstrap JSONL 8/8, process 16/16,
+  MSP 13/13 new, core delegated-turn 7/7, services 7/7, ui stamping 3/3); regressions green
+  (core turn/admission 60/60, full bootstrap v4 725/725 in 29 files, architecture
+  governance 61/61); **full engineering suite executed chunked (237 files / 1,894 tests:
+  1,885 passed, 8 intentional skips, 1 failed = the `miseToolchainEnv` environment baseline
+  documented in mos-ci.yml header note 4 — unrelated to this PR)**; lint, stale-doc-phrase,
+  SQLite schema contract, release tests green; architecture check: zero new violations vs
+  `main` (10 pre-existing, identical sets verified by stash-and-rerun). GitHub CI + review
+  on the pushed head remain the merge-blocking authority. Merge stays blocked until both.
+- **Roadmap guardrail (review item 7)**: Muse Code remains an **optional host capability** —
+  opt-in + capability-gated, default paths unchanged; no MOS market-intelligence feature may
+  depend on the CLI's presence, version, or roadmap; delegated execution stays scoped to New
+  Task sessions (no generic-coding-agent trajectory; locked decisions #4/#5 stand); any
+  future extension (market-intelligence dependency, scope beyond New Task, a second
+  delegated backend) requires a new ACR — this record is not precedent (ACR-0002 §Revision 2
+  roadmap guardrail).
+
+### PR #27 external verification round 2 corrections (rev. 3), branch tl/muse-code-delegated-backend (2026-11-15)
+
+External verification on the rev. 2 head (`843ac58e`): CI green (run #42), PR #28 closed as
+superseded, fresh-clone muse tests 54/54, SDK 1.4.20 typings re-checked — verdict "would not
+merge yet" with three code issues and one product gap. All three corrections delivered on
+PR #27 (ACR-0002 §Revision 3; work package MC-C; evidence record rev. 3):
+
+- **C1 documented `--workspace` flag**: exec surface now passes `--workspace <MOS
+  workspaceRoot>` (Meta's current configuration docs list it as a common flag; the rev. 2
+  "flag does not exist" claim corrected in evidence §1). Contract tests: the policy root
+  (not cwd) is passed on every run; the mock CLI enforces the documented call shape.
+- **C2 exact lockstep gate**: `selectMuseExecutionSurface` auto mode now requires exact
+  equality with `MUSE_CODE_SDK_PINNED_VERSION` (`museCliVersionMatchesSdkPin`, bare x.y.z —
+  prerelease/build suffixes never match); newer/older/unknown/probe-failure all fall back to
+  `muse exec`. The services preview shares the same rule (new expectations for
+  1.4.21/1.5.0/2.0.1/1.4.19/1.4.20-beta.1).
+- **C3 resume workspace-root enforcement**: `lookupMuseSessionMapping` +
+  `isSameMuseWorkspaceRoot` (lexical normalization + realpath alias resolution) gate both
+  resume paths; a different physical root refuses the resume (fresh session in the current
+  root, mapping self-heals, `sessionWorkspaceMismatch: true` in result/metadata/log);
+  containment gained the same physical re-check (symlink/junction lexically-inside but
+  physically-outside rejects before spawn). Symlink tests run for real on POSIX; Windows
+  junction semantics covered via the injectable realpath seam (on-machine §4 step 8).
+- **MC-D scoped (not implemented here)**: explicit Muse model / Contributor-mode selection
+  for New Task + Studio, gated on establishing the officially supported MSP-equivalent
+  mechanism (never assume `muse exec` flags configure an MSP session).
+- Verification on the corrected head: muse suites green — bootstrap JSONL 8/8, process
+  20/20, MSP 16/16, support 11/11 (new), core delegated-turn 8/8, services 7/7, ui stamping
+  3/3 (**73/73**); `pnpm --filter @zcode/bootstrap...` build clean against the installed real
+  SDK. Full repo gate chain (`verify:pre-push`) on the corrected head recorded in evidence
+  §2b. GitHub CI + external re-review of the corrected head remain merge-blocking; Issue #24
+  stays open pending the §4 on-machine Windows acceptance.
+
+### PR #27 safety corrections (A/B/C), branch tl/muse-code-delegated-backend (2026-11-15, TL correction round)
+
+External verification round 3 (TL correction round) returned three safety findings; all
+delivered with regression tests (ACR-0002 §Revision 4; evidence rev. 4 §1 + §2c):
+
+- **A (symlink retargeting)**: the durable session mapping now persists a
+  `canonicalWorkspaceRoot` (realpath at mapping time) and every resume re-resolves the
+  current request root physically against it (`canResumeMuseSessionMapping`) — the lexical
+  same-string shortcut is gone; a retargeted symlink (identical string, different physical
+  root) refuses the old Muse session on **both** surfaces (fresh session inside the current
+  root, `sessionWorkspaceMismatch: true`); legacy mappings without a canonical root are
+  refused. Regression tests create a mapping through a symlink, retarget it, and verify the
+  refusal on both the MSP and exec surfaces.
+- **B (realpath failure)**: `assertMuseWorkspaceContainment` no longer passes on the lexical
+  verdict when physical resolution fails — ENOENT/EACCES reject **before spawn** with the
+  new stable issue code `workspaceUnresolvable` (no narrow exception is justified: both
+  official surfaces require an existing, resolvable root). Contract tests cover both arms
+  (real-filesystem ENOENT; injected EACCES, deterministic under root-run CI).
+- **C (MSP startup timeout)**: `startupTimeoutGate` replaces the bare `Promise.race` — a
+  client resolving **after** the startup timeout is closed (no leaked `muse serve` tree; the
+  SDK's spawn options carry no `signal` member, so the gate is the cancellation), and the
+  session-open phase (`startSession`/`resumeSession`) is gated too; `startupTimeoutMs` is
+  test-injectable. Fake-SDK tests: late-resolving client closed + visible failure; hanging
+  session open fails visibly with the client closed and no turn submitted.
+- Verification on the corrected head: muse suites green — bootstrap JSONL 8/8, process
+  24/24, MSP 20/20, support 14/14 (**66/66**), core delegated-turn 8/8; evidence §2c.
+  GitHub CI + external re-review of the corrected head remain merge-blocking; Issue #24
+  stays open pending the §4 on-machine Windows acceptance (steps 4/5/8 extended with the
+  retarget / no-orphaned-host / unresolvable-boundary checks).

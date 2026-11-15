@@ -171,6 +171,12 @@ export const zcodeRuntimeCapabilitiesSchema = z.object({
    * 旧 services 拒绝新字段，所以 services 只在看到这一位时才要这个字段。
    */
   pluginExtensionSummary: z.boolean().optional(),
+  /**
+   * CLI 支持信封级 executionBackend: "muse-code"（delegated 执行后端，Issue #24 / ACR-0002）。
+   * 旧 CLI 会静默剥掉该信封字段并退回普通模型执行，Host/客户端必须看到这一位才允许
+   * 在 createSession.firstInput / sendText 上携带后端选择。
+   */
+  executionBackendMuseCode: z.boolean().optional(),
 });
 export const zcodeRuntimeCapabilitiesParamsSchema = z
   .object({

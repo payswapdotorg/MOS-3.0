@@ -255,7 +255,7 @@ export const zcodeAssistantMessageInfoSchema = z
         root: nonEmptyString,
       })
       .strict(),
-    cost: z.number().nonnegative(),
+    cost: z.number().nonnegative().nullable(),
     tokens: zcodeTokenUsageSchema,
     finish: z.string().optional(),
     error: jsonObjectSchema.optional(),
@@ -424,7 +424,7 @@ export const zcodeMessagePartSchema = z.discriminatedUnion("type", [
       type: z.literal("step-finish"),
       reason: z.string(),
       snapshot: z.string().optional(),
-      cost: z.number().nonnegative(),
+      cost: z.number().nonnegative().nullable(),
       tokens: zcodeTokenUsageSchema,
     })
     .strict(),

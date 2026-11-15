@@ -84,6 +84,7 @@ import type {
   TopicResourcePort,
   PluginDiscoveryPort,
   FileSystemPort,
+  MuseExecutionPort,
   HttpClientPort,
   ImageProcessorPort,
   PdfDocumentPort,
@@ -381,6 +382,11 @@ export interface AgentRuntimeDeps {
   workspaceHookAdmission?: WorkspaceHookRuntimeAdmissionPort;
   workspaceHookSnapshot?: WorkspaceHookBundleSnapshot;
   executionPort?: ExecutionPort;
+  /**
+   * delegated Muse Code 执行端口（Issue #24 / ACR-0002）：在场时 runtime 才接受
+   * executionBackend: "muse-code" 的轮次；进程生命周期由 bootstrap 实现拥有。
+   */
+  museExecutionPort?: MuseExecutionPort;
   /** browser-use 控制端口；透传到 ToolExecutionContext.browserControlPort 供 node_repl 使用。 */
   browserControlPort?: BrowserControlPort;
   fileSystemPort?: FileSystemPort;
@@ -560,6 +566,12 @@ export interface ExecuteTurnOptionsBase {
   targetId?: string;
   /** 仅当前 turn 对 provider 隐藏的工具；不修改 session runtime 的持久工具面。 */
   toolDisallowlist?: readonly string[];
+  /**
+   * delegated 执行后端（Issue #24 / ACR-0002）："muse-code" = 本轮交给本地 Muse Code
+   * CLI 执行（delegated turn，不创建 provider Model、不运行本进程工具环）；
+   * 缺省 = 普通模型轮。值域受 shared executionBackendSchema 约束（fail-closed）。
+   */
+  executionBackend?: "muse-code";
   traceContext?: TraceContext;
   /** 当前 Submission 的 Selection 只用于本次执行，并可绑定逐请求依赖。 */
   modelExecution?: ModelExecutionContext;

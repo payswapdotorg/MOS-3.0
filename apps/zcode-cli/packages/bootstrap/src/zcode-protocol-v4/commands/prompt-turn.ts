@@ -132,6 +132,8 @@ export interface StartPromptTurnParamsBase {
   requireIdle?: boolean;
   /** Bot 入站 turn 的稳定回推地址；仅在本 turn 内暴露给 CronCreate。 */
   botDeliveryTarget?: ZCodeAutomationBotDeliveryTarget;
+  /** delegated 执行后端（Issue #24 / ACR-0002）：sendText / createSession.firstInput 透传。 */
+  executionBackend?: "muse-code";
 }
 
 export type StartPromptTurnParams = StartPromptTurnParamsBase & TurnBackgroundAttribution;
@@ -172,6 +174,11 @@ export async function preflightPromptTurn(
   record: V4SessionRecordView,
   params: StartPromptTurnParams,
 ): Promise<void> {
+  // 委托轮不需要 Registry 模型，也不受冷恢复模型告警门控；
+  // busy/queue 准入已在 sendText / createSession handler 层拒绝（delegated 轮不可 steer/queue）。
+  if (params.executionBackend === "muse-code") {
+    return;
+  }
   // 排队输入的 execution 只在提升边界应用，准入阶段一律按普通 Selection 预检，供卡失效后提升。
   const usesExecutionSelection =
     params.modelExecution?.selectionScope === "execution" && !params.requireQueue;
@@ -281,6 +288,7 @@ async function startPromptTurnAfterPreflight(
         }),
         intent: params.intent,
         ...(params.modelExecution ? { modelExecution: params.modelExecution } : {}),
+        ...(params.executionBackend ? { executionBackend: params.executionBackend } : {}),
         ...(params.sharedContextRefs ? { sharedContextRefs: params.sharedContextRefs } : {}),
         ...(turnToolDisallowlist ? { toolDisallowlist: turnToolDisallowlist } : {}),
         ...(params.requireQueue ? { requireQueue: true } : {}),

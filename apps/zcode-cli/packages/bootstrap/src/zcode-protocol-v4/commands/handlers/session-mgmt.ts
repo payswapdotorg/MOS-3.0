@@ -123,6 +123,11 @@ async function createSession(
         content: payload.firstInput.text,
         inputId: envelope.commandId,
         intent,
+        // 委托执行后端（Issue #24 / ACR-0002）：新 record 恒为空闲，直接透传；
+        // busy/queue 门控在 sendText（delegated 轮不可 steer/queue）。
+        ...(envelope.executionBackend === "muse-code"
+          ? { executionBackend: "muse-code" as const }
+          : {}),
         ...(attachments ? { attachments } : {}),
       });
       firstInput = {
