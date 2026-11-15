@@ -71,7 +71,7 @@ Issue #24 / ACR-0002. Evidence vocabulary follows AGENTS.md §7 strictly.
 Mock-CLI contract suites (mocks are labeled contract-only evidence per AGENTS.md §4/§7). Rev. 2
 counts (all PASS on the revision head, rebased onto `main@703fd7bd`):
 
-- `apps/zcode-cli/packages/bootstrap/tests/muse-exec-jsonl.test.ts` — 6/6 PASS: tolerant JSONL
+- `apps/zcode-cli/packages/bootstrap/tests/muse-exec-jsonl.test.ts` — 8/8 PASS: tolerant JSONL
   mapping v2 (text delta/end, tool activity, error, approval-required and user-question
   candidates, envelope-level session-id capture from any line including unknown-typed ones),
   unknown/invalid lines counted (never guessed), summary truncation caps, versioned mapping
@@ -89,7 +89,7 @@ counts (all PASS on the revision head, rebased onto `main@703fd7bd`):
   surfaced; in-stream error events surfaced; request abort terminates the process tree and
   reports `cancelled`; overall timeout enforced; pre-aborted requests never spawn; startup
   failure rejects fail-closed; tolerant settings read.
-- `apps/zcode-cli/packages/bootstrap/tests/muse-session-protocol.test.ts` — 15/15 PASS (new,
+- `apps/zcode-cli/packages/bootstrap/tests/muse-session-protocol.test.ts` — 13/13 PASS (new,
   rev. 2; fake client/session injected through `MuseSessionProtocolDeps`): **fail-closed deny
   handler picks only server-offered non-approving choices and never approves; no
   non-approving choice offered → handler throws, approval stays open, turn bounded by
@@ -135,6 +135,18 @@ PASS (2303 files); SQLite schema contract check PASS. Full engineering suite (`p
 test:engineering`, 237 specs — the CI affected-selection for this diff selects the entire
 suite): result recorded below in §2a. GitHub CI on the pushed head remains the merge-blocking
 authority (local runs are not CI evidence).
+
+Fresh-environment reproduction (2026-11-15 UTC, clean clone at the guardrail head `1f617b73`,
+fresh `pnpm install` from the lockfile): the six muse suites re-run green — bootstrap JSONL
+8/8, process 16/16, MSP 13/13, core delegated-turn 7/7, services 7/7, ui stamping 3/3
+(**54/54 total**, matching the recorded total; the rev. 2 record's per-file split had
+transposed the JSONL/MSP counts as 6/15 — corrected above, totals unchanged); `pnpm --filter
+@zcode/bootstrap... build` clean against the freshly installed real `@muse-code/sdk@1.4.20`,
+and the adapter's SDK surface re-verified member-by-member against the shipped typings
+(`MuseClient.spawn`/`MuseClientSpawnOptions.env`, `StartSessionOptions`
+`workspaceRoot`/`workspaceRoots` + `approvalMode: "allowAll"`, `ApprovalDecision`
+`denied`/`deniedPolicyAmendment`/`abort`, `Session.events`/`sendUserTurn`/`onApproval`, turn
+`completed`/`items`/`deltas`/`interrupt`, `readUsage`).
 
 ### 2a. Full engineering suite (rev. 2 head, 2026-11-14 UTC, chunked local run)
 

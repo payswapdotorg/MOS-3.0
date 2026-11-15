@@ -1150,8 +1150,8 @@ requirements addressed (ACR-0002 §Revision 2; work package MC-B; evidence recor
 - **R7 verification on the rebased head**: rebased onto `main@703fd7bd` (RC3 publication
   entry preserved). Full local chain on the revision head: `pnpm --filter
   @zcode/bootstrap... build` + `tsc -b` (shared/services/client/ui) green against the
-  installed real SDK; muse contract suites green (bootstrap JSONL 6/6, process 16/16,
-  MSP 15/15 new, core delegated-turn 7/7, services 7/7, ui stamping 3/3); regressions green
+  installed real SDK; muse contract suites green (bootstrap JSONL 8/8, process 16/16,
+  MSP 13/13 new, core delegated-turn 7/7, services 7/7, ui stamping 3/3); regressions green
   (core turn/admission 60/60, full bootstrap v4 725/725 in 29 files, architecture
   governance 61/61); **full engineering suite executed chunked (237 files / 1,894 tests:
   1,885 passed, 8 intentional skips, 1 failed = the `miseToolchainEnv` environment baseline
