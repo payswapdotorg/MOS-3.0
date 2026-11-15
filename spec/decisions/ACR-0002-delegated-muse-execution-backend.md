@@ -322,5 +322,5 @@ mechanism.
 
 - TL: payswapdotorg（TL-authored vertical slice; rev. 2–rev. 5 revisions TL-authored after external review/verification）
 - Required domain/security reviewers: 待评审（rev. 4/rev. 5 修正后需在推送 head 上重新评审）
-- Commit / PR that updates architecture lock and module registry: PR #27（policy admission：`muse-code-delegated-backend-unmanaged-edit`）；MC-D 随附 PR #30（stacked on #27，policy admission：`muse-code-selection-routing-unmanaged-edit`）
+- Commit / PR that updates architecture lock and module registry: PR #27（policy admission：`muse-code-delegated-backend-unmanaged-edit`）；MC-D 随附 PR #30（stacked on #27；policy admission：`muse-code-selection-routing-unmanaged-edit`）
 

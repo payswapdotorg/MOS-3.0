@@ -2231,6 +2231,11 @@ exceptions:
       - apps/zcode-cli/packages/bootstrap/src/muse-code/muse-session-store.ts
       - apps/zcode-cli/packages/bootstrap/tests/muse-session-protocol.test.ts
     reason: PR #27 评审修订（R1–R7；ACR-0002 Revision 2，工作包 MC-B）在已准入的 muse-code 委托执行端口目录内新增四个编排文件：muse-execution-port.ts（双执行面装配入口：显式设置覆盖 > 版本门控，回退 exec 面）、muse-exec-support.ts（可执行入口解析 / workspace 收敛校验 / 版本探针，exec 与 MSP 两面共用）、muse-session-protocol.ts（官方 `muse serve` + @muse-code/sdk 适配器：fail-closed 审批拒绝、resumeSession 续接、workspaceRoot 边界、token 与订阅用量）、muse-session-store.ts（MOS↔muse 会话持久映射），以及对应契约测试。文件只编排既有边界（单一工具执行环、凭据红线、无新 provider/权限权威）；接管整个 zcode-cli 目录不在本次范围内。
+  - id: muse-code-selection-routing-unmanaged-edit
+    rule: unmanaged-new-file
+    paths:
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/muse-delegated-routing.ts
+    reason: MC-D（ACR-0002 Revision 4，工作包 MC-D；评审 pivot 2026-11-15）在已准入的 zcode-protocol-v4 v4 命令层内新增一个纯决策文件：muse-delegated-routing.ts（按会话模型选型路由委托 Muse Code 后端——shared isMuseDelegatedModelSelection 家族判定 + 与执行端口/Host 服务同一设置文件的 useAsTaskBackend 门控；sendText / createSession.firstInput 两个 handler 消费，信封 executionBackend 显式字段语义不变）。文件只编排既有边界（单一决策函数、无进程/凭据/provider 接触；接管整个 zcode-cli 目录不在本次范围内）。
   - id: connection-log-secret-token-unmanaged-edit
     rule: unmanaged-new-file
     paths: [packages/shared/src/source-server/connectionLog.ts]
