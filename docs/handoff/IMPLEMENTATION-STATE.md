@@ -1283,3 +1283,11 @@ ACR-0002 §Revision 4; evidence record rev. 4; work package MC-D):
   recorded in evidence §2b (rev. 4 paragraph). GitHub CI + external re-review remain
   merge-blocking; Issue #24 stays open pending the §4 on-machine Windows acceptance
   (checklist now 13 steps — step 13 covers the selection-driven routing).
+
+Rebase (2026-11-15, post-MC-D): `main` moved under the stack (PR #29 fresh-install fixture
+merge, `703fd7bd` → `a81c9414`; shared-file overlap = this IMPLEMENTATION-STATE append only,
+both records preserved). `tl/muse-code-delegated-backend` rebased → `63adcf74`;
+`tl/muse-code-mc-d-selection` rebased on top → `26c29a4d`. Full `verify:pre-push` chain
+re-run green on each rebased head (architecture 0 violations; release 72/72; affected
+selector chose the entire engineering suite and deferred execution to CI per its design);
+muse suites re-run green on the rebased MC-D head (bootstrap 60, core 8, services 10, ui 6).

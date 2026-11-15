@@ -257,6 +257,17 @@ build clean against the installed real `@muse-code/sdk@1.4.20` (the exact-match 
 not change the SDK pin; it only changes when the MSP surface is auto-selected). The full
 repo gate chain on the corrected head is recorded below in §2b.
 
+Rebase note (2026-11-15, post-rev. 4): `main` moved under the stack (`703fd7bd` → `a81c9414`
+via the PR #29 fresh-install-fixture merge; the only overlap with this work is the shared
+`docs/handoff/IMPLEMENTATION-STATE.md` append — both records preserved). Both branches were
+rebased (`tl/muse-code-delegated-backend` → `63adcf74`, `tl/muse-code-mc-d-selection` →
+`26c29a4d`) and the full `verify:pre-push` chain was re-run green on each rebased head
+(architecture `--changed` 0 violations; release 72/72 — PR #29's fixture tests included; the
+affected selector chose the entire 237-file engineering suite and deferred execution to CI
+per its design), plus the muse suites re-run green on the rebased MC-D head (bootstrap
+muse 60/60, core delegated-turn 8/8, services 10/10, ui stamping 6/6). GitHub CI on the
+rebased pushed heads remains the merge-blocking authority.
+
 Rev. 4 verification run (2026-11-15 UTC, MC-D head): the muse suites re-run green —
 bootstrap JSONL 8/8, process 20/20, MSP 16/16, support 11/11, **delegated routing 5/5
 (new: family + settings gate + shared settings-file read + fail-closed default)**, core
