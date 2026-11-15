@@ -7,16 +7,21 @@ Issue #24 / ACR-0002. Evidence vocabulary follows AGENTS.md §7 strictly.
 - Backend integration (delegated turn executor + dual official execution surfaces + Host
   service + settings UI): **contract-tested** (rev. 2: mock-CLI contract suites + the
   installed official `@muse-code/sdk@1.4.20` package's exported/type surface verified
-  against the adapter's usage, on-machine in this repository; a real signed-in `muse` CLI
-  binary is still not present in this environment).
+  against the adapter's usage, on-machine in this repository; rev. 3: verification-round
+  corrections — documented `--workspace` flag on the exec surface, exact lockstep version
+  gate, workspace-root enforcement on session resume — all with regression tests; a real
+  signed-in `muse` CLI binary is still not present in this environment).
 - Real provider execution (real Muse Code CLI task on the user's Windows machine): **planned**
   — checklist in §4 must be executed on the target machine and its evidence appended here
   before any status may be raised to `integrated` or `verified`.
 - OpenRouter / Meta Model API routes: unchanged; the free `muse-spark-1.2-contributor-free`
   Zen model entry in the builtin provider catalog is not modified by this work.
 - PR #27 external review rev. 2 status: all seven ordered revision requirements (R1–R7)
-  addressed; see ACR-0002 §Revision 2. Merge remains blocked on CI + review of the pushed
-  head (local runs are not CI evidence).
+  addressed; see ACR-0002 §Revision 2. **Rev. 3 (external verification round 2, 2026-11-15):**
+  three code corrections delivered (documented `--workspace` flag, exact lockstep gate,
+  resume workspace-root enforcement — see ACR-0002 §Revision 3) plus the scoped follow-up
+  work package MC-D for explicit model/Contributor selection. Merge remains blocked on CI +
+  review of the corrected head (local runs are not CI evidence).
 
 ## 1. Provider identity and official documentation
 
@@ -30,12 +35,22 @@ Issue #24 / ACR-0002. Evidence vocabulary follows AGENTS.md §7 strictly.
   - **Muse Session Protocol**: `muse serve` + the official TypeScript SDK `@muse-code/sdk`
     (npm registry, dist-tags `latest: 1.4.20`; **exact-pinned `1.4.20`** in
     `apps/zcode-cli/packages/bootstrap/package.json` — the official README states the SDK
-    versions in lockstep with Muse Code, so a range pin is prohibited). Auto-selected when
-    the installed CLI ≥ the pinned pairing. Meta labels this SDK **developer preview** —
-    recorded as a known admission; the exec surface remains the always-available fallback.
-  - `muse exec --json` with `--prompt-file` (prompt passed via temp file), optional
-    `--max-model-steps`, and `--session-id` (documented headless session continuation) —
-    executed as a child process of the CLI agent server, cwd = session working directory.
+    versions in lockstep with Muse Code, so a range pin is prohibited). Auto-selected **only
+    when the installed CLI version exactly matches the pinned pairing** (rev. 3: the
+    lockstep rule is X.Y.Z↔X.Y.Z, not ≥ — any deviation, newer or older, falls back to the
+    exec surface; no forward-compatibility is assumed absent an official compatibility
+    matrix). Meta labels this SDK **developer preview** — recorded as a known admission; the
+    exec surface remains the always-available fallback.
+  - `muse exec --json` with `--prompt-file` (prompt passed via temp file), the documented
+    `--workspace <path>` flag (rev. 3 correction: Meta's current configuration documentation
+    lists `--workspace <path>` as a common flag for interactive and headless execution — the
+    earlier claim that the flag does not exist was wrong and is corrected here; MOS passes
+    the MOS workspace root so the CLI-side boundary is pinned to the same policy root as the
+    MOS-side lexical+physical containment check), optional `--max-model-steps`, and
+    `--session-id` (documented headless session continuation) — executed as a child process
+    of the CLI agent server, cwd = session working directory. The same documentation also
+    lists `--model` and `--contributor-mode on|off` — scoped as follow-up work package MC-D,
+    deliberately not consumed by this PR.
   - `--disable-approval` (documented unattended-approval flag; sandbox stays on) — only for
     the opt-in `unattended-sandboxed` posture.
 - Official SDK surface verification (2026-11-14 UTC, `@muse-code/sdk@1.4.20` installed from
@@ -52,11 +67,12 @@ Issue #24 / ACR-0002. Evidence vocabulary follows AGENTS.md §7 strictly.
   `ApprovalChoice.decision` (the `denied`/`deniedPolicyAmendment`/`abort` non-approving
   decisions the fail-closed handler selects). The SDK's own documented default posture is
   deny — the fail-closed posture preserves it.
-- Explicitly NOT used (prohibited by Issue #24 / ACR-0002): undocumented CLI flags (the
-  `--workspace` flag was checked against Meta's Muse Code docs and does **not** exist —
-  workspace policy is expressed via MSP `workspaceRoot(s)` and Muse's own sandbox, never an
-  invented argv), hidden OAuth/browser-session token extraction, undocumented credential
-  databases, `--yolo` / sandbox disable, OpenRouter, separately billed Meta Model API keys.
+- Explicitly NOT used (prohibited by Issue #24 / ACR-0002): undocumented CLI flags
+  (workspace policy is expressed via the documented `--workspace` flag on the exec surface
+  plus MOS-side lexical+physical containment and Muse's own sandbox, and via MSP
+  `workspaceRoot(s)`; no argv member is ever invented beyond the documented set), hidden
+  OAuth/browser-session token extraction, undocumented credential databases, `--yolo` /
+  sandbox disable, OpenRouter, separately billed Meta Model API keys.
 - Credential handling: MOS reads, copies or displays **no** CLI credential material at any
   point. Login/Contributor state is only ever derived from observable process output of the
   user-configured, documented probe command; unknown stays unknown. Rev. 2 addition: the
@@ -76,52 +92,81 @@ counts (all PASS on the revision head, rebased onto `main@703fd7bd`):
   candidates, envelope-level session-id capture from any line including unknown-typed ones),
   unknown/invalid lines counted (never guessed), summary truncation caps, versioned mapping
   table.
-- `apps/zcode-cli/packages/bootstrap/tests/muse-exec-process.test.ts` — 16/16 PASS (against
-  `tests/fixtures/muse-code/mock-muse-cli.mjs`): prompt delivered via documented
-  `--prompt-file`; cwd = session working directory; **workspace containment rejection before
-  spawn when the working directory escapes the workspace root (R4)**; **allowlisted child
-  environment only — host secrets (GITHUB_TOKEN/OPENROUTER_API_KEY/…) excluded, MUSE_* and
-  login-state dirs preserved (R5)**; **`--disable-approval` passed only for the
-  `unattended-sandboxed` posture, `--yolo` never constructed (R3)**; **session-id capture and
-  documented `--session-id` resume on the next turn across a fresh port instance + persisted
-  mapping, and no `--session-id` without a mapping (R2)**; approval/question events surfaced
-  with counts; mapped event stream; unknown-event counting; nonzero exit + capped stderr
-  surfaced; in-stream error events surfaced; request abort terminates the process tree and
-  reports `cancelled`; overall timeout enforced; pre-aborted requests never spawn; startup
-  failure rejects fail-closed; tolerant settings read.
-- `apps/zcode-cli/packages/bootstrap/tests/muse-session-protocol.test.ts` — 13/13 PASS (new,
-  rev. 2; fake client/session injected through `MuseSessionProtocolDeps`): **fail-closed deny
+- `apps/zcode-cli/packages/bootstrap/tests/muse-exec-process.test.ts` — 20/20 PASS (rev. 3;
+  against `tests/fixtures/muse-code/mock-muse-cli.mjs`): prompt delivered via documented
+  `--prompt-file`; **documented `--workspace <workspaceRoot>` passed with the policy root
+  (not the cwd) on every run (R4 rev. 3)**; cwd = session working directory; **workspace
+  containment rejection before spawn when the working directory escapes the workspace root,
+  including escapes through a symlink that is lexically inside but physically outside (R4)**;
+  **allowlisted child environment only — host secrets (GITHUB_TOKEN/OPENROUTER_API_KEY/…)
+  excluded, MUSE_* and login-state dirs preserved (R5)**; **`--disable-approval` passed only
+  for the `unattended-sandboxed` posture, `--yolo` never constructed (R3)**; **session-id
+  capture and documented `--session-id` resume on the next turn across a fresh port instance
+  + persisted mapping, and no `--session-id` without a mapping (R2)**; **resume refused (fresh
+  session + `sessionWorkspaceMismatch: true` + mapping rewritten to the current root) when
+  the stored workspace root differs, and preserved across symlink aliases of the same
+  physical root (R2/R4 rev. 3)**; approval/question events surfaced with counts; mapped event
+  stream; unknown-event counting; nonzero exit + capped stderr surfaced; in-stream error
+  events surfaced; request abort terminates the process tree and reports `cancelled`; overall
+  timeout enforced; pre-aborted requests never spawn; startup failure rejects fail-closed;
+  tolerant settings read.
+- `apps/zcode-cli/packages/bootstrap/tests/muse-session-protocol.test.ts` — 16/16 PASS (rev.
+  3; fake client/session injected through `MuseSessionProtocolDeps`): **fail-closed deny
   handler picks only server-offered non-approving choices and never approves; no
   non-approving choice offered → handler throws, approval stays open, turn bounded by
   timeout (R3)**; resume path registers the approval handler through resume options (frames
   arriving with the resume reply); `unattended-sandboxed` starts sessions with
   `approvalMode: "allowAll"` and registers no handler; **workspaceRoot passed as the single
   root when cwd == root, workspaceRoots `[cwd, root]` otherwise (R4)**; workspace containment
-  violation rejects before host spawn; **durable session mapping written on observe, resumed
+  violation rejects before host spawn, **including symlink escapes that are lexically inside
+  but physically outside (R4 rev. 3)**; **durable session mapping written on observe, resumed
   on the next run, write-failure degrades to "not resumable this turn" without failing the
-  completed turn (R2)**; text deltas streamed with a fold-text fallback when no delta frames
-  arrive; tool items projected as started and settled at turn end; token usage mapped from
-  `turn/completed` and subscription usage snapshot read best-effort (R6); timeout/cancel
-  interrupt the turn and settle honestly; host startup timeout rejects fail-closed; the host
-  is closed with a bounded drain on every exit path.
-- `apps/zcode-cli/packages/core/tests/delegated-muse-turn.test.ts` — 7/7 PASS (rev. 2):
+  completed turn (R2)**; **resume refused (startSession in the current root +
+  `sessionWorkspaceMismatch: true`) when the stored workspace root differs, and preserved
+  across symlink aliases of the same physical root (R2/R4 rev. 3)**; text deltas streamed with
+  a fold-text fallback when no delta frames arrive; tool items projected as started and
+  settled at turn end; token usage mapped from `turn/completed` and subscription usage
+  snapshot read best-effort (R6); timeout/cancel interrupt the turn and settle honestly; host
+  startup timeout rejects fail-closed; the host is closed with a bounded drain on every exit
+  path.
+- `apps/zcode-cli/packages/bootstrap/tests/muse-exec-support.test.ts` — 11/11 PASS (new,
+  rev. 3): lexical root comparison normalization (separators, trailing separators, win32
+  device-path prefixes, empty roots never equal); **realpath alias resolution keeps
+  continuity across symlinked roots and fails closed (different) when either root cannot be
+  resolved**; **Windows junction semantics simulated through the injectable realpath (alias
+  ↔ target same physical root = resume; different physical root = refuse)**; containment's
+  physical re-check rejects lexically-inside/physically-outside escapes, allows symlinks
+  that stay inside the root, and falls back to the lexical verdict when resolution is
+  unavailable.
+- `apps/zcode-cli/packages/core/tests/delegated-muse-turn.test.ts` — 8/8 PASS (rev. 3):
   text via standard `ModelStreaming` events; tool activity via `ToolCallStarted`/
   `ToolCallResult`; persists assistant message (providerId `muse-code`, modelId `muse-exec`,
   finish `muse_turn_complete`) + full text part (cold-resume visible); **`cost: null` +
   `usageReporting: "unreported"` metadata + mapped token usage when the port reports it
-  (R6)**; **approval requests and user questions projected as visible activity rows with
-  reconciled counts (R3)**; cancellation persists partial text + `turnResult: "cancelled"`;
-  nonzero exit and in-stream errors fail the turn (with approval-observed hints); missing
-  port fails closed with `ZCODE_MUSE_EXEC_UNAVAILABLE`.
+  (R6)**; **workspace-mismatch continuity resets attributed in message metadata
+  (`museExecution.sessionWorkspaceMismatch`, R2 rev. 3)**; **approval requests and user
+  questions projected as visible activity rows with reconciled counts (R3)**; cancellation
+  persists partial text + `turnResult: "cancelled"`; nonzero exit and in-stream errors fail
+  the turn (with approval-observed hints); missing port fails closed with
+  `ZCODE_MUSE_EXEC_UNAVAILABLE`.
 - `packages/services/test/museCodeService.test.ts` — 7/7 PASS (rev. 2): version probe
   parsing; fail-closed unavailable status; user-configured status-probe parsing (JSON)
   without guessing unknown fields; settings persistence + cache invalidation + schema
   rejection; login launch gated on the configured documented command; **execution-surface
   prediction shares the port's `selectMuseExecutionSurface` (version unknown → exec
-  fallback)**; **probes/launch run under the allowlisted child environment (R5)**.
+  fallback; **exact lockstep pin match required for the MSP prediction — newer/older/
+  prerelease-suffixed versions all predict the exec fallback, rev. 3)**); **probes/launch run
+  under the allowlisted child environment (R5)**.
 - `packages/ui/test/museCodeBackendStamp.test.ts` — 3/3 PASS: envelope `executionBackend`
   stamped on `createSession`/`sendText` only when both gates (user intent + session CLI
   capability) are open; never on other commands; never when either gate is closed.
+
+Rev. 3 verification run (2026-11-15 UTC, corrected head): the seven muse suites re-run green
+— bootstrap JSONL 8/8, process 20/20, MSP 16/16, support 11/11 (new), core delegated-turn
+8/8, services 7/7, ui stamping 3/3 (**73/73 total**); `pnpm --filter @zcode/bootstrap...`
+build clean against the installed real `@muse-code/sdk@1.4.20` (the exact-match gate does
+not change the SDK pin; it only changes when the MSP surface is auto-selected). The full
+repo gate chain on the corrected head is recorded below in §2b.
 
 Regression (same environment, revision head): core turn/admission suites 60/60 PASS; core
 delegated-turn 7/7; **full bootstrap v4 command suite 725/725 PASS (29 files)**; architecture
@@ -168,22 +213,32 @@ code failure; the chunk was re-run green after `pnpm --filter @zcode/e2e-report.
 - The exact JSONL event schema of the installed `muse exec --json` build has **not** been
   observed in this environment. The mapping table is a versioned candidate
   (`MUSE_EXEC_JSONL_MAPPING_VERSION = 2`); unmapped lines are counted, never guessed. The
-  **MSP surface (primary when the CLI ≥ the pinned SDK version) does not depend on this
-  candidate mapping** — it consumes the official SDK's typed fold. The on-machine run in §4
-  must still capture sanitized JSONL samples and reconcile the exec-surface mapping (bump
-  the version + add cases) if field names differ.
+  **MSP surface (auto-selected only when the CLI version exactly matches the pinned SDK
+  version, rev. 3) does not depend on this candidate mapping** — it consumes the official
+  SDK's typed fold. The on-machine run in §4 must still capture sanitized JSONL samples and
+  reconcile the exec-surface mapping (bump the version + add cases) if field names differ.
 - The exec surface's session-id claim depends on a candidate envelope field
   (`session_id`/`sessionId`/nested `session.id`) in the JSONL stream; if the real CLI
   declares it under a different name, continuity silently degrades to fresh sessions per
   turn (never an invented id) until §4 reconciles the envelope reader. The MSP surface
   reads the session id from the SDK's typed session objects and has no such dependency.
 - The `@muse-code/sdk` is a **developer preview** (Meta's own label) and versions in
-  lockstep with the CLI; the exact pin `1.4.20` must be kept in sync with the installed
-  CLI when the user upgrades (the auto version gate falls back to the exec surface on
-  older CLIs; `MUSE_CODE_SDK_PINNED_VERSION` is the single knob).
+  lockstep with the CLI — **exact X.Y.Z↔X.Y.Z pairing (rev. 3)**: the auto gate selects the
+  MSP surface only when `muse --version` exactly equals `MUSE_CODE_SDK_PINNED_VERSION`
+  (`1.4.20`, bare x.y.z; prerelease/build suffixes do not match). When the user upgrades the
+  CLI past the pin, delegated turns conservatively fall back to the exec surface until the
+  pin is bumped in lockstep; `MUSE_CODE_SDK_PINNED_VERSION` is the single knob, and an
+  explicitly configured `executionSurface` remains available for on-machine diagnosis.
 - MSP-surface boundary: `session/start` has no `--max-model-steps` equivalent member —
   `request.maxModelSteps` is ignored on the MSP surface (the exec surface still honors it);
   runaway steps are bounded by the overall timeout.
+- Session continuity is workspace-scoped (rev. 3): the durable map records the workspace
+  root used when the mapping was established; a resume is attempted only when the stored
+  root and the current request root are the same — lexically, or through realpath alias
+  resolution (symlinks / Windows junctions pointing at the same physical directory keep
+  continuity). A different physical root refuses the resume: a fresh Muse session starts
+  inside the current root (self-healing mapping rewrite) and the turn result/metadata/log
+  carry `sessionWorkspaceMismatch: true` so the reset is attributable, never silent.
 - Sign-in / Contributor state requires the user to record the documented status command
   (from `muse --help`) under Settings → Meta Muse Code → Advanced. Until then the status
   card honestly shows "unknown".
@@ -210,8 +265,8 @@ results with UTC timestamps (sanitize all samples: no tokens, no env dumps).
 1. Record `muse --version` and `muse --help` output (sanitized). If a documented auth/status
    command exists, record it and set it under Settings → Meta Muse Code → Advanced, then
    Recheck and record the parsed badges (signed-in / Contributor). **Rev. 2:** record which
-   execution surface the settings card predicts (Session Protocol when the CLI version ≥
-   `@muse-code/sdk`'s pinned `1.4.20`, else `muse exec`).
+   execution surface the settings card predicts (Session Protocol when the CLI version
+   **exactly matches** `@muse-code/sdk`'s pinned `1.4.20` — rev. 3 — else `muse exec`).
 2. Enable "Use Muse Code as the New Task backend" in Settings → Meta Muse Code; confirm the
    Composer indicator appears and **model selection is disabled with the explicit "tasks
    will run on Muse Code" lock reason** (R6).
@@ -224,7 +279,11 @@ results with UTC timestamps (sanitize all samples: no tokens, no env dumps).
 4. **Rev. 2 (R2):** send a second turn in the same MOS session; confirm from the log line
    that `resumedMuseSession: true` and the Muse session id is unchanged; restart MOS and
    repeat — the mapping file (`~/.zcode/v2/muse-code-sessions.json`) must keep the
-   continuity across restarts.
+   continuity across restarts. **Rev. 3:** re-open the same MOS session against a different
+   workspace root and confirm the turn runs with `resumedMuseSession: false` +
+   `sessionWorkspaceMismatch: true` in the completed-turn log line (fresh Muse session inside
+   the new root; continuity reset is visible, not silent). Optionally repeat with the same
+   physical root reached through a symlink/junction alias and confirm continuity is kept.
 5. Press Stop mid-task; confirm the turn settles as interrupted (TurnComplete cancelled)
    and the CLI process tree is gone (no orphan `muse`/`muse serve` processes).
 6. Confirm MOS Studio mission linkage still attaches (mission sidecar SessionStart hook) and
@@ -236,7 +295,11 @@ results with UTC timestamps (sanitize all samples: no tokens, no env dumps).
    and confirm the sandbox still blocks out-of-workspace writes. Never configure `--yolo`.
 8. **Rev. 2 (R4):** confirm the delegated session's working directory stays inside the
    workspace root (any attempt to run outside must reject with the workspace-violation
-   message before any spawn).
+   message before any spawn). **Rev. 3:** confirm the exec-surface child receives the
+   documented `--workspace <workspace-root>` argument (e.g. via the CLI's own argv-debug
+   facility or a wrapper) pinned to the same policy root, and that a working directory that
+   is lexically inside the root but resolves (symlink / junction) outside is rejected before
+   spawn.
 9. **Rev. 2 (R5):** with the backend enabled, run a task and confirm the CLI child process
    environment contains no host integration secrets (spot-check on the target machine with
    the CLI's own env-debug facility or a wrapper; MOS never passes them).

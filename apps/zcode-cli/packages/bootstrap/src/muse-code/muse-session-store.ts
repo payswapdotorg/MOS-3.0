@@ -97,10 +97,15 @@ export function recordMuseSessionMapping(
   return Object.fromEntries(pruned);
 }
 
-/** 读取某 MOS 会话的既有 muse 会话 id（缺失 = undefined，不猜测）。 */
-export function lookupMuseSessionId(
+/**
+ * 读取某 MOS 会话的既有映射（缺失 = undefined，不猜测）。resume 门控（评审
+ * rev. 3）用完整条目：调用方必须比对条目的 workspaceRoot 与当前请求根
+ * （isSameMuseWorkspaceRoot，词法 + realpath 别名解析）；不一致 = 不续接
+ * （当前根内开新会话），绝不跨 workspace 边界续接。
+ */
+export function lookupMuseSessionMapping(
   map: MuseSessionMap,
   mosSessionId: string,
-): string | undefined {
-  return map[mosSessionId]?.museSessionId;
+): MuseSessionMapping | undefined {
+  return map[mosSessionId];
 }

@@ -128,9 +128,15 @@ describe("createMuseCodeService status probing", () => {
     // 旧 CLI / 版本未知 → muse-exec 回退（fail-closed 选择，不猜测）。
     expect((await withVersion("muse version 1.2.3\n")).executionSurface).toBe("muse-exec");
     expect((await withVersion("muse version unknown-build\n")).executionSurface).toBe("muse-exec");
-    // CLI >= SDK 锁步配对版本 → session-protocol（官方 MSP 面）。
+    // 锁步精确配对（评审 rev. 3）：CLI 版本与 SDK pin 完全一致 → session-protocol。
     expect((await withVersion("muse version 1.4.20\n")).executionSurface).toBe("session-protocol");
-    expect((await withVersion("muse version 2.0.1\n")).executionSurface).toBe("session-protocol");
+    // 任何偏离（更新/更旧/带 prerelease 后缀）→ muse-exec 回退——官方 README 只
+    // 承诺 X.Y.Z↔X.Y.Z 配对，不承诺向前兼容；绝不假设「更新即兼容」。
+    expect((await withVersion("muse version 1.4.21\n")).executionSurface).toBe("muse-exec");
+    expect((await withVersion("muse version 1.5.0\n")).executionSurface).toBe("muse-exec");
+    expect((await withVersion("muse version 2.0.1\n")).executionSurface).toBe("muse-exec");
+    expect((await withVersion("muse version 1.4.19\n")).executionSurface).toBe("muse-exec");
+    expect((await withVersion("muse version 1.4.20-beta.1\n")).executionSurface).toBe("muse-exec");
     // 显式用户覆盖优先（诊断/在机验收）。
     const settingsPath = await prepareSettingsFile(
       JSON.stringify({ useAsTaskBackend: false, executionSurface: "session-protocol" }),

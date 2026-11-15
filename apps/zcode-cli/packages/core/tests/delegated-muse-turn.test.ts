@@ -20,7 +20,10 @@ interface ScriptedPortRun {
   request: import("@zcode/contracts").MuseExecRequest;
 }
 
-function createScriptedMusePort(script: (run: ScriptedPortRun) => Promise<void>) {
+function createScriptedMusePort(
+  script: (run: ScriptedPortRun) => Promise<void>,
+  resultOverride?: Partial<import("@zcode/contracts").MuseExecRunResult>,
+) {
   return {
     async runMuseExec(request: import("@zcode/contracts").MuseExecRequest, handlers: ScriptedPortRun["handlers"]) {
       await script({ handlers, request });
@@ -32,6 +35,7 @@ function createScriptedMusePort(script: (run: ScriptedPortRun) => Promise<void>)
         unknownEventCount: 1,
         surface: "muse-exec",
         resumedMuseSession: false,
+        ...(resultOverride ?? {}),
         approvalRequestsObserved: 0,
         userQuestionsObserved: 0,
         approvalPosture: "fail-closed",
@@ -174,6 +178,26 @@ describe("runDelegatedMuseTurn", () => {
       assistant?.metadata as { museExecution?: { usageReporting?: string } } | undefined
     )?.museExecution;
     expect(museMetadata?.usageReporting).toBe("unreported");
+  });
+
+  it("attributes workspace-mismatch continuity resets in message metadata (R2 rev. 3)", async () => {
+    const controller = new AbortController();
+    // 端口报告：既有映射因 workspace 根不一致而未续接（rev. 3 resume 门控）。
+    const port = createScriptedMusePort(async () => undefined, {
+      museSessionId: "muse-session-fresh-2",
+      sessionWorkspaceMismatch: true,
+    });
+    const events: SessionEvent[] = [];
+    const { persistedMessages, runtime } = createStubRuntime(port);
+    await runDelegatedMuseTurn.call(runtime, baseParams(runtime, controller.signal, events));
+    const assistant = persistedMessages.filter((message) => message.role === "assistant").at(-1);
+    const museMetadata = (
+      assistant?.metadata as { museExecution?: Record<string, unknown> } | undefined
+    )?.museExecution;
+    // 连续性重置必须可见（归因诚实），而不是静默丢上下文。
+    expect(museMetadata?.sessionWorkspaceMismatch).toBe(true);
+    expect(museMetadata?.resumedMuseSession).toBe(false);
+    expect(museMetadata?.museSessionId).toBe("muse-session-fresh-2");
   });
 
   it("fails closed when the runtime has no muse execution port", async () => {

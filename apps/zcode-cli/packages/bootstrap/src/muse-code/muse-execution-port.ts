@@ -9,9 +9,10 @@ import { probeMuseCliVersion, resolveMuseExecutableEntry } from "./muse-exec-sup
 // selectMuseExecutionSurface）：
 // - settings.executionSurface 显式值 = 用户知情覆盖（诊断/在机验收）。
 // - auto（缺省）：`muse --version` 探针（允许清单环境、进程内缓存、失败不猜测）
-//   → CLI >= SDK 锁步配对版本 → session-protocol（`muse serve` + @muse-code/sdk）；
-//   否则（旧 CLI / 版本未知 / 探针失败）→ muse-exec（documented `muse exec --json`，
-//   所有 CLI 版本可用的 headless 界面）。
+//   → CLI 版本与 SDK 锁步 pin **完全一致**（精确配对，rev. 3）→ session-protocol
+//   （`muse serve` + @muse-code/sdk）；否则（更新/更旧/版本未知/探针失败/带
+//   prerelease 后缀）→ muse-exec（documented `muse exec --json`，所有 CLI 版本
+//   可用的 headless 界面）。
 // 实际执行面经 result.surface 如实回传 core（归因/日志）。
 
 export function createMuseExecutionPort(

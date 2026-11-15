@@ -1,10 +1,12 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { realpath as realpathCallback } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { MuseCodeBackendSettings } from "@zcode/shared";
 import { buildMuseChildEnv } from "@zcode/shared/node";
 // Muse CLI 可执行入口解析 / workspace 收敛 / 版本探针（Issue #24 / ACR-0002；
-// PR #27 评审 R1/R4/R5——exec 与 MSP 两个端口实现共用，不复制判定）。
+// PR #27 评审 R1/R4/R5——exec 与 MSP 两个端口实现共用，不复制判定；
+// 评审 rev. 3：workspace 判定增加物理（realpath）层，词法比较不可绕过边界）。
 
 const MUSE_EXECUTABLE_ENV = "ZCODE_MUSE_EXECUTABLE";
 const VERSION_PROBE_TIMEOUT_MS = 10_000;
@@ -51,10 +53,16 @@ export function resolveMuseExecutableEntry(
   return command;
 }
 
+/** 物理别名解析（symlink / Windows junction / reparse point 都经 realpath 归一）。 */
+export type MuseRealpath = (path: string) => Promise<string>;
+
+/** 缺省实现：node fs.promises.realpath（解析失败 = reject）。 */
+const defaultRealpath: MuseRealpath = (path) => realpathCallback(path);
+
 /**
- * workspace 收敛校验（R4）：workingDirectory 必须位于 workspaceRoot 内。
- * - 规范化分隔符（win32 反斜杠）与盘符大小写；相对路径 containment 判定。
- * - 相等（会话 cwd == 根）合法；越界 → workspaceViolation（fail-closed，不 spawn）。
+ * workspace 收敛的词法判定（同步层；物理复核见 assertMuseWorkspaceContainment）：
+ * workingDirectory 必须位于 workspaceRoot 内——规范化分隔符（win32 反斜杠）与
+ * 盘符大小写；相对路径 containment 判定；相等（会话 cwd == 根）合法。
  */
 export function isInsideMuseWorkspace(
   workingDirectory: string,
@@ -73,11 +81,79 @@ export function isInsideMuseWorkspace(
   return rel.length > 0 && rel !== ".." && !rel.startsWith("../") && !isAbsolute(rel);
 }
 
-/** 解析失败时抛出收敛违规（两个端口实现共用文案）。 */
-export function assertMuseWorkspaceContainment(
+/**
+ * workspace 根的词法归一比较（纯函数）：分隔符（\\→/）、尾分隔符、win32 盘符
+ * 大小写、`\\?\`/`\\?\UNC\` 设备路径前缀都归一后全串相等才为 true。作为唯一
+ * 比较手段时它只能保守判定（别名会假阴性）；配合 isSameMuseWorkspaceRoot 的
+ * 物理层后，词法相等 ⇒ 物理相等（同串同路径），不存在「词法相等但物理不同」
+ * 的绕过面。
+ */
+export function sameMuseWorkspaceRootLexically(
+  storedRoot: string,
+  currentRoot: string,
+): boolean {
+  // 空根（无 workspace）永不判同（fail-closed；异步层另有同一守卫，双保险）。
+  if (storedRoot.length === 0 || currentRoot.length === 0) return false;
+  const normalize = (value: string): string => {
+    let normalized = value.trim().replace(/\\/g, "/");
+    // Windows 设备路径前缀不参与比较（两侧同规则剥除）。
+    if (normalized.startsWith("//?/UNC/")) {
+      normalized = `//${normalized.slice("//?/UNC/".length)}`;
+    } else if (normalized.startsWith("//?/")) {
+      normalized = normalized.slice(4);
+    }
+    while (normalized.length > 1 && normalized.endsWith("/")) {
+      normalized = normalized.slice(0, -1);
+    }
+    return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+  };
+  return normalize(storedRoot) === normalize(currentRoot);
+}
+
+/**
+ * workspace 根一致性（评审 rev. 3——resume 门控用）：
+ * 1. 词法归一相等 → 同根（同串同路径，无绕过面）。
+ * 2. 否则尝试物理归一（realpath 解析 symlink/junction 别名）：两者都解析成功且
+ *    归一后相等 → 同根（同一物理目录的别名路径不丢连续性）。
+ * 3. 任一解析失败 / 归一后不等 → 不同根（fail-closed：不续接，连续性重置为
+ *    当前根内的新会话，绝不跨 workspace 边界续接）。
+ */
+export async function isSameMuseWorkspaceRoot(
+  storedRoot: string,
+  currentRoot: string,
+  deps: { realpath?: MuseRealpath } = {},
+): Promise<boolean> {
+  if (storedRoot.length === 0 || currentRoot.length === 0) return false;
+  if (sameMuseWorkspaceRootLexically(storedRoot, currentRoot)) return true;
+  const realpath = deps.realpath ?? defaultRealpath;
+  try {
+    const [storedResolved, currentResolved] = await Promise.all([
+      realpath(storedRoot),
+      realpath(currentRoot),
+    ]);
+    return sameMuseWorkspaceRootLexically(storedResolved, currentResolved);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * workspace 收敛校验（R4；rev. 3 增加物理复核）：workingDirectory 必须位于
+ * workspaceRoot 内。
+ * - 词法层（同步判定）：规范化分隔符（win32 反斜杠）与盘符大小写；相对路径
+ *   containment 判定；相等（会话 cwd == 根）合法。
+ * - 物理层（词法通过后复核）：cwd 与根都 realpath 解析成功时，解析后的 cwd
+ *   必须仍位于解析后的根内——词法在界内、物理在界外（如 workspace 内的
+ *   symlink/junction 指向根外目录）= 越界，fail-closed。任一路径解析失败
+ *   （不存在/不可达/权限）时退回词法判定（spawn 自身的失败是自然兜底），
+ *   不额外阻断既有合法场景。
+ * - 越界 → workspaceViolation（fail-closed，不 spawn）。
+ */
+export async function assertMuseWorkspaceContainment(
   workingDirectory: string,
   workspaceRoot: string,
-): void {
+  deps: { realpath?: MuseRealpath } = {},
+): Promise<void> {
   if (!workspaceRoot || workspaceRoot.trim().length === 0) {
     throw new MuseExecStartupError(
       "workspaceViolation",
@@ -88,6 +164,23 @@ export function assertMuseWorkspaceContainment(
     throw new MuseExecStartupError(
       "workspaceViolation",
       `Muse Code delegated execution requires the working directory to stay inside the workspace root (working directory "${workingDirectory}" is outside "${workspaceRoot}").`,
+    );
+  }
+  const realpath = deps.realpath ?? defaultRealpath;
+  let physicalCheck: boolean | undefined;
+  try {
+    const [resolvedCwd, resolvedRoot] = await Promise.all([
+      realpath(workingDirectory),
+      realpath(workspaceRoot),
+    ]);
+    physicalCheck = isInsideMuseWorkspace(resolvedCwd, resolvedRoot);
+  } catch {
+    physicalCheck = undefined;
+  }
+  if (physicalCheck === false) {
+    throw new MuseExecStartupError(
+      "workspaceViolation",
+      `Muse Code delegated execution requires the working directory to stay inside the workspace root (working directory "${workingDirectory}" resolves through a symlink/junction to a location outside "${workspaceRoot}").`,
     );
   }
 }

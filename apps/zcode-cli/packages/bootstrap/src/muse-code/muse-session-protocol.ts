@@ -19,6 +19,7 @@ import type {
 } from "@zcode/contracts";
 import {
   DEFAULT_MUSE_CODE_EXEC_TIMEOUT_MS,
+  MUSE_CODE_SDK_PINNED_VERSION,
   ZCODE_VERSION,
   type MuseCodeBackendSettings,
 } from "@zcode/shared";
@@ -27,11 +28,12 @@ import { readMuseCodeBackendSettings } from "./muse-code-settings.js";
 import {
   MuseExecStartupError,
   assertMuseWorkspaceContainment,
+  isSameMuseWorkspaceRoot,
   resolveMuseExecutableEntry,
 } from "./muse-exec-support.js";
 import {
   createFileMuseSessionStore,
-  lookupMuseSessionId,
+  lookupMuseSessionMapping,
   recordMuseSessionMapping,
   type MuseSessionStore,
 } from "./muse-session-store.js";
@@ -41,9 +43,12 @@ type MuseApprovalRequest = Parameters<ApprovalHandler>[0];
 // Muse Session Protocol（MSP）执行端口（Issue #24 / ACR-0002；PR #27 评审 R1）。
 //
 // 官方界面：`muse serve` + @muse-code/sdk（exact pin 见 shared
-// MUSE_CODE_SDK_PINNED_VERSION；SDK 与 CLI 锁步发版，CLI >= 配对版本才走本面）。
+// MUSE_CODE_SDK_PINNED_VERSION；SDK 与 CLI 锁步发版且为**精确配对**——仅当 CLI
+// 版本与 pin 完全一致时 auto 门控才选择本面，任何偏离回退 exec 面）。
 // 相比 `muse exec --json` 的差异化能力（全部来自官方 SDK/protocol 文档）：
-// - 会话恢复：startSession/resumeSession（R2），映射持久化跨 MOS 重启。
+// - 会话恢复：startSession/resumeSession（R2；rev. 3 resume 门控：映射根与当前
+//   请求根不一致（词法 + realpath 别名解析）= 不续接，当前根内开新会话），
+//   映射持久化跨 MOS 重启。
 // - 审批回调：fail-closed 姿态注册 deny 处理器（只选服务端 offered 的拒绝选项，
 //   绝不 auto-approve）；unattended-sandboxed = startSession approvalMode
 //   "allowAll"（sandbox 独立生效，绝无 `--yolo` 语义）。（R3）
@@ -89,8 +94,8 @@ export function createMuseSessionProtocolPort(
       request: MuseExecRequest,
       handlers: MuseExecHandlers,
     ): Promise<MuseExecRunResult> {
-      // workspace 收敛（R4）：与 exec 面同一判定，越界绝不启动。
-      assertMuseWorkspaceContainment(request.workingDirectory, request.workspaceRoot);
+      // workspace 收敛（R4）：与 exec 面同一判定（词法 + 物理），越界绝不启动。
+      await assertMuseWorkspaceContainment(request.workingDirectory, request.workspaceRoot);
       const settings = await readSettings(env);
       const approvalPosture: MuseExecApprovalPosture =
         settings.approvalPosture === "unattended-sandboxed"
@@ -172,9 +177,20 @@ export function createMuseSessionProtocolPort(
           }),
         );
 
-        // 会话映射（R2）：既有映射 → resumeSession；否则 startSession。
+        // 会话映射（R2；rev. 3 resume 门控）：既有映射且 workspaceRoot 与当前请求
+        // 根一致（词法 + realpath 别名解析，isSameMuseWorkspaceRoot）→ resumeSession；
+        // 根不一致/无映射 → startSession（fail-closed 连续性：绝不跨 workspace 边界
+        // 续接旧会话；sessionWorkspaceMismatch 如实回传 core 归因）。
         const sessionMap = await sessionStore.read().catch(() => ({}) as Awaited<ReturnType<MuseSessionStore["read"]>>);
-        const existingMuseSessionId = lookupMuseSessionId(sessionMap, request.sessionId);
+        const existingMapping = lookupMuseSessionMapping(sessionMap, request.sessionId);
+        const resumeRootMatches = existingMapping
+          ? await isSameMuseWorkspaceRoot(existingMapping.workspaceRoot, request.workspaceRoot)
+          : false;
+        const existingMuseSessionId = resumeRootMatches
+          ? existingMapping?.museSessionId
+          : undefined;
+        const sessionWorkspaceMismatch =
+          existingMapping !== undefined && !resumeRootMatches;
         const resumedMuseSession = existingMuseSessionId !== undefined;
 
         // 审批决策（R3）：fail-closed 注册 deny 处理器（resume 面必须经 options 传入
@@ -362,6 +378,7 @@ export function createMuseSessionProtocolPort(
             stderrTail,
             museSessionId,
             resumedMuseSession,
+            ...(sessionWorkspaceMismatch ? { sessionWorkspaceMismatch: true } : {}),
             approvalRequestsObserved,
             userQuestionsObserved,
           };
@@ -404,6 +421,7 @@ export function createMuseSessionProtocolPort(
           surface: "session-protocol",
           museSessionId,
           resumedMuseSession,
+          ...(sessionWorkspaceMismatch ? { sessionWorkspaceMismatch: true } : {}),
           approvalRequestsObserved,
           userQuestionsObserved,
           ...(usage ? { usage: mapTokenUsage(usage) } : {}),
@@ -604,7 +622,7 @@ async function withStartupTimeout<T>(promise: Promise<T>): Promise<T> {
         reject(
           new MuseExecStartupError(
             "spawnFailed",
-            `Muse Code CLI (muse serve) did not complete the Session Protocol handshake within ${HOST_STARTUP_TIMEOUT_MS / 1000}s. Check the CLI version (>= the pinned SDK version) and the execution surface setting in Model Settings.`,
+            `Muse Code CLI (muse serve) did not complete the Session Protocol handshake within ${HOST_STARTUP_TIMEOUT_MS / 1000}s. Check that the installed CLI version exactly matches the pinned SDK version (${MUSE_CODE_SDK_PINNED_VERSION}) and the execution surface setting in Model Settings.`,
           ),
         );
       }, HOST_STARTUP_TIMEOUT_MS);

@@ -18,10 +18,12 @@ export type MuseCodeExecutionBackendId = typeof MUSE_CODE_EXECUTION_BACKEND;
  * 官方 Muse Session Protocol（MSP）TypeScript SDK 的固定版本（PR #27 评审 R1）。
  * 官方 README：「This package versions in lockstep with Muse Code: the SDK
  * version is the Muse Code release it ships with」——SDK X.Y.Z 与 CLI X.Y.Z 配对，
- * 必须 exact pin（不使用 ^ 范围）。CLI 版本 >= 该配对版本时端口选择 MSP
- * （`muse serve` + `@muse-code/sdk`）；更旧/无法解析的 CLI 回退到 `muse exec --json`
- * （同样是 documented headless 界面）。SDK 自述 developer preview，真实
- * Windows CLI 的兼容性在机验证（见 evidence §4）。
+ * 必须 exact pin（不使用 ^ 范围）。锁步规则是**精确配对**（评审修订 rev. 3）：
+ * 仅当安装的 CLI 版本与该 pin 完全一致（major.minor.patch 相等且无 prerelease/
+ * build 后缀）时 auto 门控才选择 MSP（`muse serve` + `@muse-code/sdk`）；任何偏离
+ * （更新/更旧/未知/带后缀）回退到 `muse exec --json`（所有 CLI 版本可用的
+ * documented headless 界面）——绝不假设「更新即兼容」。官方发布兼容矩阵后再放宽。
+ * SDK 自述 developer preview，真实 Windows CLI 的兼容性在机验证（见 evidence §4）。
  */
 export const MUSE_CODE_SDK_PINNED_VERSION = "1.4.20" as const;
 
@@ -62,10 +64,33 @@ export function parseMuseCliVersionParts(
 }
 
 /**
+ * 锁步精确配对判定（评审修订 rev. 3）：CLI 版本与 SDK pin 完全一致才为 true。
+ * - 仅接受裸 x.y.z（trim 后全串匹配）；prerelease/build 后缀（如 1.4.20-beta.1）
+ *   不是配对发布版本 → false。
+ * - 任何无法解析/缺省 → false（不猜测）。
+ */
+export function museCliVersionMatchesSdkPin(cliVersion: string | undefined): boolean {
+  if (!cliVersion) return false;
+  const trimmed = cliVersion.trim();
+  if (!/^\d+\.\d+\.\d+$/.test(trimmed)) return false;
+  const installed = parseMuseCliVersionParts(trimmed);
+  const pinned = parseMuseCliVersionParts(MUSE_CODE_SDK_PINNED_VERSION);
+  return (
+    installed !== undefined &&
+    pinned !== undefined &&
+    installed.major === pinned.major &&
+    installed.minor === pinned.minor &&
+    installed.patch === pinned.patch
+  );
+}
+
+/**
  * 执行面选择（bootstrap 端口与 Host 侧视图共用同一判定）：
  * - 显式 settings.executionSurface 优先（用户知情覆盖）。
- * - auto：CLI 版本可解析且 >= SDK 锁步配对版本 → session-protocol；否则 muse-exec
- *   （旧 CLI / 版本未知 → 保守回退到所有版本都 documented 的 exec 界面）。
+ * - auto：CLI 版本与 SDK 锁步 pin **精确一致**（museCliVersionMatchesSdkPin）→
+ *   session-protocol；否则 muse-exec（更新/更旧/未知/带后缀一律保守回退到所有
+ *   版本都 documented 的 exec 界面——官方 README 只承诺 X.Y.Z↔X.Y.Z 配对，
+ *   不承诺向前/向后兼容）。
  */
 export function selectMuseExecutionSurface(input: {
   cliVersion?: string;
@@ -73,16 +98,7 @@ export function selectMuseExecutionSurface(input: {
 }): MuseCodeExecutionSurface {
   if (input.settings.executionSurface === "muse-exec") return "muse-exec";
   if (input.settings.executionSurface === "session-protocol") return "session-protocol";
-  const installed = parseMuseCliVersionParts(input.cliVersion);
-  const pinned = parseMuseCliVersionParts(MUSE_CODE_SDK_PINNED_VERSION);
-  if (!installed || !pinned) return "muse-exec";
-  if (installed.major !== pinned.major) {
-    return installed.major > pinned.major ? "session-protocol" : "muse-exec";
-  }
-  if (installed.minor !== pinned.minor) {
-    return installed.minor > pinned.minor ? "session-protocol" : "muse-exec";
-  }
-  return installed.patch >= pinned.patch ? "session-protocol" : "muse-exec";
+  return museCliVersionMatchesSdkPin(input.cliVersion) ? "session-protocol" : "muse-exec";
 }
 
 /** v4 command envelope / payload 上的 additive 选择字段；旧端会剥掉，必须由 capability 门控。 */
@@ -145,9 +161,10 @@ export const museCodeBackendSettingsSchema = z
      */
     approvalPosture: z.enum(["fail-closed", "unattended-sandboxed"]).optional(),
     /**
-     * 执行面选择（PR #27 评审 R1）：auto（缺省）= CLI >= SDK 锁步配对版本走 MSP
-     * （`muse serve` + `@muse-code/sdk`），否则回退 `muse exec --json`；显式值供
-     * 在机验收/诊断（覆盖旧 CLI 或强制 MSP 失败暴露）。
+     * 执行面选择（PR #27 评审 R1；rev. 3 精确化）：auto（缺省）= CLI 版本与 SDK
+     * 锁步 pin **完全一致**时走 MSP（`muse serve` + `@muse-code/sdk`），任何偏离
+     * （更新/更旧/未知/带后缀）回退 `muse exec --json`；显式值供在机验收/诊断
+     * （覆盖旧 CLI 或强制 MSP 失败暴露）。
      */
     executionSurface: z.enum(["auto", "muse-exec", "session-protocol"]).optional(),
   })

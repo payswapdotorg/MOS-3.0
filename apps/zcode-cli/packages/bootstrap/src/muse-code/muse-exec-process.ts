@@ -21,11 +21,12 @@ import { readMuseCodeBackendSettings } from "./muse-code-settings.js";
 import {
   MuseExecStartupError,
   assertMuseWorkspaceContainment,
+  isSameMuseWorkspaceRoot,
   resolveMuseExecutableEntry,
 } from "./muse-exec-support.js";
 import {
   createFileMuseSessionStore,
-  lookupMuseSessionId,
+  lookupMuseSessionMapping,
   recordMuseSessionMapping,
   type MuseSessionStore,
 } from "./muse-session-store.js";
@@ -38,13 +39,18 @@ import {
 //   设置里填绝对路径覆盖。
 // - cwd 固定为会话工作目录；stdin 忽略，提示经 documented `--prompt-file` 临时文件
 //   传入，避免 argv 长度/转义问题。
-// - workspace 收敛（R4）：workingDirectory 必须位于 workspaceRoot 内（spawn 前校验，
-//   fail-closed）。`--workspace` 旗标在可核实的 Meta 文档中不存在（见 evidence §1），
-//   不虚构旗标；边界 = cwd 收敛 + Muse 自身 sandbox（保持开启）。
+// - workspace 收敛（R4；评审 rev. 3 修正）：workingDirectory 必须位于 workspaceRoot
+//   内（spawn 前词法 + 物理两层校验，fail-closed），并把 documented `--workspace
+//   <workspaceRoot>` 传给 CLI（Meta 当前配置文档将 `--workspace <path>` 列为
+//   interactive/headless 通用的 common flag——早先「无此旗标」的记录有误，已在
+//   evidence §1 更正）——CLI 侧边界与 MOS 策略根钉在同一目录（双保险）。
 // - 环境隔离（R5）：子进程环境经 buildMuseChildEnv 允许清单，Host 集成凭据不外流。
 // - 审批姿态（R3）：fail-closed（缺省）不传任何审批旗标；unattended-sandboxed 附加
 //   documented `--disable-approval`（sandbox 保持开启）。`--yolo` 永不出现在 argv。
-// - 会话连续性（R2）：优先续接持久映射的 muse 会话（documented `--session-id`）；
+// - 会话连续性（R2；评审 rev. 3 加严）：优先续接持久映射的 muse 会话（documented
+//   `--session-id`）——但映射记录的 workspaceRoot 必须与当前请求根一致（词法 +
+//   realpath 别名解析，isSameMuseWorkspaceRoot）；不一致 = 放弃续接、当前根内开新
+//   会话（sessionWorkspaceMismatch 如实回传），绝不跨 workspace 边界续接旧会话；
 //   信封级候选 session id 从 JSONL 捕获并回写映射。
 // - abort/超时 → 进程树终止（POSIX 进程组 SIGTERM→SIGKILL；Windows taskkill /T /F）。
 // - stderr 只保留尾部 64KB 诊断窗口；stdout 逐行 JSONL，超长行按 unknown 计数。
@@ -74,8 +80,8 @@ export function createMuseExecProcessPort(deps: MuseExecProcessDeps = {}): MuseE
       request: MuseExecRequest,
       handlers: MuseExecHandlers,
     ): Promise<MuseExecRunResult> {
-      // workspace 收敛（R4）：越界绝不 spawn。
-      assertMuseWorkspaceContainment(request.workingDirectory, request.workspaceRoot);
+      // workspace 收敛（R4）：越界绝不 spawn（词法 + 物理两层）。
+      await assertMuseWorkspaceContainment(request.workingDirectory, request.workspaceRoot);
       const settings = await readSettings(env);
       const executable = resolveMuseExecutableEntry(env, settings, request.executablePath);
       if (!executable) {
@@ -84,11 +90,17 @@ export function createMuseExecProcessPort(deps: MuseExecProcessDeps = {}): MuseE
           `Muse Code CLI executable "${settings.executablePath?.trim() || "muse"}" was not found. Install the CLI or set an absolute executable path in MOS Model Settings.`,
         );
       }
-      // 会话映射（R2）：既有映射 → documented `--session-id` 续接。
+      // 会话映射（R2；rev. 3 resume 门控）：映射的 workspaceRoot 与当前请求根一致
+      // （词法 + realpath 别名解析）才续接 documented `--session-id`；不一致 = 当前
+      // 根内开新会话（fail-closed 连续性，绝不跨 workspace 续接）。
       const sessionMap = await sessionStore.read().catch(() => ({} as Record<string, never>));
-      const existingMuseSessionId = lookupMuseSessionId(sessionMap, request.sessionId);
+      const existingMapping = lookupMuseSessionMapping(sessionMap, request.sessionId);
+      const resumeRootMatches = existingMapping
+        ? await isSameMuseWorkspaceRoot(existingMapping.workspaceRoot, request.workspaceRoot)
+        : false;
       return runMuseExecChild(executable, request, settings, handlers, env, {
-        existingMuseSessionId,
+        existingMuseSessionId: resumeRootMatches ? existingMapping?.museSessionId : undefined,
+        sessionWorkspaceMismatch: existingMapping !== undefined && !resumeRootMatches,
         sessionStore,
         onSessionMapWriteError: deps.onSessionMapWriteError,
       });
@@ -104,6 +116,8 @@ async function runMuseExecChild(
   parentEnv: NodeJS.ProcessEnv,
   continuity: {
     existingMuseSessionId?: string;
+    /** true = 既有映射因 workspace 根不一致而未续接（rev. 3；结果如实回传）。 */
+    sessionWorkspaceMismatch?: boolean;
     sessionStore: MuseSessionStore;
     onSessionMapWriteError?: (error: unknown) => void;
   },
@@ -168,6 +182,7 @@ async function runMuseExecChild(
       surface: "muse-exec",
       ...(continuity.existingMuseSessionId ? { museSessionId: continuity.existingMuseSessionId } : {}),
       resumedMuseSession: false,
+      ...(continuity.sessionWorkspaceMismatch ? { sessionWorkspaceMismatch: true } : {}),
       approvalRequestsObserved: 0,
       userQuestionsObserved: 0,
       approvalPosture,
@@ -180,11 +195,17 @@ async function runMuseExecChild(
     const args = [
       "exec",
       "--json",
+      // workspace 边界（R4；rev. 3 修正）：documented `--workspace <path>`（Meta 当前
+      // 配置文档列为 interactive/headless 通用的 common flag）= MOS workspace 根，
+      // 把 CLI 侧边界钉到同一策略根（MOS 侧词法+物理收敛校验仍是第一道闸）。
+      "--workspace",
+      request.workspaceRoot,
       "--prompt-file",
       promptFile,
       ...(maxModelSteps !== undefined ? ["--max-model-steps", String(maxModelSteps)] : []),
       // 会话续接（R2）：documented `--session-id <uuid>`（dev.meta.ai/docs/muse-code/extending
       // "Headless and CI"：headless runs are sessions; continue with the session id）。
+      // 仅在映射根与当前根一致时传入（rev. 3 resume 门控）。
       ...(continuity.existingMuseSessionId
         ? ["--session-id", continuity.existingMuseSessionId]
         : []),
@@ -299,6 +320,7 @@ async function runMuseExecChild(
       surface: "muse-exec",
       ...(reportedMuseSessionId ? { museSessionId: reportedMuseSessionId } : {}),
       resumedMuseSession: continuity.existingMuseSessionId !== undefined,
+      ...(continuity.sessionWorkspaceMismatch ? { sessionWorkspaceMismatch: true } : {}),
       approvalRequestsObserved,
       userQuestionsObserved,
       approvalPosture,

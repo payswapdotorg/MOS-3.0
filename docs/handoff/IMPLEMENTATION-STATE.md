@@ -1119,7 +1119,8 @@ requirements addressed (ACR-0002 §Revision 2; work package MC-B; evidence recor
 
 - **R1 dual official surfaces**: new MSP port (`muse serve` + `@muse-code/sdk`, exact-pinned
   `1.4.20` per the lockstep rule, auto-selected when the installed CLI ≥ the pinned version
-  via a cached `muse --version` probe; SDK is developer preview — recorded admission) +
+  via a cached `muse --version` probe — **corrected in rev. 3 to an exact-equality gate**;
+  SDK is developer preview — recorded admission) +
   `muse exec --json` fallback; shared `selectMuseExecutionSurface` is the single decision
   rule (explicit setting override for on-machine diagnosis); per-turn `result.surface`
   attribution. New `muse-execution-port.ts` assembly entry, `muse-exec-support.ts`
@@ -1138,7 +1139,9 @@ requirements addressed (ACR-0002 §Revision 2; work package MC-B; evidence recor
   activity rows with reconciled counts; `--yolo` never constructed.
 - **R4 workspace boundary**: `MuseExecRequest.workspaceRoot` + pre-spawn containment
   validation (`workspaceViolation` fail-closed); MSP passes official
-  `workspaceRoot`/`workspaceRoots`; no invented `--workspace` flag.
+  `workspaceRoot`/`workspaceRoots`; the rev. 2 record claimed no `--workspace` flag exists —
+  **factually wrong, corrected in rev. 3** (Meta documents `--workspace <path>` as a common
+  flag; the exec surface now passes it with the policy root).
 - **R5 env isolation**: `shared/node buildMuseChildEnv` allowlist applied to every Muse
   child spawn path (exec, MSP host, version probe, status probes, login); host integration
   credentials excluded by construction, asserted by fixture audit tests.
@@ -1166,3 +1169,36 @@ requirements addressed (ACR-0002 §Revision 2; work package MC-B; evidence recor
   future extension (market-intelligence dependency, scope beyond New Task, a second
   delegated backend) requires a new ACR — this record is not precedent (ACR-0002 §Revision 2
   roadmap guardrail).
+
+### PR #27 external verification round 2 corrections (rev. 3), branch tl/muse-code-delegated-backend (2026-11-15)
+
+External verification on the rev. 2 head (`843ac58e`): CI green (run #42), PR #28 closed as
+superseded, fresh-clone muse tests 54/54, SDK 1.4.20 typings re-checked — verdict "would not
+merge yet" with three code issues and one product gap. All three corrections delivered on
+PR #27 (ACR-0002 §Revision 3; work package MC-C; evidence record rev. 3):
+
+- **C1 documented `--workspace` flag**: exec surface now passes `--workspace <MOS
+  workspaceRoot>` (Meta's current configuration docs list it as a common flag; the rev. 2
+  "flag does not exist" claim corrected in evidence §1). Contract tests: the policy root
+  (not cwd) is passed on every run; the mock CLI enforces the documented call shape.
+- **C2 exact lockstep gate**: `selectMuseExecutionSurface` auto mode now requires exact
+  equality with `MUSE_CODE_SDK_PINNED_VERSION` (`museCliVersionMatchesSdkPin`, bare x.y.z —
+  prerelease/build suffixes never match); newer/older/unknown/probe-failure all fall back to
+  `muse exec`. The services preview shares the same rule (new expectations for
+  1.4.21/1.5.0/2.0.1/1.4.19/1.4.20-beta.1).
+- **C3 resume workspace-root enforcement**: `lookupMuseSessionMapping` +
+  `isSameMuseWorkspaceRoot` (lexical normalization + realpath alias resolution) gate both
+  resume paths; a different physical root refuses the resume (fresh session in the current
+  root, mapping self-heals, `sessionWorkspaceMismatch: true` in result/metadata/log);
+  containment gained the same physical re-check (symlink/junction lexically-inside but
+  physically-outside rejects before spawn). Symlink tests run for real on POSIX; Windows
+  junction semantics covered via the injectable realpath seam (on-machine §4 step 8).
+- **MC-D scoped (not implemented here)**: explicit Muse model / Contributor-mode selection
+  for New Task + Studio, gated on establishing the officially supported MSP-equivalent
+  mechanism (never assume `muse exec` flags configure an MSP session).
+- Verification on the corrected head: muse suites green — bootstrap JSONL 8/8, process
+  20/20, MSP 16/16, support 11/11 (new), core delegated-turn 8/8, services 7/7, ui stamping
+  3/3 (**73/73**); `pnpm --filter @zcode/bootstrap...` build clean against the installed real
+  SDK. Full repo gate chain (`verify:pre-push`) on the corrected head recorded in evidence
+  §2b. GitHub CI + external re-review of the corrected head remain merge-blocking; Issue #24
+  stays open pending the §4 on-machine Windows acceptance.

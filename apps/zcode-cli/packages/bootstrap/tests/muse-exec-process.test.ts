@@ -1,17 +1,20 @@
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { MuseExecStreamEvent } from "@zcode/contracts";
 import type { MuseCodeBackendSettings } from "@zcode/shared";
 import { DEFAULT_MUSE_CODE_BACKEND_SETTINGS } from "@zcode/shared";
 import { createMuseExecProcessPort } from "../src/muse-code/muse-exec-process.js";
 import type { MuseSessionMap, MuseSessionStore } from "../src/muse-code/muse-session-store.js";
-// muse exec 子进程端口的契约测试（Issue #24 / ACR-0002；PR #27 评审修订 R2–R6）：
+// muse exec 子进程端口的契约测试（Issue #24 / ACR-0002；PR #27 评审修订 R2–R6；
+// 评审 rev. 3：documented `--workspace` 旗标、resume 的 workspace 根门控、
+// symlink 物理选逸拒绝）：
 // 用 mock CLI（fixtures/muse-code/mock-muse-cli.mjs）验证 spawn/流式/取消/超时/退出码语义、
-// workspace 收敛、环境允许清单、审批姿态旗标、会话续接与审批/提问可见性。
+// workspace 收敛（词法 + 物理）、环境允许清单、审批姿态旗标、会话续接（含根门控）
+// 与审批/提问可见性。
 // 这是 mock 契约证据，不是真实 Meta CLI 的执行证据（AGENTS.md §7：contract-tested）。
 
 const FIXTURE_URL = new URL("./fixtures/muse-code/mock-muse-cli.mjs", import.meta.url);
@@ -150,6 +153,41 @@ describe("createMuseExecProcessPort", () => {
     ).rejects.toThrow(/inside the workspace root/i);
   });
 
+  it("rejects before spawn when the working directory escapes through a symlink inside the root (R4 rev. 3)", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "muse-escape-"));
+    cleanups.push(() => rm(parent, { force: true, recursive: true }));
+    const root = join(parent, "ws");
+    const outside = join(parent, "outside");
+    const link = join(root, "link");
+    await mkdir(root);
+    await mkdir(join(outside, "sub"), { recursive: true });
+    await symlink(outside, link);
+    const ctx = await prepareFixture();
+    // 词法在界内（ws/link）、物理在界外（outside）→ 绝不 spawn。
+    await expect(
+      runPort({ ...ctx, workdir: link, workspaceRoot: root }).run,
+    ).rejects.toThrow(/inside the workspace root/i);
+    await expect(
+      runPort({ ...ctx, workdir: join(link, "sub"), workspaceRoot: root }).run,
+    ).rejects.toThrow(/inside the workspace root/i);
+  });
+
+  it("passes the documented --workspace flag with the session workspace root (R4 rev. 3)", async () => {
+    const ctx = await prepareFixture({ MUSE_FIXTURE_MODE: "argv-audit" });
+    const sub = join(ctx.workdir, "packages", "app");
+    await mkdir(sub, { recursive: true });
+    const result = await runPort({ ...ctx, workdir: sub, workspaceRoot: ctx.workdir }).run;
+    expect(result.exitCode).toBe(0);
+    // argv-audit 写入 cwd（= 会话工作目录 sub）。
+    const argvLines = (
+      await readFile(join(sub, "muse-fixture-argv.txt"), "utf8")
+    ).split("\n");
+    const workspaceIndex = argvLines.indexOf("--workspace");
+    expect(workspaceIndex).toBeGreaterThan(-1);
+    // 传的是 workspace 根（策略边界），不是 cwd。
+    expect(argvLines[workspaceIndex + 1]).toBe(ctx.workdir);
+  });
+
   it("spawns the CLI under the allowlisted environment only (R5)", async () => {
     const ctx = await prepareFixture({
       PATH: process.env.PATH ?? "",
@@ -206,18 +244,21 @@ describe("createMuseExecProcessPort", () => {
     expect(store.map()["sess_muse_A"]?.surface).toBe("muse-exec");
 
     // 第二轮（模拟 MOS 重启后的新端口实例 + 同一持久映射）必须续接同一 muse 会话。
+    // rev. 3：resume 门控按 workspace 根对账——第二轮必须仍在同一根内（真实 MOS
+    // 会话的工作目录跨重启不变；这里用 argv-audit 固件在同一 cwd 下核对 argv）。
     const audit = await prepareFixture({ MUSE_FIXTURE_MODE: "argv-audit" });
     const storeAfterRestart = createMemorySessionStore(store.map());
     const second = await runPort({
       env: audit.env,
       settings: { ...audit.settings, executablePath: audit.fixturePath },
-      workdir: audit.workdir,
+      workdir: ctx.workdir,
+      workspaceRoot: ctx.workdir,
       sessionId: "sess_muse_A",
       sessionStore: storeAfterRestart,
     }).run;
     expect(second.resumedMuseSession).toBe(true);
     expect(second.museSessionId).toBe("muse-fixture-session-1");
-    const argv = await readFile(join(audit.workdir, "muse-fixture-argv.txt"), "utf8");
+    const argv = await readFile(join(ctx.workdir, "muse-fixture-argv.txt"), "utf8");
     expect(argv).toContain("--session-id");
     expect(argv).toContain("muse-fixture-session-1");
   });
@@ -229,6 +270,74 @@ describe("createMuseExecProcessPort", () => {
     expect(result.resumedMuseSession).toBe(false);
     const argv = await readFile(join(ctx.workdir, "muse-fixture-argv.txt"), "utf8");
     expect(argv).not.toContain("--session-id");
+  });
+
+  it("starts a fresh session instead of resuming when the stored workspace root differs (R2/R4 rev. 3)", async () => {
+    const otherRoot = await mkdtemp(join(tmpdir(), "muse-other-root-"));
+    cleanups.push(() => rm(otherRoot, { force: true, recursive: true }));
+    const ctx = await prepareFixture();
+    const store = createMemorySessionStore({
+      sess_muse_test: {
+        museSessionId: "muse-fixture-session-1",
+        surface: "muse-exec",
+        workspaceRoot: otherRoot,
+        updatedAt: "2026-11-14T00:00:00.000Z",
+      },
+    });
+    const result = await runPort({ ...ctx, sessionStore: store }).run;
+    expect(result.exitCode).toBe(0);
+    // 根不一致 → 不续接：开新会话（新 id 申报），绝不跨 workspace 边界续接旧会话。
+    expect(result.resumedMuseSession).toBe(false);
+    expect(result.sessionWorkspaceMismatch).toBe(true);
+    expect(result.museSessionId).toBe("muse-fixture-session-1");
+    expect(store.map()["sess_muse_test"]?.workspaceRoot).toBe(ctx.workdir);
+    // argv 侧同样不携带 --session-id。
+    const audit = await prepareFixture({ MUSE_FIXTURE_MODE: "argv-audit" });
+    const auditStore = createMemorySessionStore({
+      sess_muse_test: {
+        museSessionId: "muse-fixture-session-1",
+        surface: "muse-exec",
+        workspaceRoot: otherRoot,
+        updatedAt: "2026-11-14T00:00:00.000Z",
+      },
+    });
+    const auditResult = await runPort({ ...audit, sessionStore: auditStore }).run;
+    expect(auditResult.exitCode).toBe(0);
+    expect(auditResult.resumedMuseSession).toBe(false);
+    expect(auditResult.sessionWorkspaceMismatch).toBe(true);
+    const argv = await readFile(join(audit.workdir, "muse-fixture-argv.txt"), "utf8");
+    expect(argv).not.toContain("--session-id");
+  });
+
+  it("keeps resume continuity across symlinked workspace-root aliases (R2/R4 rev. 3)", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "muse-alias-"));
+    cleanups.push(() => rm(parent, { force: true, recursive: true }));
+    const realRoot = join(parent, "real-root");
+    const alias = join(parent, "alias");
+    await mkdir(realRoot);
+    await symlink(realRoot, alias);
+    const ctx = await prepareFixture({ MUSE_FIXTURE_MODE: "argv-audit" });
+    // 映射记录的是真实根；当前请求根是它的 symlink 别名（同一物理目录）。
+    const store = createMemorySessionStore({
+      sess_muse_test: {
+        museSessionId: "muse-fixture-session-1",
+        surface: "muse-exec",
+        workspaceRoot: realRoot,
+        updatedAt: "2026-11-14T00:00:00.000Z",
+      },
+    });
+    const result = await runPort({
+      ...ctx,
+      workdir: alias,
+      workspaceRoot: alias,
+      sessionStore: store,
+    }).run;
+    expect(result.exitCode).toBe(0);
+    expect(result.resumedMuseSession).toBe(true);
+    expect(result.sessionWorkspaceMismatch).toBeUndefined();
+    const argv = await readFile(join(alias, "muse-fixture-argv.txt"), "utf8");
+    expect(argv).toContain("--session-id");
+    expect(argv).toContain("muse-fixture-session-1");
   });
 
   it("surfaces approval requests and user questions as visible events with counts (R3)", async () => {
@@ -335,9 +444,4 @@ describe("settings handoff", () => {
       DEFAULT_MUSE_CODE_BACKEND_SETTINGS,
     );
   });
-});
-
-beforeEach(() => {
-  // mkdtemp in prepareFixture is per-test; nothing global to reset.
-  void mkdir;
 });

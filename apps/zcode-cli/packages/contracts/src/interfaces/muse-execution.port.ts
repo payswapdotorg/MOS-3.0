@@ -113,6 +113,12 @@ export interface MuseExecRunResult {
   museSessionId?: string;
   /** 本轮是否续接了既有 muse 会话（false = 新会话或连续性不可用）。 */
   resumedMuseSession: boolean;
+  /**
+   * true = 既有映射因 workspace 根与当前请求根不一致（词法 + realpath 别名解析）
+   * 而未续接（评审 rev. 3）：连续性已在当前根内重置为新会话，绝不跨 workspace
+   * 边界续接旧会话；core 据此归因/记录连续性重置。
+   */
+  sessionWorkspaceMismatch?: boolean;
   /** 观测到的审批请求数（fail-closed 拒绝同样计数）。 */
   approvalRequestsObserved: number;
   /** 观测到的用户提问数（headless 轮未作答）。 */

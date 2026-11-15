@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import type {
   MuseExecHandlers,
   MuseExecRequest,
@@ -19,12 +22,21 @@ import {
 } from "@zcode/shared";
 import { createMuseSessionProtocolPort } from "../src/muse-code/muse-session-protocol.js";
 import type { MuseSessionMap, MuseSessionStore } from "../src/muse-code/muse-session-store.js";
-// Muse Session Protocol（MSP）端口的契约测试（Issue #24 / ACR-0002；PR #27 评审 R1–R6）。
+// Muse Session Protocol（MSP）端口的契约测试（Issue #24 / ACR-0002；PR #27 评审 R1–R6；
+// 评审 rev. 3：resume 的 workspace 根门控 + symlink 物理逃逸拒绝）。
 // @muse-code/sdk 用脚本化 fake client 注入（spawnClient seam）：
 // 验证 startSession/resumeSession 的 workspaceRoot/workspaceRoots/approvalMode、
 // deny 审批处理器（fail-closed）、环境允许清单、事件投影（delta/item/approval/question）、
 // 取消/超时 → interrupt、用量映射与订阅快照、host close。
 // 这是 mock 契约证据（SDK facade 层注入），真实 MSP 握手在机验证（evidence §4）。
+
+const cleanups: (() => Promise<void>)[] = [];
+
+afterEach(async () => {
+  while (cleanups.length > 0) {
+    await cleanups.pop!()?.().catch(() => undefined);
+  }
+});
 
 interface FakeFrame {
   method: string;
@@ -292,6 +304,31 @@ describe("createMuseSessionProtocolPort", () => {
     ).rejects.toThrow(/inside the workspace root/i);
   });
 
+  it("rejects before spawn when the working directory escapes through a symlink inside the root (R4 rev. 3)", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "muse-msp-escape-"));
+    cleanups.push(() => rm(parent, { force: true, recursive: true }));
+    const root = join(parent, "ws");
+    const outside = join(parent, "outside");
+    const link = join(root, "link");
+    await mkdir(root);
+    await mkdir(join(outside, "sub"), { recursive: true });
+    await symlink(outside, link);
+    const fake = createFakeSdk();
+    // 词法在界内、物理在界外 → 与 exec 面同一收敛判定，绝不启动 host。
+    await expect(
+      runPort({
+        fake,
+        request: buildRequest({ workdir: link, workspaceRoot: root }),
+      }).run,
+    ).rejects.toThrow(/inside the workspace root/i);
+    await expect(
+      runPort({
+        fake,
+        request: buildRequest({ workdir: join(link, "sub"), workspaceRoot: root }),
+      }).run,
+    ).rejects.toThrow(/inside the workspace root/i);
+  });
+
   it("resumes the persisted muse session and registers the deny approval handler (R2/R3)", async () => {
     const fake = createFakeSdk({ museSessionId: "muse-session-resumed-9" });
     const store = createMemorySessionStore({
@@ -312,6 +349,62 @@ describe("createMuseSessionProtocolPort", () => {
     expect(result.museSessionId).toBe("muse-session-resumed-9");
     // resume 面的 deny 处理器必须随 options 注册（approval 可能在 resume reply 后立刻到达）。
     expect(typeof fake.state.resumeApprovalHandler).toBe("function");
+  });
+
+  it("starts a fresh session instead of resuming when the stored workspace root differs (R2/R4 rev. 3)", async () => {
+    const fake = createFakeSdk({ museSessionId: "muse-session-fresh-2" });
+    const store = createMemorySessionStore({
+      sess_muse_test: {
+        museSessionId: "muse-session-resumed-9",
+        surface: "session-protocol",
+        workspaceRoot: "/workspace/other-root",
+        updatedAt: "2026-11-14T00:00:00.000Z",
+      },
+    });
+    const { run } = runPort({ fake, store });
+    const runPromise = run.then((r) => r);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    fake.complete(completedOutcome());
+    const result = await runPromise;
+    // 根不一致 → 不 resumeSession，startSession 在当前根内开新会话。
+    expect(fake.state.resumeOptions).toBeUndefined();
+    expect(fake.state.startOptions?.workspaceRoot).toBe("/workspace/fixture");
+    expect(result.resumedMuseSession).toBe(false);
+    expect(result.sessionWorkspaceMismatch).toBe(true);
+    expect(result.museSessionId).toBe("muse-session-fresh-2");
+    // 映射覆写为当前根（下轮在同根内可续接新会话）。
+    expect(store.map()["sess_muse_test"]?.workspaceRoot).toBe("/workspace/fixture");
+  });
+
+  it("keeps resume continuity across symlinked workspace-root aliases (R2/R4 rev. 3)", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "muse-msp-alias-"));
+    cleanups.push(() => rm(parent, { force: true, recursive: true }));
+    const realRoot = join(parent, "real-root");
+    const alias = join(parent, "alias");
+    await mkdir(realRoot);
+    await symlink(realRoot, alias);
+    const fake = createFakeSdk({ museSessionId: "muse-session-resumed-9" });
+    const store = createMemorySessionStore({
+      sess_muse_test: {
+        museSessionId: "muse-session-resumed-9",
+        surface: "session-protocol",
+        workspaceRoot: realRoot,
+        updatedAt: "2026-11-14T00:00:00.000Z",
+      },
+    });
+    // 映射记录真实根；当前请求根是它的 symlink 别名（同一物理目录）→ 续接保持。
+    const { run } = runPort({
+      fake,
+      store,
+      request: buildRequest({ workdir: alias, workspaceRoot: alias }),
+    });
+    const runPromise = run.then((r) => r);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    fake.complete(completedOutcome());
+    const result = await runPromise;
+    expect(fake.state.resumeOptions?.sessionId).toBe("muse-session-resumed-9");
+    expect(result.resumedMuseSession).toBe(true);
+    expect(result.sessionWorkspaceMismatch).toBeUndefined();
   });
 
   it("answers approvals with an offered deny choice only, never approving (R3)", async () => {

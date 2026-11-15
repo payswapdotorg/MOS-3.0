@@ -154,3 +154,93 @@ work_packages:
       - delegated 轮 cost 记 null；usageReporting 如实标注。
       - 全量工程套件在修订 head 上执行（唯一失败 = mos-ci.yml 头注 4 已记录的环境敏感基线）。
       - 在机验证清单（证据文件 §4 rev. 2）覆盖 MSP/连续性/审批/边界/环境隔离各面。
+  - id: MC-C
+    name: PR #27 external verification round 2 corrections (C1-C3)
+    owner: tl
+    status: delivered
+    paths:
+      - packages/shared/src/muse-code/muse-code-backend.ts
+      - packages/services/test/museCodeService.test.ts
+      - apps/zcode-cli/packages/contracts/src/interfaces/muse-execution.port.ts
+      - apps/zcode-cli/packages/core/src/runtime/methods/delegated-muse-turn.ts
+      - apps/zcode-cli/packages/core/tests/delegated-muse-turn.test.ts
+      - apps/zcode-cli/packages/bootstrap/src/muse-code/muse-exec-support.ts
+      - apps/zcode-cli/packages/bootstrap/src/muse-code/muse-exec-process.ts
+      - apps/zcode-cli/packages/bootstrap/src/muse-code/muse-session-protocol.ts
+      - apps/zcode-cli/packages/bootstrap/src/muse-code/muse-session-store.ts
+      - apps/zcode-cli/packages/bootstrap/src/muse-code/muse-execution-port.ts
+      - apps/zcode-cli/packages/bootstrap/tests/muse-exec-support.test.ts
+      - apps/zcode-cli/packages/bootstrap/tests/muse-exec-process.test.ts
+      - apps/zcode-cli/packages/bootstrap/tests/muse-session-protocol.test.ts
+      - apps/zcode-cli/packages/bootstrap/tests/fixtures/muse-code/mock-muse-cli.mjs
+    forbidden_paths:
+      - spec/architecture/**
+      - packages/provider/**
+      - packages/provider-node/**
+      - config/provider/**
+    tasks:
+      - C1：exec 面传 documented `--workspace <MOS workspaceRoot>`（Meta 当前配置文档列为
+        interactive/headless 通用 common flag；MC-B R4「不虚构 --workspace」的文档判断有误，
+        evidence §1 已更正）；契约测试断言策略根（非 cwd）逐轮传入；mock CLI 强制该调用形状。
+      - C2：执行面 auto 门控改为锁步**精确配对**（museCliVersionMatchesSdkPin：裸 x.y.z
+        全等，prerelease/build 后缀不匹配；任何偏离回退 exec 面）；services 预览同步新期望。
+      - C3：resume 的 workspace 根强制（lookupMuseSessionMapping + isSameMuseWorkspaceRoot：
+        词法归一 + realpath 别名解析；不同物理根 = 不续接，当前根内开新会话 +
+        sessionWorkspaceMismatch 归因回传 result/metadata/log；映射自愈覆写）；收敛校验增加
+        物理复核（词法在界内、物理在界外的 symlink/junction 逃逸 = spawn 前拒绝）；
+        symlink 真实测试（POSIX）+ junction 注入 realpath 模拟 + 在机清单 §4 步骤 8。
+      - 治理同步：ACR-0002 §Revision 3、evidence rev. 3、IMPLEMENTATION-STATE 对应条目。
+    deliverables:
+      - documented_workspace_flag
+      - exact_lockstep_gate
+      - resume_workspace_root_enforcement
+      - physical_containment_recheck
+      - regression_tests_and_corrected_evidence
+    acceptance:
+      - 逐轮 argv 携带 --workspace <workspaceRoot>（策略根，非 cwd）。
+      - CLI 版本与 pin 不完全相等（更新/更旧/未知/带后缀）一律 exec 面；仅 1.4.20 精确配对走 MSP。
+      - 不同物理 workspace 根绝不续接旧 muse 会话；同物理根的 symlink/junction 别名保持连续性。
+      - 连续性重置可见（sessionWorkspaceMismatch），绝不静默跨根。
+      - muse 契约套件全绿（73/73：JSONL 8 + process 20 + MSP 16 + support 11 + core 8 +
+        services 7 + ui 3）。
+  - id: MC-D
+    name: Explicit Muse model / Contributor-mode selection (New Task + Studio)
+    owner: tl
+    status: planned
+    paths:
+      - packages/shared/src/muse-code/muse-code-backend.ts
+      - packages/ui/src/settings/MuseCodeSection.tsx
+      - packages/ui/src/chat-input-toolbar/MuseCodeBackendIndicator.tsx
+      - packages/ui/src/v4/composer/V4ComposerToolbar.tsx
+      - packages/ui/src/v4/commandFactory.ts
+      - packages/ui/src/i18n/locales/en-US.ts
+      - packages/ui/src/i18n/locales/zh-CN.ts
+      - apps/zcode-cli/packages/contracts/src/interfaces/muse-execution.port.ts
+      - apps/zcode-cli/packages/core/src/runtime/methods/delegated-muse-turn.ts
+      - apps/zcode-cli/packages/bootstrap/src/muse-code/**
+    forbidden_paths:
+      - spec/architecture/**
+      - packages/provider/**
+      - packages/provider-node/**
+      - config/provider/**
+    tasks:
+      - 调研（前置，阻断后续实现）：MSP 路由上选择模型/Contributor 模式的官方支持方式
+        （@muse-code/sdk startSession/protocol 能力面）——绝不假设 `muse exec` 的
+        `--model` / `--contributor-mode on|off` 旗标对 MSP 会话生效；结论回填
+        ACR-0002（新 Revision）与 evidence。
+      - exec 面：per-run 模型/Contributor 选择经 documented `--model` +
+        `--contributor-mode on|off` 传入（MuseExecRequest additive 字段；缺省 = CLI 自身
+        配置，行为不变）。
+      - UI：New Task 的模型选择体验对齐 Start Plan 选择 GLM-5.3 的方式（替换当前
+        「后端激活即禁用选择 + 锁定原因」为显式 Muse 模型选择）；MOS Studio 同步覆盖。
+      - 契约测试（exec 旗标传递、MSP 官方机制、信封 additive 字段、UI 门控）+ 证据更新。
+    deliverables:
+      - msp_selection_mechanism_finding
+      - per_run_model_contributor_selection
+      - new_task_and_studio_selector_parity
+      - contract_tests_and_evidence
+    acceptance:
+      - MSP 官方机制先核实后使用（未核实 = 只落地 exec 面，MSP 面保持现状并记录边界）。
+      - 缺省路径零行为变化（不选 = CLI 自身配置）。
+      - New Task 与 Studio 的选择体验一致；选择结果逐轮归因可见。
+      - 独立 PR 交付（不并入 PR #27）；ACR-0002 新 Revision 记录裁决。

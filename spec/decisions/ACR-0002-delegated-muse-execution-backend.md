@@ -1,8 +1,8 @@
 # Architecture Change Record — ACR-0002
 
-**Status:** accepted (rev. 2 — PR #27 external review revisions R1–R7)
+**Status:** accepted (rev. 2 — PR #27 external review revisions R1–R7; rev. 3 — verification-round corrections)
 **Owner:** TL (payswapdotorg)
-**Date:** 2026-11-14 (rev. 2: 2026-11-14)
+**Date:** 2026-11-14 (rev. 2: 2026-11-14; rev. 3: 2026-11-15)
 **Related PR / issue:** Issue #24 (P0, Integrate Muse Code Contributor CLI into MOS New Task); PR #27（rev. 2 随附）
 **Affected modules/contracts:** packages/shared（muse-code 契约、v4 信封字段、runtime capability、channel）、packages/services（IMuseCodeService）、packages/client、packages/ui（设置分区/Composer 指示器/信封门控）、apps/zcode-cli/packages/contracts（MuseExecutionPort）、apps/zcode-cli/packages/core（delegated turn 执行器 + turn 路由）、apps/zcode-cli/packages/bootstrap（执行端口（双面）+ JSONL 映射 + MSP 会话端口 + 会话映射存储 + capability + v4 命令门控）
 
@@ -78,10 +78,12 @@ chain; review item 7 to the roadmap guardrail that closes this section):
   selectMuseExecutionSurface`; explicit setting override > auto version gate):
   1. **Muse Session Protocol (MSP)** — `muse serve` + the official TypeScript SDK
      `@muse-code/sdk`, **exact-pinned `1.4.20`** (SDK and CLI "version in lockstep with Muse
-     Code" per the official README — exact pin, never a `^` range). Auto-selected when the
-     installed CLI version ≥ the pinned pairing (`muse --version` probe, cached in-process,
-     probe failure = conservative fallback). This surface is itself **developer preview** per
-     Meta — recorded as a known admission, with the exec fallback always available.
+     Code" per the official README — exact pin, never a `^` range). Auto-selected only when
+     the installed CLI version **exactly matches** the pinned pairing (`muse --version`
+     probe, cached in-process, probe failure = conservative fallback; rev. 3 — the lockstep
+     rule is X.Y.Z↔X.Y.Z, not ≥; no forward-compatibility is assumed). This surface is itself
+     **developer preview** per Meta — recorded as a known admission, with the exec fallback
+     always available.
   2. **`muse exec --json`** — the documented headless surface available on every CLI version;
      remains the compatibility fallback (old/unknown CLI version, explicit override).
   The hand-rolled JSONL-only adapter is no longer the primary integration claim; the actual
@@ -108,12 +110,16 @@ chain; review item 7 to the roadmap guardrail that closes this section):
   metadata, and logs. **`--yolo` and sandbox-disable never appear in any argv** (red line).
 - **R4 — workspace boundary.** `MuseExecRequest.workspaceRoot` is the policy boundary.
   MOS-side containment validation (`workingDirectory` must be inside `workspaceRoot`;
-  normalization for win32 separators/drive case) runs before any spawn — violations reject
-  with a stable `workspaceViolation` issue code. MSP surface passes the root as the official
-  `session/start` `workspaceRoot` (single root) / `workspaceRoots` (cwd is a subdirectory;
-  first root = CWD, all roots receive the ADR `:workspace_roots` rules). The exec surface's
-  boundary is cwd containment plus Muse's own sandbox (which stays enabled); no undocumented
-  `--workspace` flag is invented (verified absent from Meta's docs — see evidence §1).
+  normalization for win32 separators/drive case; rev. 3 adds a physical realpath re-check so
+  a symlink/junction that is lexically inside but physically outside is also rejected) runs
+  before any spawn — violations reject with a stable `workspaceViolation` issue code. MSP
+  surface passes the root as the official `session/start` `workspaceRoot` (single root) /
+  `workspaceRoots` (cwd is a subdirectory; first root = CWD, all roots receive the ADR
+  `:workspace_roots` rules). The exec surface passes the documented `--workspace
+  <workspaceRoot>` flag (rev. 3 correction — Meta's current configuration documentation
+  lists it as a common flag for interactive and headless execution; the rev. 2 claim that
+  the flag does not exist was wrong) so the CLI-side boundary is pinned to the same policy
+  root, on top of cwd containment and Muse's own sandbox (which stays enabled).
 - **R5 — child-process environment isolation.** `shared/node buildMuseChildEnv` builds the
   Muse child environment from a tested allowlist (process bootstrap + user-profile dirs for
   the CLI's own login state + locale + `MUSE_*` passthrough). Host integration credentials
@@ -158,9 +164,54 @@ Muse Code remains a delegated execution backend (never a provider), the single
 tool-execution-loop boundary stands (MOS never re-approves or re-executes the external
 agent's tools), and the credentials red line is unchanged.
 
+## Revision 3 (2026-11-15, PR #27 external verification round 2 — three code corrections)
+
+External verification on the rev. 2 head confirmed CI green, the PR #28 reconciliation, the
+54-test fresh-clone reproduction and the SDK typings check, and sent back three code issues
+plus one product gap. All three corrections are delivered on PR #27 with regression tests;
+the product gap is scoped as a separate work package (MC-D), deliberately not part of this
+PR (mapping: verification item 1 → C1, item 2 → C2, item 3 → C3, item 4 → MC-D):
+
+- **C1 — documented `--workspace` flag on the exec surface.** Meta's current configuration
+  documentation lists `--workspace <path>` as a common flag for interactive and headless
+  execution (alongside `--model` and `--contributor-mode on|off`). The rev. 2 evidence claim
+  that the flag does not exist was wrong and is corrected in evidence §1. The exec surface
+  now passes `--workspace <MOS workspaceRoot>` on every run (contract-tested: the policy
+  root, not the cwd, is passed; the mock CLI enforces the documented call shape). Workspace
+  policy on the exec surface = MOS lexical+physical containment (first gate) + the CLI's
+  own `--workspace` boundary + Muse's sandbox.
+- **C2 — exact lockstep version gate.** The official SDK README pairs SDK X.Y.Z with Muse
+  Code X.Y.Z and instructs consumers to pin an exact version; the rev. 2 auto gate used
+  `CLI ≥ pin`, which would drive the `1.4.20` SDK against a `1.4.21`/`1.5.0` CLI. The gate
+  is now exact equality (`museCliVersionMatchesSdkPin`: bare x.y.z only — prerelease/build
+  suffixes do not match); any deviation selects the exec fallback. Widening requires an
+  official compatibility matrix and a new revision of this record. The explicit
+  `executionSurface` setting remains the user's informed override for on-machine diagnosis.
+- **C3 — stored workspace roots enforced on session resumption.** The durable map already
+  stored `workspaceRoot`; it is now consulted: a resume (MSP `resumeSession` / exec
+  `--session-id`) is attempted only when the stored root and the current request root are
+  the same — lexically, or through realpath alias resolution, so symlinks/Windows junctions
+  pointing at the same physical directory keep continuity while lexical comparisons can
+  never bypass the workspace boundary (containment also gained the physical re-check). A
+  different physical root refuses the resume: a fresh Muse session starts inside the current
+  root (mapping self-heals on write) and the turn result, message metadata and log carry
+  `sessionWorkspaceMismatch: true` — the continuity reset is attributable, never silent.
+- **MC-D (scoped follow-up, separate PR) — explicit Muse model / Contributor-mode
+  selection.** Today the Composer disables model selection while the backend is active with
+  an explicit lock reason, and the execution request carries no model selection; Meta now
+  documents `--model` and `--contributor-mode on|off` for headless CLI runs. MC-D will
+  deliver the selection experience for New Task **and** Studio parity; for the MSP route it
+  must first establish the officially supported way to select these options (SDK/protocol
+  surface) — the `muse exec` flags must not be assumed to configure an MSP session. Not
+  implemented in this PR.
+
+No boundary changes: Muse Code remains a delegated execution backend (never a provider),
+the single-tool-execution-loop and credentials red lines stand, and the Revision 2 roadmap
+guardrail is unaffected.
+
 ## Approval
 
-- TL: payswapdotorg（TL-authored vertical slice; rev. 2 revisions TL-authored after external review）
-- Required domain/security reviewers: 待评审（rev. 2 后需在推送 head 上重新评审）
+- TL: payswapdotorg（TL-authored vertical slice; rev. 2 revisions and rev. 3 verification-round corrections TL-authored after external review/verification）
+- Required domain/security reviewers: 待评审（rev. 3 修正后需在推送 head 上重新评审）
 - Commit / PR that updates architecture lock and module registry: PR #27（policy admission：`muse-code-delegated-backend-unmanaged-edit`）
 

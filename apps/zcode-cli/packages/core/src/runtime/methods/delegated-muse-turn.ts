@@ -343,6 +343,9 @@ export async function runDelegatedMuseTurn(
         usageReporting: reportedUsage ? ("reported" as const) : ("unreported" as const),
         ...(runResult.museSessionId ? { museSessionId: runResult.museSessionId } : {}),
         resumedMuseSession: runResult.resumedMuseSession,
+        ...(runResult.sessionWorkspaceMismatch
+          ? { sessionWorkspaceMismatch: true as const }
+          : {}),
         approvalRequestsObserved: observedApprovalRequests,
         userQuestionsObserved: observedUserQuestions,
         ...(runResult.subscriptionUsage
@@ -396,6 +399,9 @@ export async function runDelegatedMuseTurn(
       surface: runResult.surface,
       ...(runResult.museSessionId ? { museSessionId: runResult.museSessionId } : {}),
       resumedMuseSession: runResult.resumedMuseSession,
+      ...(runResult.sessionWorkspaceMismatch
+        ? { sessionWorkspaceMismatch: true }
+        : {}),
       approvalRequestsObserved: observedApprovalRequests,
       userQuestionsObserved: observedUserQuestions,
       usageReporting: reportedUsage ? "reported" : "unreported",

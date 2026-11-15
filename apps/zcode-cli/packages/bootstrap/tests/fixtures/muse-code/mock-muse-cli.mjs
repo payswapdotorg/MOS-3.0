@@ -1,17 +1,20 @@
 #!/usr/bin/env node
 // 模拟 muse CLI（Issue #24 契约测试专用；不是真实 Meta CLI）。
-// 解析 documented 调用形状：`exec --json --prompt-file <file>
-// [--max-model-steps N] [--session-id <uuid>] [--disable-approval]`，
+// 解析 documented 调用形状（评审 rev. 3 增加 --workspace）：`exec --json
+// --workspace <path> --prompt-file <file> [--max-model-steps N]
+// [--session-id <uuid>] [--disable-approval]`，
 // 按 MUSE_FIXTURE_MODE 输出候选 JSONL 事件流：
 //   stream（默认）| exit-fail | error-event | invalid | hang | write-file
 //   | env-audit | argv-audit | approval-event | question-event
 // PR #27 评审修订：
+//   - workspace 边界（R4 rev. 3）：--workspace 是 Meta 当前配置文档列出的
+//     common flag（interactive/headless 通用），fixture 按契约形状强制要求它。
 //   - 会话连续性（R2）：无 --session-id 时申报 session_started + session_id；
 //     带调用方提供的 --session-id 时申报 session_resumed。
 //   - 审批可见性（R3）：approval-event / question-event 模式发出候选事件。
 //   - 环境隔离（R5）：env-audit 把子进程环境键写盘（只键名，不写值）。
-//   - argv 审计：argv-audit 把收到的 argv 逐行写盘（核对 --disable-approval /
-//     --session-id 是否按设置传入）。
+//   - argv 审计：argv-audit 把收到的 argv 逐行写盘（核对 --workspace /
+//     --disable-approval / --session-id 是否按设置传入）。
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -27,10 +30,15 @@ if (argv[0] !== "exec" || argv[1] !== "--json") {
   process.exit(2);
 }
 const promptFileIndex = argv.indexOf("--prompt-file");
+const workspaceIndex = argv.indexOf("--workspace");
 const maxStepsIndex = argv.indexOf("--max-model-steps");
 const sessionIdIndex = argv.indexOf("--session-id");
 if (promptFileIndex === -1) {
   process.stderr.write("fixture: --prompt-file missing\n");
+  process.exit(2);
+}
+if (workspaceIndex === -1) {
+  process.stderr.write("fixture: --workspace missing\n");
   process.exit(2);
 }
 let prompt;
@@ -40,6 +48,7 @@ try {
   process.stderr.write("fixture: cannot read prompt file\n");
   process.exit(2);
 }
+const workspaceRoot = argv[workspaceIndex + 1];
 const maxModelSteps = maxStepsIndex !== -1 ? argv[maxStepsIndex + 1] : undefined;
 const resumeSessionId = sessionIdIndex !== -1 ? argv[sessionIdIndex + 1] : undefined;
 const mode = process.env.MUSE_FIXTURE_MODE ?? "stream";
@@ -61,7 +70,7 @@ if (mode === "argv-audit") {
   process.exit(0);
 }
 // 未映射的事件类型：真实 CLI 的 schema 未知，端口必须计数而不是猜测。
-emit({ type: "system", promptFile: true, maxModelSteps });
+emit({ type: "system", promptFile: true, workspaceRoot, maxModelSteps });
 // 会话申报（R2）：候选信封字段；端口负责捕获（未知类型按 unknown 计数）。
 emit(
   resumeSessionId
