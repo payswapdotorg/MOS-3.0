@@ -1,6 +1,6 @@
 # Release engineering — distributable MOS desktop application
 
-**Status:** planned; no MOS desktop release is published yet  
+**Status:** delivered as release candidates — `mos-v3.0.0-rc.1`…`rc.3` published (18 assets each; full pipeline + clean-machine smokes green; publication records in `docs/handoff/IMPLEMENTATION-STATE.md`); the per-release gates below remain binding for every future candidate and for the stable `mos-v3.0.0`  
 **Owner:** Tech Lead (TL)  
 **Canonical product:** MOS 3.0  
 **Repository:** `payswapdotorg/MOS-3.0`
