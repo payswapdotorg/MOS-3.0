@@ -11,6 +11,8 @@ import {
   type ProviderReadShape,
 } from "@mos/integrations";
 import { MissionStore, missionFromIntake } from "@mos/missions";
+import { ArtifactStore } from "@mos/content-artifacts";
+import { RightsRecordStore } from "@mos/rights-policy";
 import { RouteService, compareRoutes, type RouteInstanceFact } from "@mos/routes";
 import {
   COMPOSIO_CONNECTION_ID,
@@ -26,7 +28,6 @@ import {
 } from "../contract/studio-vocabulary.js";
 import type { OperatorRecord } from "../contract/operator.js";
 import { operatorAsUserIdentity } from "../contract/operator.js";
-import type { ToolCallMeta } from "../contract/session-context.js";
 import {
   capabilityInstanceView,
   connectionView,
@@ -34,7 +35,11 @@ import {
   routesView,
   type CapabilityInstanceView,
   type ConnectionView,
+  type DraftBriefView,
+  type EvidenceView,
+  type HypothesisView,
   type MissionView,
+  type ResearchNoteView,
   type RoutesView,
 } from "../domain/journey-projection.js";
 import {
@@ -42,6 +47,42 @@ import {
   type StudioAvailability,
 } from "../domain/availability.js";
 import { OperatorStore } from "./operator-store.js";
+import {
+  LabDraftComposition,
+  type ComposeDraftBriefInput,
+  type ProposeHypothesisInput,
+  type RecordResearchNoteInput,
+  type ReviewDraftBriefInput,
+} from "./lab-draft-composition.js";
+import {
+  studioSessionContextFromMeta,
+  StudioBriefNotFoundError,
+  StudioConnectionNotFoundError,
+  StudioDataDirUnavailableError,
+  StudioEvidenceNotFoundError,
+  StudioHypothesisNotFoundError,
+  StudioInvalidInputError,
+  StudioMissionNotFoundError,
+  StudioNoteNotFoundError,
+  StudioTenantUnavailableError,
+  type StudioSessionContext,
+} from "./studio-shared.js";
+
+export {
+  studioSessionContextFromMeta,
+  StudioBriefNotFoundError,
+  StudioConnectionNotFoundError,
+  StudioDataDirUnavailableError,
+  StudioEvidenceNotFoundError,
+  StudioHypothesisNotFoundError,
+  StudioInvalidInputError,
+  StudioMissionNotFoundError,
+  StudioNoteNotFoundError,
+  StudioTenantUnavailableError,
+};
+export type { StudioSessionContext };
+import { EvidenceStore } from "./evidence-store.js";
+import { DraftBriefStore } from "./draft-brief-store.js";
 import {
   createComposioSession,
   ComposioSessionError,
@@ -79,31 +120,6 @@ export interface StudioPorts {
   readonly fetch: typeof globalThis.fetch;
 }
 
-/** tools/call `_meta` 提取的会话事实（缺失字段如实为 null）。 */
-export interface StudioSessionContext {
-  readonly sessionId: string | null;
-  readonly workspacePath: string | null;
-  readonly workspaceIdentity: string | null;
-  readonly workspaceKey: string | null;
-}
-
-export function studioSessionContextFromMeta(meta: ToolCallMeta | null): StudioSessionContext {
-  if (!meta) {
-    return {
-      sessionId: null,
-      workspacePath: null,
-      workspaceIdentity: null,
-      workspaceKey: null,
-    };
-  }
-  return {
-    sessionId: meta.session_id ?? null,
-    workspacePath: meta.workspace_path ?? null,
-    workspaceIdentity: meta.workspace_identity ?? null,
-    workspaceKey: meta.workspace_key ?? null,
-  };
-}
-
 export type StudioTenantResolution =
   | { readonly status: "resolved"; readonly tenant: TenantContext }
   | { readonly status: "unavailable"; readonly reason: string };
@@ -120,9 +136,14 @@ export class StudioService {
   private readonly operatorStore: OperatorStore | null;
   private readonly missionStore: MissionStore | null;
   private readonly connectionStore: ConnectionStore | null;
+  private readonly evidenceStore: EvidenceStore | null;
+  private readonly briefStore: DraftBriefStore | null;
+  private readonly artifactStore: ArtifactStore | null;
+  private readonly rightsStore: RightsRecordStore | null;
   private readonly catalog: CapabilityCatalog;
   private readonly resolver: CapabilityInstanceResolverService;
   private readonly routeService: RouteService;
+  private readonly labDraft: LabDraftComposition;
 
   constructor(deps: StudioServiceDeps) {
     this.operatorStore = deps.dataDir ? new OperatorStore({ directory: deps.dataDir }) : null;
@@ -130,6 +151,10 @@ export class StudioService {
       ? new MissionStore({ directory: deps.dataDir, time: deps.ports.time })
       : null;
     this.connectionStore = deps.dataDir ? new ConnectionStore({ directory: deps.dataDir }) : null;
+    this.evidenceStore = deps.dataDir ? new EvidenceStore({ directory: deps.dataDir }) : null;
+    this.briefStore = deps.dataDir ? new DraftBriefStore({ directory: deps.dataDir }) : null;
+    this.artifactStore = deps.dataDir ? new ArtifactStore({ directory: deps.dataDir }) : null;
+    this.rightsStore = deps.dataDir ? new RightsRecordStore({ directory: deps.dataDir }) : null;
     this.catalog = new CapabilityCatalog();
     this.catalog.register(studioComposioDiscussionSearchDescriptor());
     this.catalog.registerImplementation(studioComposioDiscussionSearchImplementation());
@@ -138,6 +163,21 @@ export class StudioService {
       time: deps.ports.time,
     });
     this.routeService = new RouteService({ time: deps.ports.time });
+    this.labDraft = new LabDraftComposition({
+      dataDir: deps.dataDir,
+      time: deps.ports.time,
+      missionStore: this.missionStore,
+      connectionStore: this.connectionStore,
+      evidenceStore: this.evidenceStore,
+      briefStore: this.briefStore,
+      artifactStore: this.artifactStore,
+      rightsStore: this.rightsStore,
+      catalog: this.catalog,
+      resolver: this.resolver,
+      routeService: this.routeService,
+      loadOperator: () => this.operator(),
+      linkedMission: (context, tenantId) => this.linkedMissionOrNull(context, tenantId),
+    });
     this.deps = deps;
   }
 
@@ -477,21 +517,101 @@ export class StudioService {
       // {successful, data: {results: [...], total_count, success_count, error_count}, log_id}。
       // 形状不符 → 无 composio 计数（base shape 的 recordCount 保持 unknown=null，绝不猜值）。
       const composioCounts = composioMultiExecuteCounts(result);
+      const observedAt = this.deps.ports.time.now();
+      const evidencePayload = {
+        kind: "provider_response" as const,
+        observed_via: "composio-session-mcp",
+        tool: "COMPOSIO_MULTI_EXECUTE_TOOL",
+        connection_id: connection.id,
+        session_ref: session.sessionId,
+        observed_at: observedAt,
+        facts: { ...shape, ...(composioCounts ? { composio: composioCounts } : {}) },
+      };
+      // Issue #31 Marketing Lab：成功读落地为 tenant-scoped 证据记录（ResearchNote
+      // findings 的可引用来源；counts-only，永不承载 provider 记录内容或凭据）。
+      // 证据存储不可用（dataDir 缺失）时读本身已 fail-closed（更早抛出）；此处只防御性降级。
+      const mission = context.sessionId
+        ? await this.linkedMissionOrNull(context, tenant.tenant_id)
+        : null;
+      const evidenceId = this.labDraft.recordCapturedEvidenceWithMission(
+        tenant,
+        mission ? mission.id : null,
+        { ...evidencePayload, query },
+      );
       return {
         status: "succeeded",
-        evidence: {
-          kind: "provider_response",
-          observed_via: "composio-session-mcp",
-          tool: "COMPOSIO_MULTI_EXECUTE_TOOL",
-          connection_id: connection.id,
-          session_ref: session.sessionId,
-          observed_at: this.deps.ports.time.now(),
-          facts: { ...shape, ...(composioCounts ? { composio: composioCounts } : {}) },
-        },
+        evidence_id: evidenceId,
+        evidence: evidencePayload,
       };
     } finally {
       await provider.close();
     }
+  }
+
+  // ── Issue #31 Marketing Lab → Studio draft（组合在 LabDraftComposition，此处薄委托） ──
+
+  async listEvidence(
+    context: StudioSessionContext,
+    missionId?: string,
+  ): Promise<readonly EvidenceView[]> {
+    const tenant = await this.requireTenant(context);
+    return this.labDraft.listEvidence(context, tenant, missionId);
+  }
+
+  async recordResearchNote(
+    context: StudioSessionContext,
+    input: RecordResearchNoteInput,
+  ): Promise<ResearchNoteView> {
+    const tenant = await this.requireTenant(context);
+    return this.labDraft.recordResearchNote(context, tenant, input);
+  }
+
+  async listResearchNotes(
+    context: StudioSessionContext,
+    missionId?: string,
+  ): Promise<readonly ResearchNoteView[]> {
+    const tenant = await this.requireTenant(context);
+    return this.labDraft.listResearchNotes(tenant, missionId);
+  }
+
+  async proposeHypothesis(
+    context: StudioSessionContext,
+    input: ProposeHypothesisInput,
+  ): Promise<HypothesisView> {
+    const tenant = await this.requireTenant(context);
+    return this.labDraft.proposeHypothesis(context, tenant, input);
+  }
+
+  async listHypotheses(
+    context: StudioSessionContext,
+    missionId?: string,
+  ): Promise<readonly HypothesisView[]> {
+    const tenant = await this.requireTenant(context);
+    return this.labDraft.listHypotheses(tenant, missionId);
+  }
+
+  async composeDraftBrief(
+    context: StudioSessionContext,
+    input: ComposeDraftBriefInput,
+  ): Promise<DraftBriefView> {
+    const tenant = await this.requireTenant(context);
+    return this.labDraft.composeDraftBrief(context, tenant, input);
+  }
+
+  async listDraftBriefs(
+    context: StudioSessionContext,
+    missionId?: string,
+  ): Promise<readonly DraftBriefView[]> {
+    const tenant = await this.requireTenant(context);
+    return this.labDraft.listDraftBriefs(tenant, missionId);
+  }
+
+  async reviewDraftBrief(
+    context: StudioSessionContext,
+    input: ReviewDraftBriefInput,
+  ): Promise<DraftBriefView> {
+    const tenant = await this.requireTenant(context);
+    return this.labDraft.reviewDraftBrief(tenant, input);
   }
 
   /** 状态工具聚合（面板首屏同款数据）。 */
@@ -534,6 +654,18 @@ export class StudioService {
     }
     return resolution.tenant;
   }
+
+  /** 当前会话已关联的 mission（tenant 已解析版本；无会话/无 mission → null）。 */
+  private async linkedMissionOrNull(
+    context: StudioSessionContext,
+    tenantId: string,
+  ): Promise<Mission | null> {
+    if (!context.sessionId || !this.missionStore) return null;
+    const missions = this.missionStore.listMissions(tenantId, {
+      source_zcode_session_id: context.sessionId,
+    });
+    return missions[0] ?? null;
+  }
 }
 
 export interface StudioStatusView {
@@ -549,6 +681,7 @@ export interface StudioStatusView {
 export type StudioReadOutcome =
   | {
       readonly status: "succeeded";
+      readonly evidence_id: string | null;
       readonly evidence: {
         readonly kind: "provider_response";
         readonly observed_via: string;
@@ -571,44 +704,14 @@ export type StudioReadOutcome =
       readonly action: string;
     };
 
-export class StudioDataDirUnavailableError extends Error {
-  constructor() {
-    super("mos-studio plugin data dir unavailable (ZCODE_PLUGIN_DATA not set)");
-    this.name = "StudioDataDirUnavailableError";
-  }
-}
 
-export class StudioTenantUnavailableError extends Error {
-  readonly reason: string;
-  constructor(reason: string) {
-    super(`tenant unavailable: ${reason}`);
-    this.reason = reason;
-    this.name = "StudioTenantUnavailableError";
-  }
-}
 
-export class StudioInvalidInputError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "StudioInvalidInputError";
-  }
-}
 
-export class StudioConnectionNotFoundError extends Error {
-  constructor() {
-    super("composio connection not found for this tenant");
-    this.name = "StudioConnectionNotFoundError";
-  }
-}
 
-export class StudioMissionNotFoundError extends Error {
-  readonly missionId: string;
-  constructor(missionId: string) {
-    super(`mission not found: ${missionId}`);
-    this.missionId = missionId;
-    this.name = "StudioMissionNotFoundError";
-  }
-}
+
+
+
+
 
 function textOf(content: readonly unknown[]): string {
   for (const block of content) {

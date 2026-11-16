@@ -5,6 +5,7 @@ import {
   unwrapError,
   unwrapItems,
   type PanelAction,
+  TOOL_NAMES,
 } from "../src/ui/model.js";
 
 /** 面板状态机（纯函数）：转换、密钥清除与结构化解包。 */
@@ -94,6 +95,67 @@ describe("panelReducer", () => {
     expect(state.capabilities[0]?.status).toBe("available");
     expect(state.routes?.mission_id).toBe("m1");
     expect(state.readOutcome?.status).toBe("blocked");
+  });
+});
+
+
+describe("Lab & draft actions (Issue #31)", () => {
+  test("evidence / researchNotes / hypotheses / briefs actions replace state slices and clear busy", () => {
+    const actions: PanelAction[] = [
+      {
+        type: "evidence",
+        evidence: [
+          {
+            id: "e1",
+            mission_id: null,
+            kind: "provider_response",
+            observed_via: "composio-session-mcp",
+            tool: "COMPOSIO_MULTI_EXECUTE_TOOL",
+            observed_at: "2026-11-16T12:00:00.000Z",
+            query: "q",
+            facts: {},
+          },
+        ],
+      },
+      { type: "researchNotes", notes: [{ id: "n1", topic: "t", findings: [], insight: null, confidence: null, limitations: [], created_at: "x", mission_id: null }] },
+      { type: "hypotheses", hypotheses: [{ id: "h1", statement: "s", mission_id: "m1", rationale: null, evidence_refs: [], proposed_route_ids: [], status: "proposed", created_at: "x" }] },
+      { type: "briefs", briefs: [{ id: "b1", mission_id: "m1", title: "t", summary: "s", operator_notes: null, evidence_refs: [], research_note_ids: [], hypothesis_ids: [], route_summary: null, created_at: "x", artifact: { id: "a1", version: 1, quality_status: "unreviewed", rights_status: "unknown" }, review: null }] },
+    ];
+    const state = actions.reduce(panelReducer, { ...initialPanelState, busy: "lab" });
+    expect(state.evidence).toHaveLength(1);
+    expect(state.researchNotes[0]?.id).toBe("n1");
+    expect(state.hypotheses[0]?.status).toBe("proposed");
+    expect(state.briefs[0]?.artifact.version).toBe(1);
+    expect(state.busy).toBeNull();
+  });
+
+  test("new lab/draft form fields are editable via the field action", () => {
+    let state = initialPanelState;
+    state = panelReducer(state, { type: "field", name: "noteTopicInput", value: "topic" });
+    state = panelReducer(state, { type: "field", name: "noteEvidenceRefInput", value: "e1" });
+    state = panelReducer(state, { type: "field", name: "noteStatementInput", value: "fact" });
+    state = panelReducer(state, { type: "field", name: "hypothesisStatementInput", value: "hypo" });
+    state = panelReducer(state, { type: "field", name: "briefTitleInput", value: "title" });
+    state = panelReducer(state, { type: "field", name: "briefSummaryInput", value: "summary" });
+    state = panelReducer(state, { type: "field", name: "briefEvidenceInput", value: "e1 e2" });
+    expect(state.noteTopicInput).toBe("topic");
+    expect(state.noteEvidenceRefInput).toBe("e1");
+    expect(state.noteStatementInput).toBe("fact");
+    expect(state.hypothesisStatementInput).toBe("hypo");
+    expect(state.briefTitleInput).toBe("title");
+    expect(state.briefSummaryInput).toBe("summary");
+    expect(state.briefEvidenceInput).toBe("e1 e2");
+  });
+
+  test("TOOL_NAMES covers the full Lab -> Draft workflow", () => {
+    expect(TOOL_NAMES.listEvidence).toBe("mos_list_evidence");
+    expect(TOOL_NAMES.recordResearchNote).toBe("mos_record_research_note");
+    expect(TOOL_NAMES.listResearchNotes).toBe("mos_list_research_notes");
+    expect(TOOL_NAMES.proposeHypothesis).toBe("mos_propose_hypothesis");
+    expect(TOOL_NAMES.listHypotheses).toBe("mos_list_hypotheses");
+    expect(TOOL_NAMES.composeDraftBrief).toBe("mos_compose_draft_brief");
+    expect(TOOL_NAMES.listDraftBriefs).toBe("mos_list_draft_briefs");
+    expect(TOOL_NAMES.reviewDraftBrief).toBe("mos_review_draft_brief");
   });
 });
 

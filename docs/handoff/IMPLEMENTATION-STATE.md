@@ -1054,3 +1054,91 @@ live wire is certified up to the designed auth_timeout mile plus the fail-closed
 surface. When an account holder runs the attended cycle on an acceptance machine after
 workstream A ships, exit 0 testifies a server-issued active grant — and only that. No
 mock, relabeling, or grant fabrication was performed or will be (Issue #23 hard rules).
+
+### Issue #31 first-product-workflow record (branch tl/issue-31-first-product-workflow, 2026-11-16, TL)
+
+**Stage:** post-Week-4 product milestone — the first usable Marketing Lab → Studio workflow
+(`spec/backlog/post-week-4-first-product-workflow.md`; Issue #31). First TL report posted
+before code (`payswapdotorg/MOS-3.0#issuecomment-6915209686`): verified baseline
+`main` = `a81c9414`, releases rc.1–rc.3 confirmed, stale README/backlog status claims
+corrected (Stream A, commit `c90fc87b`).
+
+**Deliverable (Stream B; all additive inside `packages/mos-studio`; zero core ZCode files
+touched):**
+
+- **Marketing Lab**: authorized reads now land as tenant-scoped, source-attributed evidence
+  records (`src/application/evidence-store.ts`, counts-only, kind `provider_response`,
+  mission-linked, persisted in `$ZCODE_PLUGIN_DATA/mos-evidence.json`, atomic write,
+  fail-closed read boundary). Research notes ride the real `@mos/lab` write boundary
+  (`ResearchNoteStore` + tenant-closed `EvidenceLookup`: findings must cite existing
+  non-simulation evidence; insight stays a separate field). Hypotheses ride the real
+  `HypothesisStore` (decision lock #18: never carry experiment results).
+- **Studio drafts**: `composeDraftBrief` registers a first-version `draft` artifact through
+  the real `@mos/content-artifacts` authority (content_ref opaque, provenance = mission +
+  evidence sources, rights_status honestly `unknown` — no clearance process exists,
+  quality_status starts `unreviewed`) + a route-evaluation snapshot (counts-only).
+  `reviewDraftBrief` appends an append-only `review_decision` rights record through the
+  real `@mos/rights-policy` authority and registers the next artifact version
+  (quality → approved/rejected, lineage verbatim). Brief views join artifact latest version
+  + latest review live (no state mirroring; `src/application/draft-brief-store.ts` holds
+  only references and verbatim input).
+- **Composition split**: Lab/Draft composition lives in
+  `src/application/lab-draft-composition.ts` (shared session-context + typed errors in
+  `src/application/studio-shared.ts`); `StudioService` keeps thin delegations — the
+  composition root stays one public API while both files stay under the 800-line cap.
+- **MCP surface**: 8 new tools (`mos_list_evidence`, `mos_record_research_note`,
+  `mos_list_research_notes`, `mos_propose_hypothesis`, `mos_list_hypotheses`,
+  `mos_compose_draft_brief`, `mos_list_draft_briefs`, `mos_review_draft_brief`);
+  review is app-only (human decision); model-visible tools stay read/verbatim-capture only.
+- **Panel**: Marketing Lab sections (evidence list with Use-ref affordance, research-note
+  form separating evidence-backed facts from insight, hypothesis form) + Studio drafts
+  section (compose form, briefs with artifact version/quality/rights pills, latest review,
+  Approve/Reject). Secret discipline unchanged (api key cleared on submit).
+- **Gate wiring**: module registry + architecture policy `requires` gain
+  `mos-lab`/`mos-content-artifacts`/`mos-rights-policy` (mirrored in `module.ts`,
+  machine-checked by manifest test + architecture check); engineering list
+  +1 file (`packages/mos-studio/test/lab-draft-journey.test.ts`).
+
+**Gate evidence (run on this tree, 2026-11-16):**
+
+- `pnpm --filter @mos/studio typecheck` + root `pnpm typecheck`
+  (NODE_OPTIONS=--max-old-space-size=3072): **PASS**
+- `pnpm --filter @mos/studio test`: **86/86 PASS** (10 files), including:
+  - new `test/lab-draft-journey.test.ts` (evidence persistence + restart, facts-cite-real-
+    evidence, insight separation, hypothesis no-outcome, dangling-ref typed errors,
+    artifact v1→v2 review chain, cross-tenant invisibility, restart persistence for
+    notes/hypotheses/briefs)
+  - existing real-stack integration (plugin discovery over `plugins.dirs`, real MCP stdio
+    adapter, real encrypted credential store, real SessionStart hook → mission link): green
+  - **live Composio journey (real provider, fresh environment)**: full New Task → Mission →
+    capabilities → routes → real authorized read (HACKERNEWS_SEARCH_POSTS via
+    COMPOSIO_MULTI_EXECUTE_TOOL over the real session factory + hosted session MCP)
+    **succeeded** — Stream C provider re-verification: the Composio path still works after
+    the v1-REST deprecation (the plugin path is session-factory + session MCP, unaffected);
+    wrong-key 401 classifies unauthorized as before. Evidence lands counts-only
+    (machine-checked no record values).
+- `pnpm lint`: **0 errors** / 548 warnings (538 Stage-0 baseline + 10 pre-existing
+  release-smoke warnings from main's PR #29; 0 from this change's files)
+- `pnpm test:architecture`: PASS · `pnpm architecture:check -- --changed`: violations 0 /
+  baseline 0 / new 0 · `pnpm docs:stale-phrases:check` (2303 files) + `pnpm db:schema:check`:
+  PASS
+- `pnpm --filter @mos/studio build` (after the documented
+  `pnpm --filter @zcode/adapters... build` precondition): PASS (server.mjs, hook.mjs,
+  ui/panel.html)
+- `pnpm test:engineering`: **1896 passed / 1 failed / 8 skipped** (236 files) — the single
+  failure is the pre-existing environment-sensitive `miseToolchainEnv.test.ts` (sandbox node
+  at /usr/bin), identical to every prior baseline; not a regression.
+- Scope review: `git diff main --name-only` touches only
+  `packages/mos-studio/**`, gate wiring (`scripts/engineering-test-files.json`,
+  `pnpm-lock.yaml`), registry/policy/spec/README/docs — no core ZCode files, no Muse
+  branches (#27/#30 untouched), no Issue #23 billing paths.
+
+**Honest limits:** Desktop visual mount + desktop E2E remain blocked (no docker/display on
+this sandbox) — installed-app verification rides the release pipeline clean-machine smokes
+as before; a new RC is published only when those gates pass (Stream C, pending this PR's
+merge). The panel's note form captures one finding per submit in v1 (multi-finding via
+repeat submits; the MCP tool accepts up to 20). `mos-production` graph wiring remains
+planned (registry note updated) — the draft brief is human-composed from evidence, not
+engine-produced. Per AGENTS.md §7 the milestone status is **contract-tested** (real-stack +
+live provider evidence recorded; installed-app journey evidence pending the release
+pipeline).

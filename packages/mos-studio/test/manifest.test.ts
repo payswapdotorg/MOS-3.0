@@ -86,9 +86,12 @@ test("module.ts requires equals the composition-root wiring set", () => {
     [
       "mos-capabilities",
       "mos-contracts",
+      "mos-content-artifacts",
       "mos-identity-bridge",
       "mos-integrations",
+      "mos-lab",
       "mos-missions",
+      "mos-rights-policy",
       "mos-routes",
       "zcode-cli",
       "zcode-mos-adapters",

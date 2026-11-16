@@ -2036,12 +2036,15 @@ modules:
   # 生产 src/runtime 经 @zcode/adapters 组合真实 ZCode MCP 客户端 + 真实共享加密凭据存储
   # （组合根专属合法依赖；默认 typecheck 排除 src/runtime —— fresh-clone 不依赖 CLI dist，
   # 与 zcode-mos-adapters 的 test/integration 同约定）。工程源码零其他 ZCode 导入。
+  # Issue #31 产品里程碑：新增组合依赖 mos-lab（研究记录/假设）+ mos-content-artifacts
+  # （草稿 artifact 版本链）+ mos-rights-policy（review_decision 权利记录）——Lab → Studio
+  # draft → review 旅程的生产面接线（production graph 仍 planned）。
   - id: mos-studio
     roots:
       - packages/mos-studio/src
       - packages/mos-studio/vitest.config.ts
     managed: true
-    requires: [mos-contracts, mos-identity-bridge, mos-missions, mos-integrations, mos-capabilities, mos-routes, zcode-mos-adapters, zcode-cli]
+    requires: [mos-contracts, mos-identity-bridge, mos-missions, mos-integrations, mos-capabilities, mos-routes, mos-lab, mos-content-artifacts, mos-rights-policy, zcode-mos-adapters, zcode-cli]
     publicEntrypoints:
       - packages/mos-studio/src/index.ts
       - packages/mos-studio/src/contract.ts

@@ -1615,6 +1615,9 @@ importers:
       '@mos/capabilities':
         specifier: workspace:*
         version: link:../mos-capabilities
+      '@mos/content-artifacts':
+        specifier: workspace:*
+        version: link:../mos-content-artifacts
       '@mos/contracts':
         specifier: workspace:*
         version: link:../mos-contracts
@@ -1624,9 +1627,15 @@ importers:
       '@mos/integrations':
         specifier: workspace:*
         version: link:../mos-integrations
+      '@mos/lab':
+        specifier: workspace:*
+        version: link:../mos-lab
       '@mos/missions':
         specifier: workspace:*
         version: link:../mos-missions
+      '@mos/rights-policy':
+        specifier: workspace:*
+        version: link:../mos-rights-policy
       '@mos/routes':
         specifier: workspace:*
         version: link:../mos-routes
