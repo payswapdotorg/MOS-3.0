@@ -8,10 +8,18 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import {
   MOS_CAPABILITIES_TOOL,
+  MOS_COMPOSE_DRAFT_BRIEF_TOOL,
   MOS_CONNECT_COMPOSIO_TOOL,
   MOS_EXECUTE_AUTHORIZED_READ_TOOL,
+  MOS_LIST_DRAFT_BRIEFS_TOOL,
+  MOS_LIST_EVIDENCE_TOOL,
+  MOS_LIST_HYPOTHESES_TOOL,
   MOS_LIST_MISSIONS_TOOL,
+  MOS_LIST_RESEARCH_NOTES_TOOL,
+  MOS_PROPOSE_HYPOTHESIS_TOOL,
   MOS_RECORD_MISSION_INTAKE_TOOL,
+  MOS_RECORD_RESEARCH_NOTE_TOOL,
+  MOS_REVIEW_DRAFT_BRIEF_TOOL,
   MOS_ROUTES_TOOL,
   MOS_SET_OPERATOR_TOOL,
   MOS_STUDIO_STATUS_TOOL,
@@ -20,11 +28,15 @@ import {
 } from "../contract/studio-vocabulary.js";
 import { sessionFactsFromToolCallMeta } from "../contract/session-context.js";
 import {
+  StudioBriefNotFoundError,
+  StudioConnectionNotFoundError,
   StudioDataDirUnavailableError,
+  StudioEvidenceNotFoundError,
+  StudioHypothesisNotFoundError,
   StudioInvalidInputError,
   StudioMissionNotFoundError,
+  StudioNoteNotFoundError,
   StudioTenantUnavailableError,
-  StudioConnectionNotFoundError,
   studioSessionContextFromMeta,
   type StudioService,
 } from "../application/studio-service.js";
@@ -157,6 +169,92 @@ export function createStudioServer(deps: StudioServerDeps): Server {
           }),
         );
       }
+      if (name === MOS_LIST_EVIDENCE_TOOL) {
+        const input = parsed as { mission_id?: string };
+        return okResult(await deps.service.listEvidence(context, input.mission_id));
+      }
+      if (name === MOS_RECORD_RESEARCH_NOTE_TOOL) {
+        const input = parsed as {
+          topic: string;
+          findings?: { evidence_ref: string; statement: string }[];
+          insight?: string | null;
+          confidence?: number | null;
+          limitations?: string[];
+          mission_id?: string | null;
+        };
+        return okResult(
+          await deps.service.recordResearchNote(context, {
+            topic: input.topic,
+            findings: input.findings ?? [],
+            insight: input.insight ?? null,
+            confidence: input.confidence ?? null,
+            limitations: input.limitations ?? [],
+            mission_id: input.mission_id,
+          }),
+        );
+      }
+      if (name === MOS_LIST_RESEARCH_NOTES_TOOL) {
+        const input = parsed as { mission_id?: string };
+        return okResult(await deps.service.listResearchNotes(context, input.mission_id));
+      }
+      if (name === MOS_PROPOSE_HYPOTHESIS_TOOL) {
+        const input = parsed as {
+          statement: string;
+          rationale?: string | null;
+          evidence_refs?: string[];
+          proposed_route_ids?: string[];
+          mission_id?: string;
+        };
+        return okResult(
+          await deps.service.proposeHypothesis(context, {
+            statement: input.statement,
+            rationale: input.rationale ?? null,
+            evidence_refs: input.evidence_refs ?? [],
+            proposed_route_ids: input.proposed_route_ids ?? [],
+            mission_id: input.mission_id,
+          }),
+        );
+      }
+      if (name === MOS_LIST_HYPOTHESES_TOOL) {
+        const input = parsed as { mission_id?: string };
+        return okResult(await deps.service.listHypotheses(context, input.mission_id));
+      }
+      if (name === MOS_COMPOSE_DRAFT_BRIEF_TOOL) {
+        const input = parsed as {
+          mission_id?: string;
+          title: string;
+          summary: string;
+          operator_notes?: string | null;
+          evidence_refs?: string[];
+          research_note_ids?: string[];
+          hypothesis_ids?: string[];
+        };
+        return okResult(
+          await deps.service.composeDraftBrief(context, {
+            mission_id: input.mission_id,
+            title: input.title,
+            summary: input.summary,
+            operator_notes: input.operator_notes ?? null,
+            evidence_refs: input.evidence_refs ?? [],
+            research_note_ids: input.research_note_ids ?? [],
+            hypothesis_ids: input.hypothesis_ids ?? [],
+          }),
+        );
+      }
+      if (name === MOS_LIST_DRAFT_BRIEFS_TOOL) {
+        const input = parsed as { mission_id?: string };
+        return okResult(await deps.service.listDraftBriefs(context, input.mission_id));
+      }
+      if (name === MOS_REVIEW_DRAFT_BRIEF_TOOL) {
+        const input = parsed as { brief_id: string; decision: "approved" | "rejected"; note?: string | null };
+        return okResult(
+          await deps.service.reviewDraftBrief(context, {
+            brief_id: input.brief_id,
+            decision: input.decision,
+            note: input.note ?? null,
+          }),
+        );
+      }
       return errorResult(`Unknown tool: ${name}`);
     } catch (error) {
       return errorResult(describeError(error));
@@ -189,7 +287,11 @@ function describeError(error: unknown): string {
     error instanceof StudioTenantUnavailableError ||
     error instanceof StudioInvalidInputError ||
     error instanceof StudioConnectionNotFoundError ||
-    error instanceof StudioMissionNotFoundError
+    error instanceof StudioMissionNotFoundError ||
+    error instanceof StudioEvidenceNotFoundError ||
+    error instanceof StudioNoteNotFoundError ||
+    error instanceof StudioHypothesisNotFoundError ||
+    error instanceof StudioBriefNotFoundError
   ) {
     return `${error.name}: ${error.message}`;
   }

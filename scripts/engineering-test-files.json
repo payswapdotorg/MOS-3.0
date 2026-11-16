@@ -212,6 +212,7 @@
   "packages/mos-rights-policy/test/rights-store.test.ts",
   "packages/mos-routes/test/evaluate-route.test.ts",
   "packages/mos-studio/test/availability.test.ts",
+  "packages/mos-studio/test/lab-draft-journey.test.ts",
   "packages/mos-studio/test/hook-payload.test.ts",
   "packages/mos-studio/test/manifest.test.ts",
   "packages/mos-studio/test/operator-store.test.ts",

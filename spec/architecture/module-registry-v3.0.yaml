@@ -95,15 +95,17 @@ modules:
     status: contract-tested  # W3 2026-11-13：实现+契约测试全绿；状态词汇见 AGENTS.md §7
     note: 零执行器（决策锁 #5）：job 只记录业务状态 + 外部 zcode_execution_ref。
   - id: mos-studio
-    responsibility: Central composition root (TL-owned) wiring the New Task → Mission → capabilities → routes → authorized-read journey as a ZCode plugin (surface panel + SessionStart sidecar); studio production-surface reads remain planned
+    responsibility: Central composition root (TL-owned) wiring the New Task → Mission → Marketing Lab (evidence / research notes / hypotheses) → capabilities / routes → Studio draft brief (artifact lineage + rights review) journey as a ZCode plugin (surface panel + SessionStart sidecar); production-graph wiring remains planned
     authority: composition-root
     # W4 里程碑（评审指示：先关闭 composition-root 挂载与用户旅程缺口，再开 Week 4）：
     # 组合根所有权决议 = TL 拥有、落在 mos-studio 包（W1 起的 blocker 就此关闭）。
     # 挂载形态 = ZCode 插件（.zcode-plugin/plugin.json ui.surfaces + slots nav.primary/sidePane.launcher
     # + hooks SessionStart），零核心文件改动；Desktop 渲染面板，Web 按上游行为降级为普通工具记录。
-    # 生产域缝（production graph + artifact + rights 读取，W3 交付）的生产面接线仍 planned（后续 studio 里程碑）。
-    depends_on: [mos-contracts, mos-identity-bridge, mos-missions, mos-integrations, mos-capabilities, mos-routes, zcode-substrate-adapters, zcode-host]
-    stage: composition-root-milestone
+    # Issue #31 产品里程碑：Lab（授权读证据落地 + 研究记录 + 假设）与 Studio 草稿简报
+    # （content-artifacts 版本链 + rights-policy review_decision）的生产面接线交付；
+    # production graph 本身仍 planned（后续里程碑）。
+    depends_on: [mos-contracts, mos-identity-bridge, mos-missions, mos-integrations, mos-capabilities, mos-routes, mos-lab, mos-content-artifacts, mos-rights-policy, zcode-substrate-adapters, zcode-host]
+    stage: post-week-4-first-product-workflow
     status: contract-tested  # 工程套件 + 真实栈集成（test/integration：真实插件装载校验 + 真实 MCP 客户端 stdio + 真实加密凭据存储 + live Composio 旅程，包内运行）
     note: 生产 src/runtime 经 @zcode/adapters 组合真实 ZCode MCP 客户端与真实共享加密凭据存储（组合根专属；默认 typecheck 排除，见 packages/mos-studio/src/CONTRACT.md）。Desktop 可视挂载与 desktop E2E 仍 blocked（无 docker/显示）。
   - id: mos-distribution

@@ -1,6 +1,6 @@
 # MOS 3.0 — Marketing Operating Harness
 
-**Status:** Week 1–4 domain foundations and composition-root merged; distributable desktop release is the next delivery milestone  
+**Status:** Week 1–4 domain foundations and composition-root merged; distributable desktop release candidates published (`mos-v3.0.0-rc.1`…`rc.3`); current milestone: first usable Marketing Lab → Studio product workflow (Issue #31, `spec/backlog/post-week-4-first-product-workflow.md`)  
 **Repository:** `payswapdotorg/MOS-3.0`  
 **Application substrate:** `zai-org/ZCode`  
 **Canonical upstream baseline at bootstrap:** `b95ebaffeab641907b38652f45c1502bd762972d` (ZCode v3.18.0, 2026-11-11)
@@ -70,7 +70,8 @@ This repository is the only implementation and architecture authority for MOS 3.
 16. `docs/handoff/IMPLEMENTATION-STATE.md`
 17. `spec/backlog/release-engineering.md`
 18. `docs/handoff/FINAL-TL-HANDOFF-DISTRIBUTABLE-RELEASE.md`
-19. The exact assigned work package.
+19. `spec/backlog/post-week-4-first-product-workflow.md`
+20. The exact assigned work package.
 
 Architecture changes require a repository Architecture Change Record. Chat, memory, issue descriptions, PR text, worker reports and screenshots are not architecture authority.
 
@@ -85,11 +86,13 @@ The weeks are delivery targets, not assumptions about third-party app-review tim
 
 ## Current delivery stage
 
-The Week 1–4 domain foundations and the `mos-studio` composition-root milestone have been merged. Their implementation status and known limitations are recorded in `docs/handoff/IMPLEMENTATION-STATE.md`; the project is not yet a published desktop release.
+The Week 1–4 domain foundations and the `mos-studio` composition-root milestone have been merged. Their implementation status and known limitations are recorded in `docs/handoff/IMPLEMENTATION-STATE.md`. The module registry classifies the domain packages as `contract-tested`; `mos-studio` additionally carries package-local real-stack integration evidence (real plugin discovery, real MCP adapter, real encrypted credential store, real SessionStart hook → mission link, and one recorded live authorized provider read).
 
-The next delivery milestone is to build and publish the modified ZCode application as downloadable MOS installers. The Tech Lead owns product identity, packaged MOS Studio, reproducible CI builds, checksums, platform smoke tests and the GitHub Release. Follow `spec/backlog/release-engineering.md` and `docs/handoff/FINAL-TL-HANDOFF-DISTRIBUTABLE-RELEASE.md`. Do not ask the local AI agent to build from source: it is only the later download, verify and install consumer.
+The distributable release milestone is delivered as release candidates: `mos-v3.0.0-rc.1`, `rc.2` and `rc.3` are published prereleases (18 assets each — installers, checksums, manifest, per-platform clean-machine smoke evidence; see `docs/handoff/IMPLEMENTATION-STATE.md` release records). A stable `mos-v3.0.0` is published only when the product-milestone acceptance below and the release gates in `spec/backlog/release-engineering.md` pass.
 
-Do not begin by redesigning the UI or mass-producing plugins. Preserve the existing ZCode application and complete the release gates against the actual installed product.
+The current milestone is the first usable product workflow — New Task → Mission → Marketing Lab research/evidence → strategy and route comparison → Studio draft production brief → review — through the installed MOS application, without displacing ordinary ZCode behavior. Follow `spec/backlog/post-week-4-first-product-workflow.md`. The Muse Code execution-backend track (Issue #24 / PRs #27 and #30) stays separate and optional. Issue #23 (provider-owned Start Plan backend) remains blocked on the external billing provider.
+
+Do not begin by redesigning the UI or mass-producing plugins. Preserve the existing ZCode application and complete every product milestone against the actual installed product.
 
 ## Completion standard
 

@@ -33,6 +33,30 @@ export const MOS_CONNECT_COMPOSIO_TOOL = "mos_connect_composio";
 export const MOS_CAPABILITIES_TOOL = "mos_capabilities";
 export const MOS_ROUTES_TOOL = "mos_routes";
 export const MOS_EXECUTE_AUTHORIZED_READ_TOOL = "mos_execute_authorized_read";
+// Issue #31 Marketing Lab → Studio draft 工作流工具。
+export const MOS_LIST_EVIDENCE_TOOL = "mos_list_evidence";
+export const MOS_RECORD_RESEARCH_NOTE_TOOL = "mos_record_research_note";
+export const MOS_LIST_RESEARCH_NOTES_TOOL = "mos_list_research_notes";
+export const MOS_PROPOSE_HYPOTHESIS_TOOL = "mos_propose_hypothesis";
+export const MOS_LIST_HYPOTHESES_TOOL = "mos_list_hypotheses";
+export const MOS_COMPOSE_DRAFT_BRIEF_TOOL = "mos_compose_draft_brief";
+export const MOS_LIST_DRAFT_BRIEFS_TOOL = "mos_list_draft_briefs";
+export const MOS_REVIEW_DRAFT_BRIEF_TOOL = "mos_review_draft_brief";
+
+/** 组合根持久文件名（$ZCODE_PLUGIN_DATA 下；与 OPERATOR_STORE_FILENAME 同目录）。 */
+export const EVIDENCE_STORE_FILENAME = "mos-evidence.json";
+export const DRAFT_BRIEF_STORE_FILENAME = "mos-briefs.json";
+
+/** Lab 输入上限（面板与工具 schema 共享）。 */
+export const NOTE_TOPIC_MAX_LENGTH = 500;
+export const NOTE_FINDING_STATEMENT_MAX_LENGTH = 2000;
+export const NOTE_INSIGHT_MAX_LENGTH = 4000;
+export const HYPOTHESIS_STATEMENT_MAX_LENGTH = 2000;
+export const HYPOTHESIS_RATIONALE_MAX_LENGTH = 4000;
+export const BRIEF_TITLE_MAX_LENGTH = 300;
+export const BRIEF_SUMMARY_MAX_LENGTH = 8000;
+export const BRIEF_OPERATOR_NOTES_MAX_LENGTH = 4000;
+export const REVIEW_NOTE_MAX_LENGTH = 2000;
 
 /** 授权读的参数与返回上限（保守值；面板与模型共享）。 */
 export const READ_QUERY_MAX_LENGTH = 500;
